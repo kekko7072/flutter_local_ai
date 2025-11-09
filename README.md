@@ -1,5 +1,7 @@
-# version: 
+# ⚠️ Warning
+# This package is still under active development and is not yet stable.
 
+# flutter_local_ai
 A Flutter package that provides a unified API for local AI inference on Android (using ML Kit GenAI) and iOS (using Apple GenAI APIs).
 
 ## Features
