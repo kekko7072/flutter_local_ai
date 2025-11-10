@@ -229,7 +229,7 @@ public class FlutterLocalAiPlugin: NSObject, FlutterPlugin {
     
     // Use the session to generate text
     let response = try await session.respond(to: prompt, options: .init(sampling: .greedy, temperature: temperature ?? 0.7,maximumResponseTokens: maxTokens))
-    return response.text
+    return response.content
   }
   #endif
 }
