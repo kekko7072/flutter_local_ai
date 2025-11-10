@@ -19,7 +19,7 @@ Add the following to your `android/app/build.gradle`:
 
 ```gradle
 dependencies {
-    implementation 'com.google.mlkit:genai:1.0.0'
+   implementation 'com.google.mlkit:genai-prompt:1.0.0-alpha1'
 }
 ```
 
@@ -27,11 +27,20 @@ dependencies {
 
 Requires iOS 26.0+ and Xcode 16.0+.
 
-Add the following to your `ios/Podfile`:
+1. Add the following to your `ios/Podfile`:
 
 ```ruby
 platform :ios, '26.0'
 ```
+
+2. Run pod install:
+
+```bash
+cd ios
+pod install
+```
+
+3. The FoundationModels framework is automatically available on iOS 26.0+ devices. No additional dependencies are required.
 
 ## Installation
 
@@ -68,6 +77,12 @@ if (!isAvailable) {
   return;
 }
 
+// iOS: Initialize the model with instructions (required for iOS)
+// Android: This step is optional, but recommended for consistency
+await aiEngine.initialize(
+  instructions: 'You are a helpful assistant. Provide concise answers.',
+);
+
 // Generate text with simple method
 final text = await aiEngine.generateTextSimple(
   prompt: 'Write a short story about a robot',
@@ -82,6 +97,17 @@ print(text);
 import 'package:flutter_local_ai/flutter_local_ai.dart';
 
 final aiEngine = FlutterLocalAi();
+
+// Check availability
+if (!await aiEngine.isAvailable()) {
+  print('Local AI is not available');
+  return;
+}
+
+// Initialize with custom instructions (required for iOS)
+await aiEngine.initialize(
+  instructions: 'You are an expert in science and technology. Provide detailed, accurate explanations.',
+);
 
 // Generate text with configuration
 final response = await aiEngine.generateText(
@@ -99,6 +125,43 @@ print('Token count: ${response.tokenCount}');
 print('Generation time: ${response.generationTimeMs}ms');
 ```
 
+### iOS-Specific Usage
+
+On iOS, you **must** call `initialize()` before generating text. The initialization creates a `LanguageModelSession` with your custom instructions:
+
+```dart
+import 'package:flutter_local_ai/flutter_local_ai.dart';
+
+final aiEngine = FlutterLocalAi();
+
+// Check if FoundationModels is available
+final isAvailable = await aiEngine.isAvailable();
+if (!isAvailable) {
+  print('FoundationModels is not available on this device');
+  print('Requires iOS 26.0+');
+  return;
+}
+
+// Initialize with custom instructions
+// This creates a LanguageModelSession with your instructions
+await aiEngine.initialize(
+  instructions: 'You are a creative writing assistant. Write in a poetic style.',
+);
+
+// Now you can generate text
+final response = await aiEngine.generateText(
+  prompt: 'Write a haiku about artificial intelligence',
+  config: const GenerationConfig(
+    maxTokens: 100,
+    temperature: 0.8,
+  ),
+);
+
+print(response.text);
+```
+
+**Note:** On iOS, if you don't call `initialize()` explicitly, it will be called automatically with default instructions when you first generate text. However, it's recommended to call it explicitly to set your custom instructions.
+
 ## API Reference
 
 ### `FlutterLocalAi`
@@ -108,6 +171,7 @@ Main class for interacting with local AI.
 #### Methods
 
 - `Future<bool> isAvailable()` - Check if local AI is available on the device
+- `Future<bool> initialize({String? instructions})` - Initialize the model and create a session with instruction text (required for iOS, optional for Android)
 - `Future<AiResponse> generateText({required String prompt, GenerationConfig? config})` - Generate text from a prompt with optional configuration
 - `Future<String> generateTextSimple({required String prompt, int maxTokens = 100})` - Convenience method to generate text and return just the string
 
@@ -134,9 +198,27 @@ Response from AI generation.
 The Android implementation uses ML Kit GenAI (Gemini Nano). The API structure may need to be verified against the latest ML Kit GenAI documentation as the API might evolve.
 
 ### iOS
-The iOS implementation currently includes a placeholder for Apple's GenAI framework (iOS 26+). Once Apple releases the final GenAI API documentation and framework, the `generateTextAsync` method in `FlutterLocalAiPlugin.swift` should be updated with the actual API calls.
+The iOS implementation uses Apple's FoundationModels framework (iOS 26.0+). The implementation:
 
-**Note:** The iOS implementation structure is ready, but you'll need to replace the placeholder implementation with the actual GenAI framework API calls when Apple's documentation is available.
+- Uses `SystemLanguageModel.default` for model access
+- Creates a `LanguageModelSession` with custom instructions
+- Handles model availability checking
+- Provides on-device text generation with configurable parameters
+
+**Key iOS Requirements:**
+- iOS 26.0 or later
+- Xcode 16.0 or later
+- FoundationModels framework (automatically available on supported devices)
+
+**iOS Initialization:**
+On iOS, you must call `initialize()` before generating text. This creates a `LanguageModelSession` with your custom instructions. The session is cached and reused for subsequent generation calls.
+
+```dart
+// Required on iOS
+await aiEngine.initialize(
+  instructions: 'Your custom instructions here',
+);
+```
 
 ## Contributing
 

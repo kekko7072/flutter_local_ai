@@ -53,7 +53,7 @@ class _MyHomePageState extends State<MyHomePage> {
     setState(() {
       _isAvailable = available;
     });
-    
+
     // Auto-initialize if available
     if (available && !_isInitialized) {
       _initialize();
@@ -62,7 +62,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
   Future<void> _initialize() async {
     if (_isInitializing || _isInitialized) return;
-    
+
     setState(() {
       _isInitializing = true;
     });
@@ -73,12 +73,12 @@ class _MyHomePageState extends State<MyHomePage> {
             ? null
             : _instructionsController.text,
       );
-      
+
       setState(() {
         _isInitialized = success;
         _isInitializing = false;
       });
-      
+
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -201,12 +201,9 @@ class _MyHomePageState extends State<MyHomePage> {
                       Row(
                         children: [
                           Icon(
-                            _isInitialized
-                                ? Icons.check_circle
-                                : Icons.pending,
-                            color: _isInitialized
-                                ? Colors.green
-                                : Colors.orange,
+                            _isInitialized ? Icons.check_circle : Icons.pending,
+                            color:
+                                _isInitialized ? Colors.green : Colors.orange,
                             size: 20,
                           ),
                           const SizedBox(width: 8),
@@ -226,11 +223,11 @@ class _MyHomePageState extends State<MyHomePage> {
               ),
             ),
             const SizedBox(height: 16),
-            
+
             // Instructions TextField (expandable)
             ExpansionTile(
               title: const Text('Custom Instructions (Optional)'),
-              initiallyExpanded: false,
+              initiallyExpanded: true,
               children: [
                 Padding(
                   padding: const EdgeInsets.all(8.0),
@@ -240,7 +237,8 @@ class _MyHomePageState extends State<MyHomePage> {
                       labelText: 'Instructions for the AI',
                       border: OutlineInputBorder(),
                       hintText: 'You are a helpful assistant...',
-                      helperText: 'These instructions will be used when initializing the model',
+                      helperText:
+                          'These instructions will be used when initializing the model',
                     ),
                     maxLines: 3,
                   ),
@@ -248,7 +246,7 @@ class _MyHomePageState extends State<MyHomePage> {
               ],
             ),
             const SizedBox(height: 8),
-            
+
             // Initialize Button
             if (_isAvailable && !_isInitialized)
               ElevatedButton.icon(
@@ -260,14 +258,15 @@ class _MyHomePageState extends State<MyHomePage> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.settings),
-                label: Text(_isInitializing ? 'Initializing...' : 'Initialize Model'),
+                label: Text(
+                    _isInitializing ? 'Initializing...' : 'Initialize Model'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.blue,
                   foregroundColor: Colors.white,
                 ),
               ),
             if (_isAvailable && !_isInitialized) const SizedBox(height: 16),
-            
+
             // Prompt TextField
             TextField(
               controller: _promptController,
@@ -280,7 +279,7 @@ class _MyHomePageState extends State<MyHomePage> {
               enabled: _isInitialized,
             ),
             const SizedBox(height: 16),
-            
+
             // Generate Button
             ElevatedButton(
               onPressed: (_isLoading || !_isInitialized) ? null : _generateText,
@@ -293,7 +292,7 @@ class _MyHomePageState extends State<MyHomePage> {
                   : const Text('Generate Text'),
             ),
             const SizedBox(height: 16),
-            
+
             // Response Card
             if (_response.isNotEmpty)
               Expanded(
