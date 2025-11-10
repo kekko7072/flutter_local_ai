@@ -6,7 +6,7 @@ import Foundation
 import FoundationModels
 #endif
 
-public class FlutterLocalAiPlugin: NSObject, FlutterPlugin {
+@objc public class FlutterLocalAiPlugin: NSObject, FlutterPlugin {
   #if canImport(FoundationModels)
   @available(iOS 26.0, *)
   private var cachedModel: SystemLanguageModel?
@@ -194,12 +194,7 @@ public class FlutterLocalAiPlugin: NSObject, FlutterPlugin {
     
     // Create a customized session with explicit parameters
     let newSession = LanguageModelSession(
-      model: model,
-      guardrails: .default,
-      tools: [],
-      instructions: {
-        instructions
-      }
+      instructions: instructions
     )
     
     // Cache the session for future use
@@ -228,8 +223,21 @@ public class FlutterLocalAiPlugin: NSObject, FlutterPlugin {
     }
     
     // Use the session to generate text
-    let response = try await session.respond(to: prompt, options: .init(sampling: .greedy, temperature: temperature ?? 0.7,maximumResponseTokens: maxTokens))
-    return response.content
+    let response = try await session.respond(to: prompt, options: .init(sampling: .greedy, temperature: temperature ?? 0.7, maximumResponseTokens: maxTokens))
+    let generatedText = response.content
+    
+    // Calculate generation time in milliseconds
+    let generationTime = Int(Date().timeIntervalSince(startTime) * 1000)
+    
+    // Estimate token count (approximate based on word count)
+    let tokenCount = generatedText.split(separator: " ").count
+    
+    // Return the response in the format expected by Flutter
+    return [
+      "text": generatedText,
+      "generationTimeMs": generationTime,
+      "tokenCount": tokenCount
+    ]
   }
   #endif
 }
