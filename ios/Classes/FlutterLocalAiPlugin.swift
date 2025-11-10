@@ -9,7 +9,7 @@ import FoundationModels
 public class FlutterLocalAiPlugin: NSObject, FlutterPlugin {
   #if canImport(FoundationModels)
   @available(iOS 26.0, *)
-  private var cachedModel: LanguageModel?
+  private var cachedModel: SystemLanguageModel?
   
   @available(iOS 26.0, *)
   private var session: LanguageModelSession?
@@ -172,7 +172,7 @@ public class FlutterLocalAiPlugin: NSObject, FlutterPlugin {
 
   #if canImport(FoundationModels)
   @available(iOS 26.0, *)
-  private func loadModel() async throws -> Model {
+  private func loadModel() async throws -> SystemLanguageModel {
     // Return cached model if available
     if let cached = cachedModel {
       return cached
