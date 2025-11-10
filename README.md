@@ -25,12 +25,12 @@ dependencies {
 
 ### iOS Setup
 
-Requires iOS 18.0+ and Xcode 16.0+.
+Requires iOS 26.0+ and Xcode 16.0+.
 
 Add the following to your `ios/Podfile`:
 
 ```ruby
-platform :ios, '18.0'
+platform :ios, '26.0'
 ```
 
 ## Installation
@@ -134,7 +134,7 @@ Response from AI generation.
 The Android implementation uses ML Kit GenAI (Gemini Nano). The API structure may need to be verified against the latest ML Kit GenAI documentation as the API might evolve.
 
 ### iOS
-The iOS implementation currently includes a placeholder for Apple's GenAI framework (iOS 18+). Once Apple releases the final GenAI API documentation and framework, the `generateTextAsync` method in `FlutterLocalAiPlugin.swift` should be updated with the actual API calls.
+The iOS implementation currently includes a placeholder for Apple's GenAI framework (iOS 26+). Once Apple releases the final GenAI API documentation and framework, the `generateTextAsync` method in `FlutterLocalAiPlugin.swift` should be updated with the actual API calls.
 
 **Note:** The iOS implementation structure is ready, but you'll need to replace the placeholder implementation with the actual GenAI framework API calls when Apple's documentation is available.
 

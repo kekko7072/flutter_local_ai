@@ -17,6 +17,24 @@ class FlutterLocalAi {
     }
   }
 
+  /// Initialize the model and create a session with instruction text
+  ///
+  /// [instructions] - Optional instruction text for the session (default: "You are a helpful assistant. Provide concise answers.")
+  ///
+  /// Returns true if initialization was successful
+  Future<bool> initialize({String? instructions}) async {
+    try {
+      final arguments = {
+        if (instructions != null) 'instructions': instructions,
+      };
+
+      final result = await _channel.invokeMethod<bool>('initialize', arguments);
+      return result ?? false;
+    } on PlatformException catch (e) {
+      throw Exception('Failed to initialize: ${e.message}');
+    }
+  }
+
   /// Generate text from a prompt
   ///
   /// [prompt] - The input text prompt

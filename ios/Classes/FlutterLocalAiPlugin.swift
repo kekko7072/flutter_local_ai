@@ -2,11 +2,22 @@ import Flutter
 import UIKit
 import Foundation
 
-#if canImport(GenAI)
-import GenAI
+#if canImport(FoundationModels)
+import FoundationModels
 #endif
 
 public class FlutterLocalAiPlugin: NSObject, FlutterPlugin {
+  #if canImport(FoundationModels)
+  @available(iOS 26.0, *)
+  private var cachedModel: LanguageModel?
+  
+  @available(iOS 26.0, *)
+  private var session: LanguageModelSession?
+  
+  @available(iOS 26.0, *)
+  private var instructions: String = "You are a helpful assistant. Provide concise answers."
+  #endif
+  
   public static func register(with registrar: FlutterPluginRegistrar) {
     let channel = FlutterMethodChannel(name: "flutter_local_ai", binaryMessenger: registrar.messenger())
     let instance = FlutterLocalAiPlugin()
@@ -17,6 +28,8 @@ public class FlutterLocalAiPlugin: NSObject, FlutterPlugin {
     switch call.method {
     case "isAvailable":
       checkAvailability(result: result)
+    case "initialize":
+      initialize(call: call, result: result)
     case "generateText":
       generateText(call: call, result: result)
     default:
@@ -25,10 +38,16 @@ public class FlutterLocalAiPlugin: NSObject, FlutterPlugin {
   }
 
   private func checkAvailability(result: @escaping FlutterResult) {
-    #if canImport(GenAI)
-    // Check if GenAI is available on iOS 18+
-    if #available(iOS 18.0, *) {
-      result(true)
+    #if canImport(FoundationModels)
+    if #available(iOS 26.0, *) {
+      Task {
+        do {
+          let available = try await checkModelAvailability()
+          result(available)
+        } catch {
+          result(false)
+        }
+      }
     } else {
       result(false)
     }
@@ -37,9 +56,74 @@ public class FlutterLocalAiPlugin: NSObject, FlutterPlugin {
     #endif
   }
 
+  #if canImport(FoundationModels)
+  @available(iOS 26.0, *)
+  private func checkModelAvailability() async throws -> Bool {
+    do {
+      let model = try await loadModel()
+      switch model.availability {
+        case .available:
+            // Model is ready to use
+            return true
+        case .unavailable(let reason):
+            print("Model is unavailable: \(reason)")
+            return false
+        @unknown default:
+            print("Model is unavailable: \(model.availability)")
+            return false
+        }
+    } catch {
+      return false
+    }
+  }
+  #endif
+
+  private func initialize(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    #if canImport(FoundationModels)
+    if #available(iOS 26.0, *) {
+      guard let args = call.arguments as? [String: Any] else {
+        result(FlutterError(
+          code: "INVALID_ARGUMENT",
+          message: "Arguments are required",
+          details: nil
+        ))
+        return
+      }
+      
+      // Get instructions if provided
+      let instructionsText = args["instructions"] as? String ?? "You are a helpful assistant. Provide concise answers."
+      
+      Task {
+        do {
+          try await initializeSession(instructions: instructionsText)
+          result(true)
+        } catch {
+          result(FlutterError(
+            code: "INITIALIZATION_ERROR",
+            message: "Error initializing model: \(error.localizedDescription)",
+            details: nil
+          ))
+        }
+      }
+    } else {
+      result(FlutterError(
+        code: "UNSUPPORTED_VERSION",
+        message: "FoundationModels requires iOS 26.0 or later",
+        details: nil
+      ))
+    }
+    #else
+    result(FlutterError(
+      code: "NOT_AVAILABLE",
+      message: "FoundationModels framework is not available",
+      details: nil
+    ))
+    #endif
+  }
+
   private func generateText(call: FlutterMethodCall, result: @escaping FlutterResult) {
-    #if canImport(GenAI)
-    if #available(iOS 18.0, *) {
+    #if canImport(FoundationModels)
+    if #available(iOS 26.0, *) {
       guard let args = call.arguments as? [String: Any],
             let prompt = args["prompt"] as? String else {
         result(FlutterError(
@@ -53,8 +137,6 @@ public class FlutterLocalAiPlugin: NSObject, FlutterPlugin {
       let configMap = args["config"] as? [String: Any]
       let maxTokens = configMap?["maxTokens"] as? Int ?? 100
       let temperature = configMap?["temperature"] as? Double
-      let topP = configMap?["topP"] as? Double
-      let topK = configMap?["topK"] as? Int
 
       Task {
         do {
@@ -62,8 +144,6 @@ public class FlutterLocalAiPlugin: NSObject, FlutterPlugin {
             prompt: prompt,
             maxTokens: maxTokens,
             temperature: temperature,
-            topP: topP,
-            topK: topK
           )
           result(response)
         } catch {
@@ -77,52 +157,79 @@ public class FlutterLocalAiPlugin: NSObject, FlutterPlugin {
     } else {
       result(FlutterError(
         code: "UNSUPPORTED_VERSION",
-        message: "GenAI requires iOS 18.0 or later",
+        message: "FoundationModels requires iOS 26.0 or later",
         details: nil
       ))
     }
     #else
     result(FlutterError(
       code: "NOT_AVAILABLE",
-      message: "GenAI framework is not available",
+      message: "FoundationModels framework is not available",
       details: nil
     ))
     #endif
   }
 
-  @available(iOS 18.0, *)
-  #if canImport(GenAI)
+  #if canImport(FoundationModels)
+  @available(iOS 26.0, *)
+  private func loadModel() async throws -> Model {
+    // Return cached model if available
+    if let cached = cachedModel {
+      return cached
+    }
+    
+    // Load the default system language model
+    let model = SystemLanguageModel.default
+    cachedModel = model
+    return model
+  }
+  
+  @available(iOS 26.0, *)
+  private func initializeSession(instructions: String) async throws {
+    // Load the model
+    let model = try await loadModel()
+    
+    // Store instructions
+    self.instructions = instructions
+    
+    // Create a customized session with explicit parameters
+    let newSession = LanguageModelSession(
+      model: model,
+      guardrails: .default,
+      tools: [],
+      instructions: {
+        instructions
+      }
+    )
+    
+    // Cache the session for future use
+    self.session = newSession
+  }
+  
+  @available(iOS 26.0, *)
   private func generateTextAsync(
     prompt: String,
     maxTokens: Int,
     temperature: Double?,
-    topP: Double?,
-    topK: Int?
   ) async throws -> [String: Any] {
-    // Note: The actual GenAI API implementation will depend on Apple's final API
-    // This is a placeholder structure based on typical GenAI patterns
-    
-    // For now, we'll use a fallback implementation
-    // In production, you would use the actual GenAI framework APIs like:
-    // let model = try await GenAIModel.load(...)
-    // let response = try await model.generate(prompt: prompt, config: config)
-    
-    // Placeholder implementation - replace with actual GenAI API calls when available
     let startTime = Date()
     
-    // Simulate async generation (replace with actual GenAI API)
-    try await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+    // Ensure session is initialized
+    if session == nil {
+      try await initializeSession(instructions: instructions)
+    }
     
-    // This is a placeholder - replace with actual GenAI response
-    // For now, return a simple echo response
-    let generatedText = "Generated response for: \(prompt)"
-    let generationTime = Int(Date().timeIntervalSince(startTime) * 1000)
+    guard let session = session else {
+      throw NSError(
+        domain: "FlutterLocalAiPlugin",
+        code: 2,
+        userInfo: [NSLocalizedDescriptionKey: "Session not initialized. Call initialize first."]
+      )
+    }
     
-    return [
-      "text": generatedText,
-      "generationTimeMs": generationTime,
-      "tokenCount": generatedText.split(separator: " ").count
-    ]
+    // Use the session to generate text
+    let response = try await session.respond(to: prompt, options: .init(sampling: .greedy, temperature: temperature ?? 0.7,maximumResponseTokens: maxTokens))
+    return response.text
   }
   #endif
 }

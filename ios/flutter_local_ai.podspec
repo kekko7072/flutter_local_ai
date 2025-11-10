@@ -4,20 +4,21 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'flutter_local_ai'
-  s.version          = '0.1.0'
-  s.summary          = 'A Flutter plugin for local AI inference on Android and iOS'
+  s.version          = '0.0.1-dev.4'
+  s.summary          = 'A Flutter package that wraps Android ML Kit GenAI and iOS Foundation Models APIs for local AI inference.'
   s.description      = <<-DESC
-A Flutter package that wraps Android ML Kit GenAI and iOS GenAI APIs for local AI inference.
+A Flutter package that provides a unified API for local AI inference on Android with ML Kit GenAI and on Apple Platforms using Foundation Models.
                        DESC
-  s.homepage         = 'http://example.com'
+  s.homepage         = 'https://github.com/kekko7072/flutter_local_ai'
   s.license          = { :file => '../LICENSE' }
   s.author           = { 'Your Company' => 'email@example.com' }
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
   s.dependency 'Flutter'
-  s.platform = :ios, '18.0'
+  s.platform = :ios, '26.0'
+  s.swift_version = '5.9'
 
   # Flutter.framework does not contain a i386 slice.
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES', 'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386' }
-  s.swift_version = '5.0'
+  s.swift_versions = ['5.9']
 end
