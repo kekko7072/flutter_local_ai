@@ -1,4 +1,4 @@
-package com.example.flutter_local_ai
+package io.vezz.flutter_local_ai
 
 import androidx.annotation.NonNull
 import com.google.mlkit.genai.GenerativeModel
@@ -20,6 +20,7 @@ import kotlinx.coroutines.tasks.await
 class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
   private lateinit var channel : MethodChannel
   private var generativeModel: GenerativeModel? = null
+  private var instructions: String? = null
   private val coroutineScope = CoroutineScope(Dispatchers.Main)
 
   override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
@@ -30,20 +31,24 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
   override fun onMethodCall(@NonNull call: MethodCall, @NonNull result: Result) {
     when (call.method) {
       "isAvailable" -> {
-        try {
-          // Check if ML Kit GenAI is available
-          val available = try {
-            // Try to create a model instance to check availability
-            val model = GenerativeModel.builder()
-              .setModelName("gemini-2.0-flash-exp")
-              .build()
-            true
+        coroutineScope.launch {
+          try {
+            val available = checkAvailability()
+            result.success(available)
           } catch (e: Exception) {
-            false
+            result.error("UNAVAILABLE", "Error checking availability: ${e.message}", null)
           }
-          result.success(available)
-        } catch (e: Exception) {
-          result.error("UNAVAILABLE", "Error checking availability: ${e.message}", null)
+        }
+      }
+      "initialize" -> {
+        val instructionsArg = call.argument<String>("instructions")
+        coroutineScope.launch {
+          try {
+            initializeModel(instructionsArg)
+            result.success(true)
+          } catch (e: Exception) {
+            result.error("INITIALIZATION_ERROR", "Error initializing model: ${e.message}", null)
+          }
         }
       }
       "generateText" -> {
@@ -70,6 +75,31 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
     }
   }
 
+  private suspend fun checkAvailability(): Boolean = withContext(Dispatchers.IO) {
+    try {
+      // Try to create a model instance to check availability
+      // Using the default model name for ML Kit GenAI
+      val testModel = GenerativeModel.builder()
+        .setModelName("gemini-2.0-flash-exp")
+        .build()
+      true
+    } catch (e: Exception) {
+      false
+    }
+  }
+
+  private suspend fun initializeModel(instructionsArg: String?) = withContext(Dispatchers.IO) {
+    // Store instructions if provided (for consistency with iOS API)
+    instructions = instructionsArg
+    
+    // Initialize model if not already done
+    if (generativeModel == null) {
+      generativeModel = GenerativeModel.builder()
+        .setModelName("gemini-2.0-flash-exp")
+        .build()
+    }
+  }
+
   private suspend fun generateTextAsync(
     prompt: String,
     configMap: Map<String, Any>?
@@ -82,7 +112,8 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
           .build()
       }
 
-      // Build generation config
+      // Build generation config according to GenerationConfig model
+      // Only maxTokens and temperature are supported
       val generationConfigBuilder = GenerationConfig.Builder()
       configMap?.let { config ->
         config["maxTokens"]?.let { 
@@ -91,18 +122,20 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
         config["temperature"]?.let { 
           generationConfigBuilder.setTemperature((it as Number).toDouble())
         }
-        config["topP"]?.let { 
-          generationConfigBuilder.setTopP((it as Number).toDouble())
-        }
-        config["topK"]?.let { 
-          generationConfigBuilder.setTopK((it as Number).toInt())
-        }
       }
       val generationConfig = generationConfigBuilder.build()
 
-      // Create request
+      // Build the prompt with instructions if available
+      val fullPrompt = if (instructions != null) {
+        "${instructions}\n\n$prompt"
+      } else {
+        prompt
+      }
+
+      // Create request according to ML Kit GenAI API
+      // https://developers.google.com/ml-kit/genai/prompt/android/get-started
       val request = GenerateContentRequest.Builder()
-        .addContent(prompt)
+        .addContent(fullPrompt)
         .setGenerationConfig(generationConfig)
         .build()
 
@@ -112,13 +145,17 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
       val response: GenerateContentResponse = task.await()
       val generationTime = System.currentTimeMillis() - startTime
 
+      // Extract response text
       val generatedText = response.text ?: ""
-      val tokenCount = response.usageMetadata?.totalTokenCount ?: 0
       
+      // Get token count from usage metadata if available
+      val tokenCount = response.usageMetadata?.totalTokenCount
+
+      // Return response matching AiResponse model structure
       mapOf(
         "text" to generatedText,
         "generationTimeMs" to generationTime,
-        "tokenCount" to tokenCount
+        "tokenCount" to (tokenCount ?: generatedText.split(" ").size) // Fallback to word count if token count unavailable
       )
     } catch (e: Exception) {
       throw Exception("Failed to generate text: ${e.message}")
@@ -128,5 +165,6 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
   override fun onDetachedFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
     channel.setMethodCallHandler(null)
     generativeModel = null
+    instructions = null
   }
 }

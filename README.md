@@ -1,25 +1,58 @@
 ## ⚠️ Warning
 ### This package is still under active development and is not yet stable.
 
+<div align="center">
+  <img src="logo.png" alt="flutter_local_ai logo" width="200">
+</div>
+
+<div align="center">
+
 # flutter_local_ai
+
 A Flutter package that provides a unified API for local AI inference on Android with [*ML Kit GenAI*](https://developer.android.com/ai/gemini-nano/ml-kit-genai) and on Apple Platforms using [*Foundation Models*](https://developer.apple.com/documentation/FoundationModels) .
+
+</div>
+
+## ✨ Unique Advantage
+
+**This package has the unique advantage of using native OS APIs without downloading or adding any additional layer to the application.**
+
+- **iOS**: Uses Apple's built-in FoundationModels framework (iOS 26.0+) - no model downloads required
+- **Android**: Uses Google's ML Kit GenAI (Gemini Nano) - leverages the native on-device model
+- **Zero Model Downloads**: No need to bundle large model files with your app
+- **Native Performance**: Direct access to OS-optimized AI capabilities
+- **Smaller App Size**: Models are part of the operating system, not your app bundle
 
 ## Features
 
-- 🤖 Local AI inference on both Android and Apple Platfomrs
-- 📱 Platform-specific optimizations
+- 🤖 Local AI inference on both Android and Apple Platforms
+- 📱 Platform-specific optimizations using native OS APIs
 - 🔒 Privacy-first: all processing happens on-device
 - 🚀 Easy-to-use Dart API
+- ⚡ Zero model downloads: uses built-in OS AI capabilities
+- 📦 Smaller app size: no additional model files required
 
 ## Getting Started
 
 ### Android Setup
 
-Add the following to your `android/app/build.gradle`:
+Requires Android API level 26 (Android 8.0 Oreo) or higher.
+
+1. Set the minimum SDK version in your `android/app/build.gradle`:
+
+```gradle
+android {
+    defaultConfig {
+        minSdk 26  // Required for ML Kit GenAI
+    }
+}
+```
+
+2. Add the ML Kit GenAI dependency:
 
 ```gradle
 dependencies {
-   implementation 'com.google.mlkit:genai-prompt:1.0.0-alpha1'
+    implementation 'com.google.mlkit:genai:1.0.0-alpha1'
 }
 ```
 

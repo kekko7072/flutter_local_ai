@@ -24,7 +24,7 @@ android {
         applicationId = "com.example.flutter_local_ai_example"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        minSdk = 26 // Due to compliance with the gemini api https://developers.google.com/ml-kit/genai/prompt/android
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -44,5 +44,5 @@ flutter {
 }
 
 dependencies {
-    implementation("com.google.mlkit:genai:1.0.0")
+    implementation("com.google.mlkit:genai-prompt:1.0.0-alpha1")
 }

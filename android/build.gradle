@@ -1,4 +1,4 @@
-group 'com.example.flutter_local_ai'
+group 'io.vezz.flutter_local_ai'
 version '1.0-SNAPSHOT'
 
 buildscript {
@@ -25,7 +25,7 @@ apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 
 android {
-    namespace 'com.example.flutter_local_ai'
+    namespace 'io.vezz.flutter_local_ai'
     compileSdk 34
 
     compileOptions {
@@ -42,10 +42,10 @@ android {
     }
 
     defaultConfig {
-        minSdk 24
+        minSdk 26  // Required for ML Kit GenAI
     }
 }
 
 dependencies {
-    implementation 'com.google.mlkit:genai:1.0.0'
+    implementation 'com.google.mlkit:genai:1.0.0-alpha1'
 }
