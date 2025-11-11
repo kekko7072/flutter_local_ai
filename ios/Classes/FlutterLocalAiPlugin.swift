@@ -1,5 +1,4 @@
 import Flutter
-import UIKit
 import Foundation
 
 #if canImport(FoundationModels)
@@ -8,13 +7,13 @@ import FoundationModels
 
 @objc public class FlutterLocalAiPlugin: NSObject, FlutterPlugin {
   #if canImport(FoundationModels)
-  @available(iOS 26.0, *)
+  @available(iOS 26.0, macOS 26.0, *)
   private var cachedModel: SystemLanguageModel?
   
-  @available(iOS 26.0, *)
+  @available(iOS 26.0, macOS 26.0, *)
   private var session: LanguageModelSession?
   
-  @available(iOS 26.0, *)
+  @available(iOS 26.0, macOS 26.0, *)
   private var instructions: String = "You are a helpful assistant. Provide concise answers."
   #endif
   
@@ -39,7 +38,7 @@ import FoundationModels
 
   private func checkAvailability(result: @escaping FlutterResult) {
     #if canImport(FoundationModels)
-    if #available(iOS 26.0, *) {
+    if #available(iOS 26.0, macOS 26.0, *) {
       Task {
         do {
           let available = try await checkModelAvailability()
@@ -57,7 +56,7 @@ import FoundationModels
   }
 
   #if canImport(FoundationModels)
-  @available(iOS 26.0, *)
+  @available(iOS 26.0, macOS 26.0, *)
   private func checkModelAvailability() async throws -> Bool {
     do {
       let model = try await loadModel()
@@ -80,7 +79,7 @@ import FoundationModels
 
   private func initialize(call: FlutterMethodCall, result: @escaping FlutterResult) {
     #if canImport(FoundationModels)
-    if #available(iOS 26.0, *) {
+    if #available(iOS 26.0, macOS 26.0, *) {
       guard let args = call.arguments as? [String: Any] else {
         result(FlutterError(
           code: "INVALID_ARGUMENT",
@@ -108,7 +107,7 @@ import FoundationModels
     } else {
       result(FlutterError(
         code: "UNSUPPORTED_VERSION",
-        message: "FoundationModels requires iOS 26.0 or later",
+        message: "FoundationModels requires iOS 26.0 or macOS 26.0 or later",
         details: nil
       ))
     }
@@ -123,7 +122,7 @@ import FoundationModels
 
   private func generateText(call: FlutterMethodCall, result: @escaping FlutterResult) {
     #if canImport(FoundationModels)
-    if #available(iOS 26.0, *) {
+    if #available(iOS 26.0, macOS 26.0, *) {
       guard let args = call.arguments as? [String: Any],
             let prompt = args["prompt"] as? String else {
         result(FlutterError(
@@ -157,7 +156,7 @@ import FoundationModels
     } else {
       result(FlutterError(
         code: "UNSUPPORTED_VERSION",
-        message: "FoundationModels requires iOS 26.0 or later",
+        message: "FoundationModels requires iOS 26.0 or macOS 26.0 or later",
         details: nil
       ))
     }
@@ -171,7 +170,7 @@ import FoundationModels
   }
 
   #if canImport(FoundationModels)
-  @available(iOS 26.0, *)
+  @available(iOS 26.0, macOS 26.0, *)
   private func loadModel() async throws -> SystemLanguageModel {
     // Return cached model if available
     if let cached = cachedModel {
@@ -184,7 +183,7 @@ import FoundationModels
     return model
   }
   
-  @available(iOS 26.0, *)
+  @available(iOS 26.0, macOS 26.0, *)
   private func initializeSession(instructions: String) async throws {
     // Load the model
     let model = try await loadModel()
@@ -201,7 +200,7 @@ import FoundationModels
     self.session = newSession
   }
   
-  @available(iOS 26.0, *)
+  @available(iOS 26.0, macOS 26.0, *)
   private func generateTextAsync(
     prompt: String,
     maxTokens: Int,

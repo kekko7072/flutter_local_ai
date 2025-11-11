@@ -10,7 +10,11 @@ A Flutter package that provides a unified API for local AI inference on Android 
 
 </div>
 
-@image[video.gif]
+<div align="center">
+  <img src="video.gif" alt="flutter_local_ai logo" width="200">
+</div>
+
+<div align="center">
 
 ## ✨ Unique Advantage
 
@@ -21,6 +25,17 @@ A Flutter package that provides a unified API for local AI inference on Android 
 - **Zero Model Downloads**: No need to bundle large model files with your app
 - **Native Performance**: Direct access to OS-optimized AI capabilities
 - **Smaller App Size**: Models are part of the operating system, not your app bundle
+
+## Platform Support
+
+| Feature            | iOS (26+) | macOS (26+) | Android (API 26+) |
+|--------------------|-----------|-------------|-------------------|
+| Text generation    | ✅        |  ✅          | ✅                |
+| Summarization*     | 🚧 Planned| 🚧 Planned   | 🚧 Planned        |
+| Image generation   | ❌        | ❌           | ❌                |
+| Tool call          | ❌        | ❌           | ❌                |
+
+*Summarization is achieved through text-generation prompts and shares the same API surface.
 
 ## Installation
 

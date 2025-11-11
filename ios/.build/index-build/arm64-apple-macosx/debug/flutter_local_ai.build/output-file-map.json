@@ -1,0 +1,12 @@
+{
+  "": {
+    "swift-dependencies": "/Users/francescovezzani/Developer/flutter_local_ai/ios/.build/index-build/arm64-apple-macosx/debug/flutter_local_ai.build/master.swiftdeps"
+  },
+  "/Users/francescovezzani/Developer/flutter_local_ai/ios/Classes/FlutterLocalAiPlugin.swift": {
+    "dependencies": "/Users/francescovezzani/Developer/flutter_local_ai/ios/.build/index-build/arm64-apple-macosx/debug/flutter_local_ai.build/FlutterLocalAiPlugin.d",
+    "object": "/Users/francescovezzani/Developer/flutter_local_ai/ios/.build/index-build/arm64-apple-macosx/debug/flutter_local_ai.build/FlutterLocalAiPlugin.swift.o",
+    "swiftmodule": "/Users/francescovezzani/Developer/flutter_local_ai/ios/.build/index-build/arm64-apple-macosx/debug/flutter_local_ai.build/FlutterLocalAiPlugin~partial.swiftmodule",
+    "swift-dependencies": "/Users/francescovezzani/Developer/flutter_local_ai/ios/.build/index-build/arm64-apple-macosx/debug/flutter_local_ai.build/FlutterLocalAiPlugin.swiftdeps",
+    "diagnostics": "/Users/francescovezzani/Developer/flutter_local_ai/ios/.build/index-build/arm64-apple-macosx/debug/flutter_local_ai.build/FlutterLocalAiPlugin.dia"
+  }
+}
