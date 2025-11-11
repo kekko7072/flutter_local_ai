@@ -59,31 +59,57 @@ dependencies:
 
 Requires Android API level 26 (Android 8.0 Oreo) or higher.
 
-1. Set the minimum SDK version in your `android/app/build.gradle`:
+1. Set the minimum SDK version in your `android/app/build.gradle` or `android/app/build.gradle.kts`:
 
-1. Open your `ios/Podfile` and ensure the platform version is set to 26.0:
+For `build.gradle.kts` (Kotlin DSL):
+```kotlin
+android {
+    defaultConfig {
+        minSdk = 26
+    }
+}
 
-```ruby
-platform :ios, '26.0'
+dependencies {
+    implementation("com.google.mlkit:genai-prompt:1.0.0-alpha1")
+}
 ```
 
-2. Open your iOS project in Xcode and verify the deployment target:
+For `build.gradle` (Groovy DSL):
+```groovy
+android {
+    defaultConfig {
+        minSdkVersion 26
+    }
+}
+
+dependencies {
+    implementation 'com.google.mlkit:genai-prompt:1.0.0-alpha1'
+}
+```
+
+2. Sync your project with Gradle files.
+
+### iOS Setup
+
+Requires iOS 26.0 or higher.
+
+This plugin uses Swift Package Manager (SPM) for dependency management on iOS. The FoundationModels framework is automatically integrated by Flutter when you build your project.
+
+#### Configuration Steps:
+
+1. Open your iOS project in Xcode:
    - Open `ios/Runner.xcodeproj` in Xcode
    - Select the "Runner" project in the navigator
    - Under "Targets" → "Runner" → "General"
    - Set **Minimum Deployments** → **iOS** to **26.0**
 
-3. In your `ios/Runner.xcodeproj/project.pbxproj`, verify that `IPHONEOS_DEPLOYMENT_TARGET` is set to `26.0`:
+2. In your `ios/Runner.xcodeproj/project.pbxproj`, verify that `IPHONEOS_DEPLOYMENT_TARGET` is set to `26.0`:
 
 ```
 IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 ```
 
-### Swift Package Manager
-
-This plugin uses Swift Package Manager (SPM) for dependency management. The package is automatically integrated by Flutter when you build your project.
-
-If you encounter issues with SPM integration:
+3. If you encounter issues with SPM integration:
 
 ```bash
 cd ios
@@ -92,7 +118,34 @@ flutter clean
 flutter build ios
 ```
 
-## macOS Configuration
+### macOS Setup
+
+Requires macOS 26.0 or higher.
+
+The plugin uses Swift Package Manager (SPM) for dependency management on macOS. The FoundationModels framework is automatically integrated by Flutter when you build your project.
+
+#### Configuration Steps:
+
+1. Open your macOS project in Xcode:
+   - Open `macos/Runner.xcodeproj` in Xcode
+   - Select the "Runner" project in the navigator
+   - Under "Targets" → "Runner" → "General"
+   - Set **Minimum Deployments** → **macOS** to **26.0**
+
+2. In your `macos/Runner.xcodeproj/project.pbxproj`, verify that `MACOSX_DEPLOYMENT_TARGET` is set to `26.0`:
+
+```
+MACOSX_DEPLOYMENT_TARGET = 26.0;
+```
+
+3. If you encounter issues with SPM integration:
+
+```bash
+cd macos
+flutter pub get
+flutter clean
+flutter build macos
+```
 
 ## Usage
 
