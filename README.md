@@ -52,7 +52,7 @@ android {
 
 ```gradle
 dependencies {
-    implementation 'com.google.mlkit:genai:1.0.0-alpha1'
+    implementation 'com.google.mlkit:genai-prompt:1.0.0-alpha1'
 }
 ```
 
