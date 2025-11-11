@@ -11,7 +11,7 @@ A Flutter package that provides a unified API for local AI inference on Android 
 </div>
 
 <div align="center">
-  <img src="video.gif" alt="flutter_local_ai logo" width="200">
+  <img src="video.gif" alt="flutter_local_ai video" width="200">
 </div>
 
 <div align="center">
@@ -30,9 +30,9 @@ A Flutter package that provides a unified API for local AI inference on Android 
 
 | Feature            | iOS (26+) | macOS (26+) | Android (API 26+) |
 |--------------------|-----------|-------------|-------------------|
-| Text generation    | ✅        |  ✅          | 🚧 Planned        |
+| Text generation    | ✅        |  ✅          | ✅                |
 | Summarization*     | 🚧 Planned| 🚧 Planned   | 🚧 Planned        |
-| Image generation   | ❌        | ❌           | ❌                |
+| Image generation   | 🚧 Planned| 🚧 Planned   | ❌                |
 | Tool call          | ❌        | ❌           | ❌                |
 
 *Summarization is achieved through text-generation prompts and shares the same API surface.
@@ -149,6 +149,8 @@ flutter build macos
 
 ## Usage
 
+> **Note:** Currently, text generation is only available on iOS 26.0+ and macOS 26.0+. Android support is planned for a future release.
+
 ### Basic Usage
 
 ```dart
@@ -157,20 +159,21 @@ import 'package:flutter_local_ai/flutter_local_ai.dart';
 // Initialize the AI engine
 final aiEngine = FlutterLocalAi();
 
-// Check availability
+// Check if Local AI is available on this device
 final isAvailable = await aiEngine.isAvailable();
 if (!isAvailable) {
   print('Local AI is not available on this device');
+  print('Requires iOS 26.0+ or macOS 26.0+');
   return;
 }
 
-// iOS: Initialize the model with instructions (required for iOS)
-// Android: This step is optional, but recommended for consistency
+// Initialize the model with custom instructions
+// This is required and creates a LanguageModelSession
 await aiEngine.initialize(
   instructions: 'You are a helpful assistant. Provide concise answers.',
 );
 
-// Generate text with simple method
+// Generate text with the simple method (returns just the text string)
 final text = await aiEngine.generateTextSimple(
   prompt: 'Write a short story about a robot',
   maxTokens: 200,
@@ -178,7 +181,7 @@ final text = await aiEngine.generateTextSimple(
 print(text);
 ```
 
-### Advanced Usage
+### Advanced Usage with Configuration
 
 ```dart
 import 'package:flutter_local_ai/flutter_local_ai.dart';
@@ -187,67 +190,156 @@ final aiEngine = FlutterLocalAi();
 
 // Check availability
 if (!await aiEngine.isAvailable()) {
-  print('Local AI is not available');
+  print('Local AI is not available on this device');
   return;
 }
 
-// Initialize with custom instructions (required for iOS)
+// Initialize with custom instructions
 await aiEngine.initialize(
   instructions: 'You are an expert in science and technology. Provide detailed, accurate explanations.',
 );
 
-// Generate text with configuration
+// Generate text with detailed configuration
 final response = await aiEngine.generateText(
   prompt: 'Explain quantum computing in simple terms',
   config: const GenerationConfig(
     maxTokens: 300,
-    temperature: 0.7,
-    topP: 0.9,
-    topK: 40,
+    temperature: 0.7,  // Controls randomness (0.0 = deterministic, 1.0 = very random)
+    topP: 0.9,         // Nucleus sampling parameter
+    topK: 40,          // Top-K sampling parameter
   ),
 );
 
+// Access detailed response information
 print('Generated text: ${response.text}');
 print('Token count: ${response.tokenCount}');
 print('Generation time: ${response.generationTimeMs}ms');
 ```
 
-### iOS-Specific Usage
+### Streaming Text Generation (Coming Soon)
 
-On iOS, you **must** call `initialize()` before generating text. The initialization creates a `LanguageModelSession` with your custom instructions:
+Streaming support for real-time text generation is planned for a future release.
+
+### Complete Example
+
+Here's a complete example showing error handling and best practices:
 
 ```dart
+import 'package:flutter/material.dart';
 import 'package:flutter_local_ai/flutter_local_ai.dart';
 
-final aiEngine = FlutterLocalAi();
-
-// Check if FoundationModels is available
-final isAvailable = await aiEngine.isAvailable();
-if (!isAvailable) {
-  print('FoundationModels is not available on this device');
-  print('Requires iOS 26.0+');
-  return;
+class LocalAiExample extends StatefulWidget {
+  @override
+  _LocalAiExampleState createState() => _LocalAiExampleState();
 }
 
-// Initialize with custom instructions
-// This creates a LanguageModelSession with your instructions
-await aiEngine.initialize(
-  instructions: 'You are a creative writing assistant. Write in a poetic style.',
-);
+class _LocalAiExampleState extends State<LocalAiExample> {
+  final aiEngine = FlutterLocalAi();
+  bool isInitialized = false;
+  String? result;
+  bool isLoading = false;
 
-// Now you can generate text
-final response = await aiEngine.generateText(
-  prompt: 'Write a haiku about artificial intelligence',
-  config: const GenerationConfig(
-    maxTokens: 100,
-    temperature: 0.8,
-  ),
-);
+  @override
+  void initState() {
+    super.initState();
+    _initializeAi();
+  }
 
-print(response.text);
+  Future<void> _initializeAi() async {
+    try {
+      final isAvailable = await aiEngine.isAvailable();
+      if (!isAvailable) {
+        setState(() {
+          result = 'Local AI is not available on this device. Requires iOS 26.0+ or macOS 26.0+';
+        });
+        return;
+      }
+
+      await aiEngine.initialize(
+        instructions: 'You are a helpful assistant. Provide concise and accurate answers.',
+      );
+
+      setState(() {
+        isInitialized = true;
+        result = 'AI initialized successfully!';
+      });
+    } catch (e) {
+      setState(() {
+        result = 'Error initializing AI: $e';
+      });
+    }
+  }
+
+  Future<void> _generateText(String prompt) async {
+    if (!isInitialized) {
+      setState(() {
+        result = 'AI is not initialized yet';
+      });
+      return;
+    }
+
+    setState(() {
+      isLoading = true;
+    });
+
+    try {
+      final response = await aiEngine.generateText(
+        prompt: prompt,
+        config: const GenerationConfig(
+          maxTokens: 200,
+          temperature: 0.7,
+        ),
+      );
+
+      setState(() {
+        result = response.text;
+        isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        result = 'Error generating text: $e';
+        isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Flutter Local AI')),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            ElevatedButton(
+              onPressed: isLoading ? null : () => _generateText('Tell me a joke'),
+              child: const Text('Generate Joke'),
+            ),
+            const SizedBox(height: 20),
+            if (isLoading)
+              const CircularProgressIndicator()
+            else if (result != null)
+              Text(result!),
+          ],
+        ),
+      ),
+    );
+  }
+}
 ```
 
-**Note:** On iOS, if you don't call `initialize()` explicitly, it will be called automatically with default instructions when you first generate text. However, it's recommended to call it explicitly to set your custom instructions.
+### Platform-Specific Notes
+
+#### iOS & macOS
+
+- **Initialization is required**: You must call `initialize()` before generating text. This creates a `LanguageModelSession` with your custom instructions.
+- **Session reuse**: The session is cached and reused for subsequent generation calls until you call `initialize()` again with new instructions.
+- **Automatic fallback**: If you don't call `initialize()` explicitly, it will be called automatically with default instructions when you first generate text. However, it's recommended to call it explicitly to set your custom instructions.
+- **Model availability**: The FoundationModels framework is automatically available on devices running iOS 26.0+ or macOS 26.0+.
+
+#### Android
+
+Android support using ML Kit GenAI (Gemini Nano) is currently in development and will be available in a future release.
 
 ## API Reference
 
