@@ -1,3 +1,15 @@
+## 0.0.1-dev.6
+
+* Enhanced documentation
+
+## 0.0.1-dev.5
+
+* Improved Android logic
+
+## 0.0.1-dev.4
+
+* Improved iOS logic
+
 ## 0.0.1-dev.3
 
 * Enhanced documentation

@@ -1,17 +1,16 @@
-## ⚠️ Warning
-### This package is still under active development and is not yet stable.
-
 <div align="center">
   <img src="logo.png" alt="flutter_local_ai logo" width="200">
 </div>
 
 <div align="center">
 
-# flutter_local_ai
+# Flutter Local AI
 
 A Flutter package that provides a unified API for local AI inference on Android with [*ML Kit GenAI*](https://developer.android.com/ai/gemini-nano/ml-kit-genai) and on Apple Platforms using [*Foundation Models*](https://developer.apple.com/documentation/FoundationModels) .
 
 </div>
+
+@image[video.gif]
 
 ## ✨ Unique Advantage
 
@@ -23,16 +22,23 @@ A Flutter package that provides a unified API for local AI inference on Android 
 - **Native Performance**: Direct access to OS-optimized AI capabilities
 - **Smaller App Size**: Models are part of the operating system, not your app bundle
 
-## Features
+## Installation
 
-- 🤖 Local AI inference on both Android and Apple Platforms
-- 📱 Platform-specific optimizations using native OS APIs
-- 🔒 Privacy-first: all processing happens on-device
-- 🚀 Easy-to-use Dart API
-- ⚡ Zero model downloads: uses built-in OS AI capabilities
-- 📦 Smaller app size: no additional model files required
+Add this to your package's `pubspec.yaml` file:
 
-## Getting Started
+```yaml
+dependencies:
+  flutter_local_ai:
+    git:
+      url: https://github.com/kekko7072/flutter_local_ai.git
+```
+
+Or if published to pub.dev:
+
+```yaml
+dependencies:
+  flutter_local_ai: 0.0.1-dev.6
+```
 
 ### Android Setup
 
@@ -74,24 +80,6 @@ pod install
 ```
 
 3. The FoundationModels framework is automatically available on iOS 26.0+ devices. No additional dependencies are required.
-
-## Installation
-
-Add this to your package's `pubspec.yaml` file:
-
-```yaml
-dependencies:
-  flutter_local_ai:
-    git:
-      url: https://github.com/kekko7072/flutter_local_ai.git
-```
-
-Or if published to pub.dev:
-
-```yaml
-dependencies:
-  flutter_local_ai: ^(latest-version)
-```
 
 ## Usage
 
