@@ -1,3 +1,7 @@
+## 0.0.1-dev.7
+* Added support to macOS
+* Migrated to Swift Package Manager
+
 ## 0.0.1-dev.6
 
 * Enhanced documentation

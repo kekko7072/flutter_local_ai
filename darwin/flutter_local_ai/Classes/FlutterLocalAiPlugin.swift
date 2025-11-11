@@ -23,7 +23,11 @@ import FoundationModels
   #endif
   
   public static func register(with registrar: FlutterPluginRegistrar) {
+    #if os(OSX)
+    let channel = FlutterMethodChannel(name: "flutter_local_ai", binaryMessenger: registrar.messenger)
+    #elseif os(iOS)
     let channel = FlutterMethodChannel(name: "flutter_local_ai", binaryMessenger: registrar.messenger())
+    #endif
     let instance = FlutterLocalAiPlugin()
     registrar.addMethodCallDelegate(instance, channel: channel)
   }
