@@ -1,21 +1,15 @@
 PODS:
   - Flutter (1.0.0)
-  - flutter_local_ai (0.0.1-dev.6):
-    - Flutter
 
 DEPENDENCIES:
   - Flutter (from `Flutter`)
-  - flutter_local_ai (from `.symlinks/plugins/flutter_local_ai/ios`)
 
 EXTERNAL SOURCES:
   Flutter:
     :path: Flutter
-  flutter_local_ai:
-    :path: ".symlinks/plugins/flutter_local_ai/ios"
 
 SPEC CHECKSUMS:
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
-  flutter_local_ai: dc8cafb0877e9beebb836c71a4c2b5293bfbf256
 
 PODFILE CHECKSUM: 788e14a13b8b311ed0473775e6b84ce78c29a2ed
 

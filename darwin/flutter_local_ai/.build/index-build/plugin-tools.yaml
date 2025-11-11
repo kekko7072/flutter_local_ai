@@ -1,0 +1,47 @@
+client:
+  name: basic
+  file-system: device-agnostic
+tools: {}
+targets:
+  "PackageStructure": ["<PackageStructure>"]
+  "flutter_local_ai-arm64-apple-macosx26.0-debug.module": ["<flutter_local_ai-arm64-apple-macosx26.0-debug.module>"]
+  "main": ["<flutter_local_ai-arm64-apple-macosx26.0-debug.module>"]
+  "test": ["<flutter_local_ai-arm64-apple-macosx26.0-debug.module>"]
+default: "main"
+nodes:
+  "/Users/francescovezzani/Developer/flutter_local_ai/darwin/flutter_local_ai/Classes/":
+    is-directory-structure: true
+    content-exclusion-patterns: [".git",".build"]
+commands:
+  "/Users/francescovezzani/Developer/flutter_local_ai/darwin/flutter_local_ai/.build/index-build/arm64-apple-macosx/debug/flutter_local_ai.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/Users/francescovezzani/Developer/flutter_local_ai/darwin/flutter_local_ai/Classes/FlutterLocalAiPlugin.swift"]
+    outputs: ["/Users/francescovezzani/Developer/flutter_local_ai/darwin/flutter_local_ai/.build/index-build/arm64-apple-macosx/debug/flutter_local_ai.build/sources"]
+    description: "Write auxiliary file /Users/francescovezzani/Developer/flutter_local_ai/darwin/flutter_local_ai/.build/index-build/arm64-apple-macosx/debug/flutter_local_ai.build/sources"
+
+  "/Users/francescovezzani/Developer/flutter_local_ai/darwin/flutter_local_ai/.build/index-build/arm64-apple-macosx/debug/swift-version-1CE8F7596B9D9E9D.txt":
+    tool: write-auxiliary-file
+    inputs: ["<swift-get-version>","/Applications/Xcode-26.1.0.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"]
+    outputs: ["/Users/francescovezzani/Developer/flutter_local_ai/darwin/flutter_local_ai/.build/index-build/arm64-apple-macosx/debug/swift-version-1CE8F7596B9D9E9D.txt"]
+    always-out-of-date: "true"
+    description: "Write auxiliary file /Users/francescovezzani/Developer/flutter_local_ai/darwin/flutter_local_ai/.build/index-build/arm64-apple-macosx/debug/swift-version-1CE8F7596B9D9E9D.txt"
+
+  "<flutter_local_ai-arm64-apple-macosx26.0-debug.module>":
+    tool: phony
+    inputs: ["/Users/francescovezzani/Developer/flutter_local_ai/darwin/flutter_local_ai/.build/index-build/arm64-apple-macosx/debug/Modules/flutter_local_ai.swiftmodule"]
+    outputs: ["<flutter_local_ai-arm64-apple-macosx26.0-debug.module>"]
+
+  "C.flutter_local_ai-arm64-apple-macosx26.0-debug.module":
+    tool: shell
+    inputs: ["/Users/francescovezzani/Developer/flutter_local_ai/darwin/flutter_local_ai/Classes/FlutterLocalAiPlugin.swift","/Users/francescovezzani/Developer/flutter_local_ai/darwin/flutter_local_ai/.build/index-build/arm64-apple-macosx/debug/swift-version-1CE8F7596B9D9E9D.txt","/Users/francescovezzani/Developer/flutter_local_ai/darwin/flutter_local_ai/.build/index-build/arm64-apple-macosx/debug/flutter_local_ai.build/sources"]
+    outputs: ["/Users/francescovezzani/Developer/flutter_local_ai/darwin/flutter_local_ai/.build/index-build/arm64-apple-macosx/debug/Modules/flutter_local_ai.swiftmodule"]
+    description: "Compiling Swift Module 'flutter_local_ai' (1 sources)"
+    args: ["/Applications/Xcode-26.1.0.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-module-name","flutter_local_ai","-emit-dependencies","-emit-module","-emit-module-path","/Users/francescovezzani/Developer/flutter_local_ai/darwin/flutter_local_ai/.build/index-build/arm64-apple-macosx/debug/Modules/flutter_local_ai.swiftmodule","-output-file-map","/Users/francescovezzani/Developer/flutter_local_ai/darwin/flutter_local_ai/.build/index-build/arm64-apple-macosx/debug/flutter_local_ai.build/output-file-map.json","-parse-as-library","-incremental","@/Users/francescovezzani/Developer/flutter_local_ai/darwin/flutter_local_ai/.build/index-build/arm64-apple-macosx/debug/flutter_local_ai.build/sources","-I","/Users/francescovezzani/Developer/flutter_local_ai/darwin/flutter_local_ai/.build/index-build/arm64-apple-macosx/debug/Modules","-target","arm64-apple-macosx26.0","-incremental","-enable-batch-mode","-serialize-diagnostics","-index-store-path","/Users/francescovezzani/Developer/flutter_local_ai/darwin/flutter_local_ai/.build/index-build/arm64-apple-macosx/debug/index/store","-Onone","-enable-testing","-j10","-DSWIFT_PACKAGE","-DDEBUG","-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE","-module-cache-path","/Users/francescovezzani/Developer/flutter_local_ai/darwin/flutter_local_ai/.build/index-build/arm64-apple-macosx/debug/ModuleCache","-parseable-output","-parse-as-library","-emit-objc-header","-emit-objc-header-path","/Users/francescovezzani/Developer/flutter_local_ai/darwin/flutter_local_ai/.build/index-build/arm64-apple-macosx/debug/flutter_local_ai.build/include/flutter_local_ai-Swift.h","-swift-version","5","-Xfrontend","-experimental-lazy-typecheck","-Xfrontend","-experimental-skip-all-function-bodies","-Xfrontend","-experimental-allow-module-with-compiler-errors","-Xfrontend","-empty-abi-descriptor","-plugin-path","/Applications/Xcode-26.1.0.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing","-sdk","/Applications/Xcode-26.1.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.1.sdk","-F","/Applications/Xcode-26.1.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-F","/Applications/Xcode-26.1.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks","-I","/Applications/Xcode-26.1.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode-26.1.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g","-Xcc","-isysroot","-Xcc","/Applications/Xcode-26.1.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.1.sdk","-Xcc","-F","-Xcc","/Applications/Xcode-26.1.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-Xcc","-F","-Xcc","/Applications/Xcode-26.1.0.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks","-Xcc","-fPIC","-Xcc","-g","-package-name","flutter_local_ai"]
+
+  "PackageStructure":
+    tool: package-structure-tool
+    inputs: ["/Users/francescovezzani/Developer/flutter_local_ai/darwin/flutter_local_ai/Classes/","/Users/francescovezzani/Developer/flutter_local_ai/darwin/flutter_local_ai/Package.swift","/Users/francescovezzani/Developer/flutter_local_ai/darwin/flutter_local_ai/Package.resolved"]
+    outputs: ["<PackageStructure>"]
+    description: "Planning build"
+    allow-missing-inputs: true
+
