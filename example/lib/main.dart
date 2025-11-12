@@ -49,14 +49,34 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Future<void> _checkAvailability() async {
-    final available = await _aiEngine.isAvailable();
-    setState(() {
-      _isAvailable = available;
-    });
+    try {
+      final available = await _aiEngine.isAvailable();
+      setState(() {
+        _isAvailable = available;
+      });
 
-    // Auto-initialize if available
-    if (available && !_isInitialized) {
-      _initialize();
+      // Auto-initialize if available
+      if (available && !_isInitialized) {
+        _initialize();
+      }
+    } catch (e) {
+      setState(() {
+        _isAvailable = false;
+      });
+
+      // Check if it's an AICore error (error code -101)
+      if (e.toString().contains('-101') || e.toString().contains('AICore')) {
+        _showAICoreErrorDialog();
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error checking availability: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
     }
   }
 
@@ -80,49 +100,65 @@ class _MyHomePageState extends State<MyHomePage> {
       });
 
       if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('AI model initialized successfully'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('AI model initialized successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to initialize AI model'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to initialize AI model'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     } catch (e) {
       setState(() {
         _isInitialized = false;
         _isInitializing = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error initializing: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+
+      // Check if it's an AICore error (error code -101)
+      if (e.toString().contains('-101') || e.toString().contains('AICore')) {
+        _showAICoreErrorDialog();
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error initializing: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
     }
   }
 
   Future<void> _generateText() async {
     if (_promptController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a prompt')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please enter a prompt')),
+        );
+      }
       return;
     }
 
     if (!_isInitialized) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please initialize the AI model first'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please initialize the AI model first'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
       return;
     }
 
@@ -146,13 +182,74 @@ class _MyHomePageState extends State<MyHomePage> {
         _response = 'Error: $e';
         _isLoading = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Generation error: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+
+      // Check if it's an AICore error (error code -101)
+      if (e.toString().contains('-101') || e.toString().contains('AICore')) {
+        _showAICoreErrorDialog();
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Generation error: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
     }
+  }
+
+  void _showAICoreErrorDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.warning, color: Colors.orange),
+              SizedBox(width: 8),
+              Text('AICore Required'),
+            ],
+          ),
+          content: const Text(
+            'Google AICore is required for on-device AI but it\'s not installed or the version is too low.\n\n'
+            'AICore is a system-level app that enables local AI features on your device, similar to Google Play Services.\n\n'
+            'Would you like to install it from the Play Store?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton.icon(
+              onPressed: () async {
+                Navigator.of(context).pop();
+                try {
+                  await _aiEngine.openAICorePlayStore();
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Could not open Play Store: $e'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
+              },
+              icon: const Icon(Icons.store),
+              label: const Text('Open Play Store'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override

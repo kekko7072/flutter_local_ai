@@ -14,7 +14,7 @@ A Flutter package that provides a unified API for local AI inference on Android 
   <img src="video.gif" alt="flutter_local_ai video" width="200">
 </div>
 
-<div align="center">
+
 
 ## ✨ Unique Advantage
 
@@ -30,7 +30,7 @@ A Flutter package that provides a unified API for local AI inference on Android 
 
 | Feature            | iOS (26+) | macOS (26+) | Android (API 26+) |
 |--------------------|-----------|-------------|-------------------|
-| Text generation    | ✅        |  ✅          | ✅                |
+| Text generation    | ✅        |  ✅          |👨‍💻 Work in progress |
 | Summarization*     | 🚧 Planned| 🚧 Planned   | 🚧 Planned        |
 | Image generation   | 🚧 Planned| 🚧 Planned   | ❌                |
 | Tool call          | ❌        | ❌           | ❌                |
@@ -52,7 +52,7 @@ Or if published to pub.dev:
 
 ```yaml
 dependencies:
-  flutter_local_ai: 0.0.1-dev.7
+  flutter_local_ai: 0.0.1-dev.8
 ```
 
 ### Android Setup
@@ -88,6 +88,54 @@ dependencies {
 ```
 
 2. Sync your project with Gradle files.
+
+#### Important: Google AICore Requirement
+
+Android's ML Kit GenAI requires **Google AICore** to be installed on the device. AICore is a separate system-level app that provides on-device AI capabilities (similar to Google Play Services).
+
+**Error Code -101**: If you encounter error code -101, it means:
+- AICore is not installed on the device, OR
+- The installed AICore version is too low
+
+**How to Handle AICore Not Installed:**
+
+```dart
+final aiEngine = FlutterLocalAi();
+
+try {
+  final isAvailable = await aiEngine.isAvailable();
+  if (!isAvailable) {
+    print('Local AI is not available on this device');
+    return;
+  }
+} catch (e) {
+  // Check if it's an AICore error (error code -101)
+  if (e.toString().contains('-101') || e.toString().contains('AICore')) {
+    // Show a dialog to the user explaining they need to install AICore
+    // Then open the Play Store for them to install it
+    await aiEngine.openAICorePlayStore();
+  } else {
+    print('Error: $e');
+  }
+}
+```
+
+**Manual Installation Link:**
+Users can manually install AICore from:
+https://play.google.com/store/apps/details?id=com.google.android.aicore
+
+**Note:** AICore is currently in limited availability and may not be available on all devices or in all regions. It's recommended to check device compatibility and provide fallback options in your app.
+
+#### Debugging AICore Issues
+
+If you're getting an AICore error on a device where AICore **IS** installed, the actual problem may be different (model not downloaded, permissions, etc.). The plugin now provides detailed error logging:
+
+**View error details in Android Logcat:**
+```bash
+adb logcat -s FlutterLocalAi:E
+```
+
+The logs will show the actual exception type and error message, helping you identify the real issue. See `DEBUGGING_AICORE.md` for a complete debugging guide.
 
 ### iOS Setup
 

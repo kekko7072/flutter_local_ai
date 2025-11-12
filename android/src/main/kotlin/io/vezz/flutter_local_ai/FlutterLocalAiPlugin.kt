@@ -1,5 +1,8 @@
 package io.vezz.flutter_local_ai
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
 import androidx.annotation.NonNull
 import com.google.mlkit.genai.prompt.GenerativeModel
 import com.google.mlkit.genai.prompt.GenerateContentRequest
@@ -22,8 +25,10 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
   private var generativeModel: GenerativeModel? = null
   private var instructions: String? = null
   private val coroutineScope = CoroutineScope(Dispatchers.Main)
+  private var flutterPluginBinding: FlutterPlugin.FlutterPluginBinding? = null
 
   override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
+    this.flutterPluginBinding = flutterPluginBinding
     channel = MethodChannel(flutterPluginBinding.binaryMessenger, "flutter_local_ai")
     channel.setMethodCallHandler(this)
   }
@@ -69,6 +74,14 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
           }
         }
       }
+      "openAICorePlayStore" -> {
+        try {
+          openAICoreInPlayStore()
+          result.success(true)
+        } catch (e: Exception) {
+          result.error("PLAY_STORE_ERROR", "Could not open Play Store: ${e.message}", null)
+        }
+      }
       else -> {
         result.notImplemented()
       }
@@ -82,17 +95,54 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
       testModel.close()
       true
     } catch (e: Exception) {
+      // Log the actual error for debugging
+      android.util.Log.e("FlutterLocalAi", "checkAvailability error: ${e.javaClass.simpleName} - ${e.message}", e)
+      
+      // More specific AICore error detection
+      // Check for specific error code -101 which indicates AICore issues
+      val errorMessage = e.message ?: ""
+      val errorCode = extractErrorCode(errorMessage)
+      
+      if (errorCode == -101) {
+        // Specifically error code -101 = AICore not installed or too old
+        throw Exception("AICore is not installed or version is too low. Error code: -101. Please install or update Google AICore from the Play Store.")
+      }
+      
+      // For other errors, just return false without throwing
+      // This allows the app to handle other issues gracefully
       false
     }
   }
+  
+  private fun extractErrorCode(message: String): Int? {
+    // Extract error code from messages like "Error code: -101" or "(-101)" or "-101"
+    val regex = Regex("""[(\s](-?\d+)[)\s]""")
+    val match = regex.find(message)
+    return match?.groupValues?.get(1)?.toIntOrNull()
+  }
 
   private suspend fun initializeModel(instructionsArg: String?) = withContext(Dispatchers.IO) {
-    // Store instructions if provided (for consistency with iOS API)
-    instructions = instructionsArg
-    
-    // Initialize model if not already done
-    if (generativeModel == null) {
-      generativeModel = com.google.mlkit.genai.prompt.Generation.getClient()
+    try {
+      // Store instructions if provided (for consistency with iOS API)
+      instructions = instructionsArg
+      
+      // Initialize model if not already done
+      if (generativeModel == null) {
+        generativeModel = com.google.mlkit.genai.prompt.Generation.getClient()
+      }
+    } catch (e: Exception) {
+      // Log the actual error for debugging
+      android.util.Log.e("FlutterLocalAi", "initializeModel error: ${e.javaClass.simpleName} - ${e.message}", e)
+      
+      val errorMessage = e.message ?: ""
+      val errorCode = extractErrorCode(errorMessage)
+      
+      if (errorCode == -101) {
+        throw Exception("AICore is not installed or version is too low (Error -101). Please install or update Google AICore from the Play Store: https://play.google.com/store/apps/details?id=com.google.android.aicore")
+      }
+      
+      // Re-throw the original exception for other errors
+      throw Exception("Failed to initialize model: ${e.message}")
     }
   }
 
@@ -144,7 +194,40 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
         "tokenCount" to (tokenCount ?: generatedText.split(" ").size) // Fallback to word count if token count unavailable
       )
     } catch (e: Exception) {
-      throw Exception("Failed to generate text: ${e.message}")
+      // Log the actual error for debugging
+      android.util.Log.e("FlutterLocalAi", "generateText error: ${e.javaClass.simpleName} - ${e.message}", e)
+      
+      val errorMessage = e.message ?: ""
+      val errorCode = extractErrorCode(errorMessage)
+      
+      if (errorCode == -101) {
+        throw Exception("AICore is not installed or version is too low (Error -101). Please install or update Google AICore from the Play Store: https://play.google.com/store/apps/details?id=com.google.android.aicore")
+      }
+      
+      // For other errors, provide the actual error message
+      throw Exception("Error generating text: ${e.message}")
+    }
+  }
+
+  private fun openAICoreInPlayStore() {
+    val context = flutterPluginBinding?.applicationContext 
+      ?: throw Exception("Application context not available")
+    
+    val packageName = "com.google.android.aicore"
+    try {
+      // Try to open in Play Store app
+      val intent = Intent(Intent.ACTION_VIEW).apply {
+        data = Uri.parse("market://details?id=$packageName")
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      }
+      context.startActivity(intent)
+    } catch (e: ActivityNotFoundException) {
+      // If Play Store app not available, open in browser
+      val intent = Intent(Intent.ACTION_VIEW).apply {
+        data = Uri.parse("https://play.google.com/store/apps/details?id=$packageName")
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      }
+      context.startActivity(intent)
     }
   }
 
@@ -153,5 +236,6 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
     generativeModel?.close()
     generativeModel = null
     instructions = null
+    flutterPluginBinding = null
   }
 }

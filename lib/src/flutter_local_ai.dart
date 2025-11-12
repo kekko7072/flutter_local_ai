@@ -82,4 +82,23 @@ class FlutterLocalAi {
     );
     return response.text;
   }
+
+  /// Open Google AICore in the Play Store (Android only)
+  ///
+  /// This is useful when the user gets an error that AICore is not installed
+  /// or the version is too low (error code -101).
+  ///
+  /// Returns true if the Play Store was opened successfully
+  Future<bool> openAICorePlayStore() async {
+    try {
+      final result = await _channel.invokeMethod<bool>('openAICorePlayStore');
+      return result ?? false;
+    } on PlatformException catch (e) {
+      // If platform doesn't support this (e.g., iOS), fail silently
+      if (e.code == 'unimplemented') {
+        return false;
+      }
+      throw Exception('Failed to open Play Store: ${e.message}');
+    }
+  }
 }
