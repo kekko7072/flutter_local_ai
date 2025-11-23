@@ -1,4 +1,6 @@
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_local_ai/flutter_local_ai.dart';
 
 void main() {
@@ -37,6 +39,7 @@ class _MyHomePageState extends State<MyHomePage> {
     text: 'You are a helpful assistant. Provide concise answers.',
   );
   String _response = '';
+  String _errorMessage = '';
   bool _isLoading = false;
   bool _isAvailable = false;
   bool _isInitialized = false;
@@ -53,6 +56,7 @@ class _MyHomePageState extends State<MyHomePage> {
       final available = await _aiEngine.isAvailable();
       setState(() {
         _isAvailable = available;
+        _errorMessage = ''; // Clear error on success
       });
 
       // Auto-initialize if available
@@ -60,13 +64,20 @@ class _MyHomePageState extends State<MyHomePage> {
         _initialize();
       }
     } catch (e) {
+      final errorStr = e.toString();
       setState(() {
         _isAvailable = false;
+        _errorMessage = errorStr;
       });
 
-      // Check if it's an AICore error (error code -101)
-      if (e.toString().contains('-101') || e.toString().contains('AICore')) {
+      // Check if it's an AICore error (error code -101) - Android only
+      if (errorStr.contains('-101') || errorStr.contains('AICore')) {
         _showAICoreErrorDialog();
+      } else if (errorStr.contains('Windows AI') || errorStr.contains('cppwinrt')) {
+        // Windows AI headers not available
+        if (mounted) {
+          _showWindowsAIErrorDialog();
+        }
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -124,9 +135,14 @@ class _MyHomePageState extends State<MyHomePage> {
         _isInitializing = false;
       });
 
-      // Check if it's an AICore error (error code -101)
+      // Check if it's an AICore error (error code -101) - Android only
       if (e.toString().contains('-101') || e.toString().contains('AICore')) {
         _showAICoreErrorDialog();
+      } else if (e.toString().contains('Windows AI') || e.toString().contains('cppwinrt')) {
+        // Windows AI headers not available
+        if (mounted) {
+          _showWindowsAIErrorDialog();
+        }
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -183,9 +199,14 @@ class _MyHomePageState extends State<MyHomePage> {
         _isLoading = false;
       });
 
-      // Check if it's an AICore error (error code -101)
+      // Check if it's an AICore error (error code -101) - Android only
       if (e.toString().contains('-101') || e.toString().contains('AICore')) {
         _showAICoreErrorDialog();
+      } else if (e.toString().contains('Windows AI') || e.toString().contains('cppwinrt')) {
+        // Windows AI headers not available
+        if (mounted) {
+          _showWindowsAIErrorDialog();
+        }
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -252,6 +273,39 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
+  void _showWindowsAIErrorDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.info, color: Colors.blue),
+              SizedBox(width: 8),
+              Text('Windows AI Setup Required'),
+            ],
+          ),
+          content: const Text(
+            'Windows AI headers are not available. To enable Windows AI support:\n\n'
+            '1. Install the Windows AI SDK or obtain Microsoft.Windows.AI.winmd\n'
+            '2. Generate C++/WinRT headers using cppwinrt.exe\n'
+            '3. Add the generated headers path to CMakeLists.txt\n'
+            '4. Uncomment the Windows AI include in flutter_local_ai_plugin.cpp\n\n'
+            'See the README for detailed instructions.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   void dispose() {
     _promptController.dispose();
@@ -285,11 +339,33 @@ class _MyHomePageState extends State<MyHomePage> {
                           color: _isAvailable ? Colors.green : Colors.red,
                         ),
                         const SizedBox(width: 8),
-                        Text(
-                          _isAvailable
-                              ? 'Local AI is available'
-                              : 'Local AI is not available',
-                          style: Theme.of(context).textTheme.titleMedium,
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _isAvailable
+                                    ? 'Local AI is available'
+                                    : 'Local AI is not available',
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                              if (!kIsWeb)
+                                Text(
+                                  Platform.isWindows
+                                      ? 'Windows'
+                                      : Platform.isAndroid
+                                          ? 'Android'
+                                          : Platform.isIOS
+                                              ? 'iOS'
+                                              : Platform.isMacOS
+                                                  ? 'macOS'
+                                                  : 'Unknown',
+                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
@@ -313,6 +389,16 @@ class _MyHomePageState extends State<MyHomePage> {
                             style: Theme.of(context).textTheme.bodyMedium,
                           ),
                         ],
+                      ),
+                    ] else if (_errorMessage.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        _errorMessage.contains('Windows AI') || _errorMessage.contains('cppwinrt')
+                            ? 'Windows AI headers not configured'
+                            : 'Error: ${_errorMessage.length > 100 ? _errorMessage.substring(0, 100) + "..." : _errorMessage}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.orange,
+                        ),
                       ),
                     ],
                   ],

@@ -654,14 +654,32 @@ The Windows implementation uses Windows AI APIs (Windows AI Foundry) for local A
 - Plugin structure is in place and ready for full Windows AI API integration
 
 **Windows Status:**
-Windows AI API integration is currently in progress. The plugin provides:
-- Platform availability checking (Windows 11 22H2+)
+Windows AI API integration is implemented and ready to use. The plugin provides:
+- Platform availability checking (Windows 11 24H2+)
 - Method channel implementation matching other platforms
+- Full Windows AI API integration using `Microsoft.Windows.AI.LanguageModel`
 - Error handling and initialization flow
-- Placeholder for Windows AI Foundry API integration
 
 **Windows Configuration:**
 The plugin automatically registers via Flutter's plugin registration system. The Windows plugin is built using CMake and integrated into the Flutter Windows build process.
+
+**Enabling Windows AI Support:**
+The Windows AI headers need to be available for the plugin to use Windows AI APIs. By default, the plugin compiles without Windows AI headers and will return appropriate error messages.
+
+To enable Windows AI support:
+1. Install the Windows AI SDK or obtain the `Microsoft.Windows.AI.winmd` metadata file
+2. Generate C++/WinRT headers using `cppwinrt.exe`:
+   ```bash
+   cppwinrt.exe -input "path/to/Microsoft.Windows.AI.winmd" -output "generated"
+   ```
+3. Add the generated headers path to your include directories in `windows/CMakeLists.txt`
+4. In `windows/flutter_local_ai_plugin.cpp`, uncomment the line:
+   ```cpp
+   #include <winrt/Microsoft.Windows.AI.h>
+   ```
+5. Set `WINDOWS_AI_AVAILABLE` to `1` or define it in CMakeLists.txt
+
+Alternatively, if using Visual Studio, you can add the Windows AI NuGet package to your project, which will provide the headers automatically.
 
 ## Contributing
 

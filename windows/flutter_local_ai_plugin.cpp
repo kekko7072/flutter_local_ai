@@ -6,8 +6,21 @@
 #include <windows.h>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
-#include <winrt/Microsoft.Windows.AI.h>
 #include <winrt/base.h>
+
+// Windows AI headers - Uncomment the line below when Windows AI SDK is available
+// The Windows AI headers need to be generated using cppwinrt.exe or installed via NuGet package
+// To generate headers: cppwinrt.exe -input "path/to/Microsoft.Windows.AI.winmd" -output "generated"
+// Then add the generated headers path to CMakeLists.txt include directories
+// 
+// Uncomment this line when Windows AI headers are available:
+// #include <winrt/Microsoft.Windows.AI.h>
+
+// Define WINDOWS_AI_AVAILABLE based on whether headers are included
+// Set to 1 if you've uncommented the include above, 0 otherwise
+#ifndef WINDOWS_AI_AVAILABLE
+  #define WINDOWS_AI_AVAILABLE 0
+#endif
 #include <memory>
 #include <sstream>
 #include <string>
@@ -21,10 +34,13 @@ namespace {
 using flutter::EncodableMap;
 using flutter::EncodableValue;
 using winrt::Windows::Foundation::IAsyncOperation;
+
+#if WINDOWS_AI_AVAILABLE
 using winrt::Microsoft::Windows::AI::LanguageModel;
 using winrt::Microsoft::Windows::AI::LanguageModelOptions;
 using winrt::Microsoft::Windows::AI::LanguageModelSkill;
 using winrt::Microsoft::Windows::AI::LanguageModelResult;
+#endif
 
 class FlutterLocalAiPlugin : public flutter::Plugin {
  public:
@@ -46,12 +62,16 @@ class FlutterLocalAiPlugin : public flutter::Plugin {
 
   // Helper methods
   bool CheckWindowsAIAvailability();
+#if WINDOWS_AI_AVAILABLE
   winrt::Windows::Foundation::IAsyncAction InitializeLanguageModelAsync();
+#endif
 
   // State
   std::string instructions_;
   bool is_initialized_;
+#if WINDOWS_AI_AVAILABLE
   LanguageModel language_model_{ nullptr };
+#endif
   std::mutex model_mutex_;
 };
 
@@ -133,6 +153,7 @@ void FlutterLocalAiPlugin::IsAvailable(
 void FlutterLocalAiPlugin::Initialize(
     const flutter::EncodableMap& args,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+#if WINDOWS_AI_AVAILABLE
   try {
     // Get instructions if provided
     auto instructions_it = args.find(EncodableValue("instructions"));
@@ -162,8 +183,15 @@ void FlutterLocalAiPlugin::Initialize(
   } catch (...) {
     result->Error("INITIALIZATION_ERROR", "Unknown error during initialization.");
   }
+#else
+  result->Error("INITIALIZATION_ERROR", 
+    "Windows AI headers are not available. "
+    "Please install the Windows AI SDK or generate WinRT headers using cppwinrt.exe. "
+    "See README for instructions.");
+#endif
 }
 
+#if WINDOWS_AI_AVAILABLE
 winrt::Windows::Foundation::IAsyncAction FlutterLocalAiPlugin::InitializeLanguageModelAsync() {
   try {
     // Create LanguageModel using CreateAsync
@@ -173,10 +201,12 @@ winrt::Windows::Foundation::IAsyncAction FlutterLocalAiPlugin::InitializeLanguag
     throw;
   }
 }
+#endif
 
 void FlutterLocalAiPlugin::GenerateText(
     const flutter::EncodableMap& args,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+#if WINDOWS_AI_AVAILABLE
   try {
     std::lock_guard<std::mutex> lock(model_mutex_);
     
@@ -247,9 +277,15 @@ void FlutterLocalAiPlugin::GenerateText(
   } catch (...) {
     result->Error("GENERATION_ERROR", "Unknown error during text generation.");
   }
+#else
+  result->Error("GENERATION_ERROR", 
+    "Windows AI APIs are not available. "
+    "Please install the Windows AI SDK or generate WinRT headers using cppwinrt.exe.");
+#endif
 }
 
 bool FlutterLocalAiPlugin::CheckWindowsAIAvailability() {
+#if WINDOWS_AI_AVAILABLE
   try {
     // First check OS version - Windows AI requires Windows 11 24H2 or later
     OSVERSIONINFOEXW osvi = {};
@@ -274,6 +310,10 @@ bool FlutterLocalAiPlugin::CheckWindowsAIAvailability() {
   } catch (...) {
     return false;
   }
+#else
+  // Windows AI headers not available
+  return false;
+#endif
 }
 
 }  // namespace

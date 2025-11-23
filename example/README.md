@@ -30,9 +30,10 @@ This example app supports:
 
 #### Windows
 - Visual Studio 2022 with C++ development tools
-- Windows 11 SDK (10.0.22621.0 or later)
+- Windows 11 SDK (10.0.26100.0 or later for Windows AI)
 - CMake 3.14 or later
-- Windows 11 22H2 (build 22621) or later
+- Windows 11 24H2 (build 26100) or later for Windows AI APIs
+- **Note**: Windows AI headers need to be configured (see main README for instructions)
 
 ### Running the Example
 
@@ -68,4 +69,9 @@ This example app supports:
 
 - On Android, if AICore is not installed, the app will show a dialog to open the Play Store
 - On iOS/macOS, initialization is required before generating text
-- On Windows, the AI API integration is in progress - the structure is ready for full implementation
+- On Windows, the app will compile and run, but Windows AI features require:
+  - Windows AI SDK or `Microsoft.Windows.AI.winmd` file
+  - Generated C++/WinRT headers (using `cppwinrt.exe`)
+  - Headers configured in the plugin's CMakeLists.txt
+  - See the main README for detailed setup instructions
+- The app will show helpful error messages if Windows AI headers are not configured
