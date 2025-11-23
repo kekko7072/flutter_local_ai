@@ -6,7 +6,7 @@
 
 # Flutter Local AI
 
-A Flutter package that provides a unified API for local AI inference on Android with [*ML Kit GenAI*](https://developer.android.com/ai/gemini-nano/ml-kit-genai) and on Apple Platforms using [*Foundation Models*](https://developer.apple.com/documentation/FoundationModels) .
+A Flutter package that provides a unified API for local AI inference on Android with [*ML Kit GenAI*](https://developer.android.com/ai/gemini-nano/ml-kit-genai), on Apple Platforms using [*Foundation Models*](https://developer.apple.com/documentation/FoundationModels), and on Windows using [*Windows AI APIs*](https://learn.microsoft.com/en-us/windows/ai/) (Windows AI Foundry).
 
 </div>
 
@@ -22,18 +22,19 @@ A Flutter package that provides a unified API for local AI inference on Android 
 
 - **iOS**: Uses Apple's built-in FoundationModels framework (iOS 26.0+) - no model downloads required
 - **Android**: Uses Google's ML Kit GenAI (Gemini Nano) - leverages the native on-device model
+- **Windows**: Uses Windows AI APIs (Windows AI Foundry) - Windows 11 22H2 (build 22621) or later
 - **Zero Model Downloads**: No need to bundle large model files with your app
 - **Native Performance**: Direct access to OS-optimized AI capabilities
 - **Smaller App Size**: Models are part of the operating system, not your app bundle
 
 ## Platform Support
 
-| Feature            | iOS / macOS (26+) | Android (API 26+) |
-|--------------------|-------------------|-------------------|
-| Text generation    | ✅                | ✅                 |
-| Summarization*     | 🚧 Planned        | 🚧 Planned         |
-| Image generation   | 🚧 Planned        | ❌                 |
-| Tool call          | ❌                | ❌                 |
+| Feature            | iOS / macOS (26+) | Android (API 26+) | Windows (11 22H2+) |
+|--------------------|-------------------|-------------------|-------------------|
+| Text generation    | ✅                | ✅                 | 🚧 In Progress     |
+| Summarization*     | 🚧 Planned        | 🚧 Planned         | 🚧 Planned         |
+| Image generation   | 🚧 Planned        | ❌                 | 🚧 Planned         |
+| Tool call          | ❌                | ❌                 | ❌                 |
 
 *Summarization is achieved through text-generation prompts and shares the same API surface.
 
@@ -52,7 +53,7 @@ Or if published to pub.dev:
 
 ```yaml
 dependencies:
-  flutter_local_ai: 0.0.1-dev.8
+  flutter_local_ai: 0.0.2
 ```
 
 ### Android Setup
@@ -285,9 +286,38 @@ flutter clean
 flutter build macos
 ```
 
+### Windows Setup
+
+Requires Windows 11 22H2 (build 22621) or later.
+
+The plugin uses Windows AI APIs (Windows AI Foundry) for local AI inference. Windows AI APIs are built into Windows 11 22H2 and later versions.
+
+#### Configuration Steps:
+
+1. **Verify Windows Version**: Ensure you're running Windows 11 22H2 (build 22621) or later:
+   - Open Settings → System → About
+   - Check the Windows version and build number
+
+2. **Enable Windows AI Features**: Windows AI APIs should be available by default on supported Windows versions. If you encounter issues:
+   - Ensure Windows is up to date
+   - Check Windows Update for the latest features
+
+3. **Build Your Flutter App**: The plugin will automatically be included when you build for Windows:
+   ```bash
+   flutter pub get
+   flutter build windows
+   ```
+
+4. **Development Requirements**:
+   - Visual Studio 2022 with C++ development tools
+   - Windows 11 SDK (10.0.22621.0 or later)
+   - CMake 3.14 or later
+
+**Note**: Windows AI API integration is currently in progress. The plugin structure is in place and will be fully implemented as Windows AI Foundry APIs become available and documented.
+
 ## Usage
 
-> **Note:** Text generation is available on iOS 26.0+, macOS 26.0+, and Android API 26+ (requires Google AICore to be installed).
+> **Note:** Text generation is available on iOS 26.0+, macOS 26.0+, Android API 26+ (requires Google AICore to be installed), and Windows 11 22H2+ (Windows AI APIs integration in progress).
 
 ### Basic Usage
 
@@ -303,6 +333,7 @@ if (!isAvailable) {
   print('Local AI is not available on this device');
   print('iOS/macOS: Requires iOS 26.0+ or macOS 26.0+');
   print('Android: Requires API 26+ and Google AICore installed');
+  print('Windows: Requires Windows 11 22H2 (build 22621) or later');
   return;
 }
 
@@ -484,6 +515,14 @@ class _LocalAiExampleState extends State<LocalAiExample> {
 - **Initialization**: `initialize()` is optional on Android but recommended for consistency
 - **Model Access**: Uses Gemini Nano via ML Kit GenAI - no model downloads required
 
+#### Windows
+
+- **Windows Version Required**: Windows 11 22H2 (build 22621) or later is required
+- **Windows AI APIs**: Uses Windows AI Foundry APIs for local AI inference
+- **Availability Check**: Always call `isAvailable()` before using AI features
+- **Initialization**: `initialize()` is required before generating text
+- **Status**: Windows AI API integration is currently in progress. The plugin structure is in place and ready for full implementation as Windows AI Foundry APIs become available
+
 **Example with AICore Error Handling:**
 ```dart
 final aiEngine = FlutterLocalAi();
@@ -598,6 +637,31 @@ await aiEngine.initialize(
   instructions: 'Your custom instructions here',
 );
 ```
+
+### Windows
+The Windows implementation uses Windows AI APIs (Windows AI Foundry) for local AI inference.
+
+**Key Windows Requirements:**
+- Windows 11 22H2 (build 22621) or later
+- Visual Studio 2022 with C++ development tools
+- Windows 11 SDK (10.0.22621.0 or later)
+- CMake 3.14 or later
+
+**Windows Implementation Details:**
+- Uses C++/WinRT for Windows Runtime API access
+- Implements Flutter method channel for cross-platform communication
+- Checks Windows version to determine AI API availability
+- Plugin structure is in place and ready for full Windows AI API integration
+
+**Windows Status:**
+Windows AI API integration is currently in progress. The plugin provides:
+- Platform availability checking (Windows 11 22H2+)
+- Method channel implementation matching other platforms
+- Error handling and initialization flow
+- Placeholder for Windows AI Foundry API integration
+
+**Windows Configuration:**
+The plugin automatically registers via Flutter's plugin registration system. The Windows plugin is built using CMake and integrated into the Flutter Windows build process.
 
 ## Contributing
 

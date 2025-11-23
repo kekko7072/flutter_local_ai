@@ -1,3 +1,23 @@
+## 0.0.2
+
+### Windows - Initial Support
+* ✅ **Added Windows platform support** - Initial implementation structure for Windows AI APIs (Windows AI Foundry)
+* ✅ **Windows plugin structure** - Created C++/WinRT plugin implementation with method channel handlers
+* ✅ **Windows version checking** - Added availability check for Windows 11 22H2 (build 22621) or later
+* ✅ **CMake build configuration** - Added Windows CMakeLists.txt for plugin compilation
+* ✅ **Example app Windows support** - Added Windows platform to example app
+* ✅ **Documentation updates** - Added Windows setup instructions and platform-specific notes to README
+
+### Improvements
+* Updated package description to include Windows AI APIs
+* Added Windows to platform support table
+* Comprehensive Windows implementation documentation
+
+### Status
+* Windows AI API integration structure is in place and ready for full implementation
+* Plugin provides availability checking, initialization flow, and error handling
+* Ready for Windows AI Foundry API integration when APIs become available
+
 ## 0.0.1-dev.9
 
 ### Android - Complete Implementation
