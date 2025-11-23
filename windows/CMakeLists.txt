@@ -11,7 +11,8 @@ add_library(${PLUGIN_NAME} SHARED
 )
 
 # Apply a standard Windows set of build settings
-target_compile_features(${PLUGIN_NAME} PUBLIC cxx_std_17)
+# C++20 is required for coroutine support (co_await)
+target_compile_features(${PLUGIN_NAME} PUBLIC cxx_std_20)
 
 # Link against Flutter Windows embedding
 target_link_libraries(${PLUGIN_NAME} PRIVATE flutter flutter_wrapper_plugin)

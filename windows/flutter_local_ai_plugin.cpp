@@ -5,17 +5,26 @@
 #include <flutter/standard_method_codec.h>
 #include <windows.h>
 #include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.Foundation.Collections.h>
+#include <winrt/Microsoft.Windows.AI.h>
+#include <winrt/base.h>
 #include <memory>
 #include <sstream>
 #include <string>
 #include <map>
 #include <chrono>
+#include <future>
+#include <mutex>
 
 namespace {
 
 using flutter::EncodableMap;
 using flutter::EncodableValue;
 using winrt::Windows::Foundation::IAsyncOperation;
+using winrt::Microsoft::Windows::AI::LanguageModel;
+using winrt::Microsoft::Windows::AI::LanguageModelOptions;
+using winrt::Microsoft::Windows::AI::LanguageModelSkill;
+using winrt::Microsoft::Windows::AI::LanguageModelResult;
 
 class FlutterLocalAiPlugin : public flutter::Plugin {
  public:
@@ -37,10 +46,13 @@ class FlutterLocalAiPlugin : public flutter::Plugin {
 
   // Helper methods
   bool CheckWindowsAIAvailability();
+  winrt::Windows::Foundation::IAsyncAction InitializeLanguageModelAsync();
 
   // State
   std::string instructions_;
   bool is_initialized_;
+  LanguageModel language_model_{ nullptr };
+  std::mutex model_mutex_;
 };
 
 // static
@@ -98,10 +110,23 @@ void FlutterLocalAiPlugin::HandleMethodCall(
 void FlutterLocalAiPlugin::IsAvailable(
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
   try {
-    bool available = CheckWindowsAIAvailability();
+    // Try to create a LanguageModel to check if Windows AI is available
+    auto check_available = [this]() -> bool {
+      try {
+        // Try to create a LanguageModel synchronously (this will fail if not available)
+        // We'll use a simpler check - try to access the API
+        return CheckWindowsAIAvailability();
+      } catch (...) {
+        return false;
+      }
+    };
+    
+    bool available = check_available();
     result->Success(flutter::EncodableValue(available));
   } catch (const std::exception& e) {
     result->Error("UNAVAILABLE", std::string("Error checking availability: ") + e.what());
+  } catch (...) {
+    result->Error("UNAVAILABLE", "Windows AI is not available on this system.");
   }
 }
 
@@ -118,18 +143,34 @@ void FlutterLocalAiPlugin::Initialize(
       }
     }
     
-    // Note: Windows AI APIs for text generation may require different initialization
-    // This is a placeholder implementation that checks availability
-    // Actual implementation would depend on the specific Windows AI API being used
+    // Create LanguageModel asynchronously
+    InitializeLanguageModelAsync().get();
     
-    if (CheckWindowsAIAvailability()) {
+    std::lock_guard<std::mutex> lock(model_mutex_);
+    if (language_model_ != nullptr) {
       is_initialized_ = true;
       result->Success(flutter::EncodableValue(true));
     } else {
-      result->Error("INITIALIZATION_ERROR", "Windows AI is not available on this system. Requires Windows 11 22H2 (build 22621) or later.");
+      result->Error("INITIALIZATION_ERROR", "Failed to create LanguageModel. Windows AI may not be available on this system.");
     }
+  } catch (const winrt::hresult_error& e) {
+    std::string error_msg = "Error initializing Windows AI: ";
+    error_msg += winrt::to_string(e.message());
+    result->Error("INITIALIZATION_ERROR", error_msg);
   } catch (const std::exception& e) {
     result->Error("INITIALIZATION_ERROR", std::string("Error initializing: ") + e.what());
+  } catch (...) {
+    result->Error("INITIALIZATION_ERROR", "Unknown error during initialization.");
+  }
+}
+
+winrt::Windows::Foundation::IAsyncAction FlutterLocalAiPlugin::InitializeLanguageModelAsync() {
+  try {
+    // Create LanguageModel using CreateAsync
+    language_model_ = co_await LanguageModel::CreateAsync();
+  } catch (...) {
+    language_model_ = nullptr;
+    throw;
   }
 }
 
@@ -137,7 +178,9 @@ void FlutterLocalAiPlugin::GenerateText(
     const flutter::EncodableMap& args,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
   try {
-    if (!is_initialized_) {
+    std::lock_guard<std::mutex> lock(model_mutex_);
+    
+    if (!is_initialized_ || language_model_ == nullptr) {
       result->Error("NOT_INITIALIZED", "AI engine not initialized. Call initialize() first.");
       return;
     }
@@ -155,85 +198,75 @@ void FlutterLocalAiPlugin::GenerateText(
     }
     std::string prompt = *prompt_ptr;
     
-    // Get config
-    int maxTokens = 100;
-    double temperature = 0.7;
-    
-    auto config_it = args.find(EncodableValue("config"));
-    if (config_it != args.end()) {
-      const auto* config_ptr = std::get_if<EncodableMap>(&config_it->second);
-      if (config_ptr) {
-        auto max_tokens_it = config_ptr->find(EncodableValue("maxTokens"));
-        if (max_tokens_it != config_ptr->end()) {
-          const auto* max_tokens_ptr = std::get_if<int>(&max_tokens_it->second);
-          if (max_tokens_ptr) {
-            maxTokens = *max_tokens_ptr;
-          }
-        }
-        
-        auto temp_it = config_ptr->find(EncodableValue("temperature"));
-        if (temp_it != config_ptr->end()) {
-          const auto* temp_ptr = std::get_if<double>(&temp_it->second);
-          if (temp_ptr) {
-            temperature = *temp_ptr;
-          }
-        }
-      }
+    // Build full prompt with instructions if provided
+    std::string fullPrompt = prompt;
+    if (!instructions_.empty()) {
+      fullPrompt = instructions_ + "\n\n" + prompt;
     }
     
-    // Build full prompt with instructions
-    std::string fullPrompt = instructions_ + "\n\n" + prompt;
+    // Convert std::string to winrt::hstring
+    winrt::hstring prompt_hstring = winrt::to_hstring(fullPrompt);
     
-    // Note: This is a placeholder implementation
-    // Windows AI APIs for text generation would need to be implemented here
-    // The actual API depends on which Windows AI service is being used
-    // Windows AI Foundry / Windows Copilot Runtime APIs would be called here
-    
-    // For now, return a placeholder response indicating Windows AI is not fully implemented
-    // In a real implementation, this would call the Windows AI API (e.g., Windows Copilot Runtime)
+    // Create LanguageModelOptions
+    LanguageModelOptions options;
+    // Note: LanguageModelSkill enum values may vary - using a default skill
+    // For general text generation, we might not need a specific skill
+    // If the API requires it, we can set it based on the use case
     
     auto startTime = std::chrono::high_resolution_clock::now();
     
-    // TODO: Implement actual Windows AI API call here
-    // This would use Windows Copilot Runtime or Windows AI Foundry APIs
-    // Example (pseudo-code):
-    // auto aiService = Windows::AI::TextGeneration::GetDefault();
-    // auto result = await aiService.GenerateTextAsync(fullPrompt, maxTokens, temperature);
+    // Generate response using Windows AI LanguageModel
+    // Note: We need to call the async method and wait for it synchronously
+    // This is acceptable for Flutter method channels which expect synchronous responses
+    LanguageModelResult model_result = language_model_.GenerateResponseAsync(options, prompt_hstring).get();
     
     auto endTime = std::chrono::high_resolution_clock::now();
     auto generationTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
     
+    // Extract the generated text from the result
+    winrt::hstring generated_text = model_result.Text();
+    std::string result_text = winrt::to_string(generated_text);
+    
+    // Estimate token count (rough approximation)
+    // Windows AI API might provide this, but if not, we estimate
+    int token_count = static_cast<int>(result_text.length() / 4); // Rough estimate
+    
     EncodableMap response;
-    response[EncodableValue("text")] = EncodableValue(
-        "Windows AI API integration is in progress. "
-        "Windows AI Foundry APIs for text generation are being integrated. "
-        "Please check the Windows AI documentation for the latest APIs.");
-    response[EncodableValue("tokenCount")] = EncodableValue(0);
+    response[EncodableValue("text")] = EncodableValue(result_text);
+    response[EncodableValue("tokenCount")] = EncodableValue(token_count);
     response[EncodableValue("generationTimeMs")] = EncodableValue(static_cast<int>(generationTime));
     
     result->Success(flutter::EncodableValue(response));
     
+  } catch (const winrt::hresult_error& e) {
+    std::string error_msg = "Windows AI error: ";
+    error_msg += winrt::to_string(e.message());
+    result->Error("GENERATION_ERROR", error_msg);
   } catch (const std::exception& e) {
     result->Error("GENERATION_ERROR", std::string("Error generating text: ") + e.what());
+  } catch (...) {
+    result->Error("GENERATION_ERROR", "Unknown error during text generation.");
   }
 }
 
 bool FlutterLocalAiPlugin::CheckWindowsAIAvailability() {
   try {
-    // Check if Windows AI APIs are available
-    // This is a basic check - actual implementation would depend on the specific API
-    
-    // For Windows 11 22H2 and later, Windows AI APIs should be available
-    // We can check the OS version or try to load the Windows AI libraries
-    
+    // First check OS version - Windows AI requires Windows 11 24H2 or later
     OSVERSIONINFOEXW osvi = {};
     osvi.dwOSVersionInfoSize = sizeof(osvi);
     
     if (GetVersionExW(reinterpret_cast<OSVERSIONINFO*>(&osvi))) {
-      // Windows 11 is version 10.0 with build 22000 or higher
-      // Windows AI APIs are available on Windows 11 22H2 (build 22621) and later
-      if (osvi.dwMajorVersion >= 10 && osvi.dwBuildNumber >= 22621) {
-        return true;
+      // Windows AI APIs are available on Windows 11 24H2 (build 26100) and later
+      // Some features may be available on earlier builds, but 24H2 is the recommended minimum
+      if (osvi.dwMajorVersion >= 10 && osvi.dwBuildNumber >= 26100) {
+        // Try to create a LanguageModel to verify the API is actually available
+        try {
+          LanguageModel test_model = LanguageModel::CreateAsync().get();
+          return test_model != nullptr;
+        } catch (...) {
+          // API might not be available even on supported OS versions
+          return false;
+        }
       }
     }
     
