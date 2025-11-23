@@ -28,12 +28,12 @@ A Flutter package that provides a unified API for local AI inference on Android 
 
 ## Platform Support
 
-| Feature            | iOS (26+) | macOS (26+) | Android (API 26+) |
-|--------------------|-----------|-------------|-------------------|
-| Text generation    | ✅        |  ✅          |👨‍💻 Work in progress |
-| Summarization*     | 🚧 Planned| 🚧 Planned   | 🚧 Planned        |
-| Image generation   | 🚧 Planned| 🚧 Planned   | ❌                |
-| Tool call          | ❌        | ❌           | ❌                |
+| Feature            | iOS / macOS (26+) | Android (API 26+) |
+|--------------------|-------------------|-------------------|
+| Text generation    | ✅                | ✅                 |
+| Summarization*     | 🚧 Planned        | 🚧 Planned         |
+| Image generation   | 🚧 Planned        | ❌                 |
+| Tool call          | ❌                | ❌                 |
 
 *Summarization is achieved through text-generation prompts and shares the same API surface.
 
@@ -59,45 +59,104 @@ dependencies:
 
 Requires Android API level 26 (Android 8.0 Oreo) or higher.
 
-1. Set the minimum SDK version in your `android/app/build.gradle` or `android/app/build.gradle.kts`:
+#### Step 1: Configure Minimum SDK Version
 
-For `build.gradle.kts` (Kotlin DSL):
+Set the minimum SDK version in your `android/app/build.gradle` or `android/app/build.gradle.kts`:
+
+**For `build.gradle.kts` (Kotlin DSL):**
 ```kotlin
 android {
     defaultConfig {
-        minSdk = 26
+        minSdk = 26 // Required for ML Kit GenAI
+    }
+    
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
+    }
+    
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_11.toString()
     }
 }
 
 dependencies {
     implementation("com.google.mlkit:genai-prompt:1.0.0-alpha1")
+    implementation("com.google.android.gms:play-services-tasks:18.0.2")
 }
 ```
 
-For `build.gradle` (Groovy DSL):
+**For `build.gradle` (Groovy DSL):**
 ```groovy
 android {
     defaultConfig {
-        minSdkVersion 26
+        minSdkVersion 26 // Required for ML Kit GenAI
+    }
+    
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+    
+    kotlinOptions {
+        jvmTarget = '11'
     }
 }
 
 dependencies {
     implementation 'com.google.mlkit:genai-prompt:1.0.0-alpha1'
+    implementation 'com.google.android.gms:play-services-tasks:18.0.2'
 }
 ```
 
-2. Sync your project with Gradle files.
+#### Step 2: Add AICore Library Declaration
 
-#### Important: Google AICore Requirement
+Add the AICore library declaration to your `android/app/src/main/AndroidManifest.xml`:
+
+```xml
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application
+        android:label="your_app_name"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher">
+        
+        <!-- Required for ML Kit GenAI -->
+        <uses-library android:name="com.google.android.aicore" android:required="false" />
+        
+        <!-- Your activities here -->
+    </application>
+</manifest>
+```
+
+**Important:** The `android:required="false"` attribute allows your app to run even if AICore is not installed. You should check availability programmatically (see below).
+
+#### Step 3: Sync Your Project
+
+Sync your project with Gradle files:
+```bash
+flutter pub get
+flutter clean
+flutter build apk
+```
+
+#### Step 4: Understanding Google AICore Requirement
 
 Android's ML Kit GenAI requires **Google AICore** to be installed on the device. AICore is a separate system-level app that provides on-device AI capabilities (similar to Google Play Services).
+
+**What is AICore?**
+- A system-level Android app that provides on-device AI capabilities
+- Includes Gemini Nano model for local inference
+- Not installed by default on all devices
+- Available through Google Play Store
+- Similar to Google Play Services in how it works
 
 **Error Code -101**: If you encounter error code -101, it means:
 - AICore is not installed on the device, OR
 - The installed AICore version is too low
 
 **How to Handle AICore Not Installed:**
+
+The plugin provides a helper method to open the Play Store:
 
 ```dart
 final aiEngine = FlutterLocalAi();
@@ -106,25 +165,56 @@ try {
   final isAvailable = await aiEngine.isAvailable();
   if (!isAvailable) {
     print('Local AI is not available on this device');
+    // Show user-friendly message
     return;
   }
+  
+  // Proceed with AI operations
+  await aiEngine.initialize(instructions: 'You are a helpful assistant.');
+  
 } catch (e) {
   // Check if it's an AICore error (error code -101)
   if (e.toString().contains('-101') || e.toString().contains('AICore')) {
     // Show a dialog to the user explaining they need to install AICore
-    // Then open the Play Store for them to install it
-    await aiEngine.openAICorePlayStore();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('AICore Required'),
+        content: Text(
+          'Google AICore is required for on-device AI features.\n\n'
+          'Would you like to install it from the Play Store?'
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await aiEngine.openAICorePlayStore();
+            },
+            child: Text('Install AICore'),
+          ),
+        ],
+      ),
+    );
   } else {
     print('Error: $e');
   }
 }
 ```
 
-**Manual Installation Link:**
+**Manual Installation:**
 Users can manually install AICore from:
-https://play.google.com/store/apps/details?id=com.google.android.aicore
+- **Play Store**: https://play.google.com/store/apps/details?id=com.google.android.aicore
+- **Package Name**: `com.google.android.aicore`
 
-**Note:** AICore is currently in limited availability and may not be available on all devices or in all regions. It's recommended to check device compatibility and provide fallback options in your app.
+**Important Notes:**
+- AICore is currently in limited availability and may not be available on all devices or in all regions
+- Always check `isAvailable()` before using AI features
+- Provide fallback options in your app when AICore is not available
+- The `android:required="false"` in AndroidManifest allows your app to run even without AICore
 
 #### Debugging AICore Issues
 
@@ -197,7 +287,7 @@ flutter build macos
 
 ## Usage
 
-> **Note:** Currently, text generation is only available on iOS 26.0+ and macOS 26.0+. Android support is planned for a future release.
+> **Note:** Text generation is available on iOS 26.0+, macOS 26.0+, and Android API 26+ (requires Google AICore to be installed).
 
 ### Basic Usage
 
@@ -211,7 +301,8 @@ final aiEngine = FlutterLocalAi();
 final isAvailable = await aiEngine.isAvailable();
 if (!isAvailable) {
   print('Local AI is not available on this device');
-  print('Requires iOS 26.0+ or macOS 26.0+');
+  print('iOS/macOS: Requires iOS 26.0+ or macOS 26.0+');
+  print('Android: Requires API 26+ and Google AICore installed');
   return;
 }
 
@@ -387,7 +478,44 @@ class _LocalAiExampleState extends State<LocalAiExample> {
 
 #### Android
 
-Android support using ML Kit GenAI (Gemini Nano) is currently in development and will be available in a future release.
+- **AICore Required**: Google AICore must be installed on the device for ML Kit GenAI to work
+- **Availability Check**: Always call `isAvailable()` before using AI features
+- **Error Handling**: Handle error code -101 (AICore not installed) gracefully
+- **Initialization**: `initialize()` is optional on Android but recommended for consistency
+- **Model Access**: Uses Gemini Nano via ML Kit GenAI - no model downloads required
+
+**Example with AICore Error Handling:**
+```dart
+final aiEngine = FlutterLocalAi();
+
+try {
+  final isAvailable = await aiEngine.isAvailable();
+  if (!isAvailable) {
+    // Show user-friendly message
+    print('Local AI is not available. AICore may not be installed.');
+    return;
+  }
+  
+  await aiEngine.initialize(
+    instructions: 'You are a helpful assistant.',
+  );
+  
+  final response = await aiEngine.generateText(
+    prompt: 'Hello!',
+    config: const GenerationConfig(maxTokens: 100),
+  );
+  
+  print(response.text);
+} catch (e) {
+  // Handle AICore error (-101)
+  if (e.toString().contains('-101') || e.toString().contains('AICore')) {
+    // Open Play Store to install AICore
+    await aiEngine.openAICorePlayStore();
+  } else {
+    print('Error: $e');
+  }
+}
+```
 
 ## API Reference
 
@@ -398,9 +526,10 @@ Main class for interacting with local AI.
 #### Methods
 
 - `Future<bool> isAvailable()` - Check if local AI is available on the device
-- `Future<bool> initialize({String? instructions})` - Initialize the model and create a session with instruction text (required for iOS, optional for Android)
+- `Future<bool> initialize({String? instructions})` - Initialize the model and create a session with instruction text (required for iOS, recommended for Android)
 - `Future<AiResponse> generateText({required String prompt, GenerationConfig? config})` - Generate text from a prompt with optional configuration
 - `Future<String> generateTextSimple({required String prompt, int maxTokens = 100})` - Convenience method to generate text and return just the string
+- `Future<bool> openAICorePlayStore()` - Open Google AICore in the Play Store (Android only, useful when error -101 occurs)
 
 ### `GenerationConfig`
 
@@ -422,7 +551,30 @@ Response from AI generation.
 ## Implementation Notes
 
 ### Android
-The Android implementation uses ML Kit GenAI (Gemini Nano). The API structure may need to be verified against the latest ML Kit GenAI documentation as the API might evolve.
+
+The Android implementation uses ML Kit GenAI (Gemini Nano) via Google AICore.
+
+**Key Android Requirements:**
+- Android 8.0 (API level 26) or higher
+- Google AICore installed on the device
+- Java 11 or higher (configured in build.gradle)
+- Kotlin JVM target 11
+
+**Android Implementation Details:**
+- Uses `com.google.mlkit.genai.prompt.Generation.getClient()` for model access
+- Handles AICore availability checking and error detection
+- Provides automatic error code -101 detection
+- Includes Play Store integration for AICore installation
+- Uses coroutines with SupervisorJob for async operations
+- Properly manages GenerativeModel lifecycle
+
+**Android Error Handling:**
+- Error code -101: AICore not installed or version too low
+- Detailed error logging via Android Logcat (`adb logcat -s FlutterLocalAi:E`)
+- Graceful degradation when AICore is unavailable
+
+**Android Configuration:**
+The plugin automatically registers via Flutter's `GeneratedPluginRegistrant`. No manual registration needed in MainActivity.
 
 ### iOS
 The iOS implementation uses Apple's FoundationModels framework (iOS 26.0+). The implementation:

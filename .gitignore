@@ -76,8 +76,15 @@ app.*.map.json
 # Coverage
 coverage/
 
+# FVM Version Management
+
 # Exceptions to above rules.
 !**/ios/**/default.mode1v3
 !**/ios/**/default.mode2v3
 !**/ios/**/default.pbxuser
 !**/ios/**/default.perspectivev3
+!.fvm/fvm_config.json
+
+# FVM Version Cache
+.fvm/
+

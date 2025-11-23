@@ -1,11 +1,12 @@
 package io.vezz.flutter_local_ai
 
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import androidx.annotation.NonNull
 import com.google.mlkit.genai.prompt.GenerativeModel
-import com.google.mlkit.genai.prompt.GenerateContentRequest
 import com.google.mlkit.genai.prompt.GenerateContentResponse
 import com.google.mlkit.genai.prompt.TextPart
 import com.google.mlkit.genai.prompt.generateContentRequest
@@ -16,19 +17,21 @@ import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** FlutterLocalAiPlugin */
 class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
-  private lateinit var channel : MethodChannel
+  private lateinit var channel: MethodChannel
   private var generativeModel: GenerativeModel? = null
   private var instructions: String? = null
-  private val coroutineScope = CoroutineScope(Dispatchers.Main)
-  private var flutterPluginBinding: FlutterPlugin.FlutterPluginBinding? = null
+  private val coroutineScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+  private lateinit var context: Context
 
   override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
-    this.flutterPluginBinding = flutterPluginBinding
+    context = flutterPluginBinding.applicationContext
     channel = MethodChannel(flutterPluginBinding.binaryMessenger, "flutter_local_ai")
     channel.setMethodCallHandler(this)
   }
@@ -96,7 +99,7 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
       true
     } catch (e: Exception) {
       // Log the actual error for debugging
-      android.util.Log.e("FlutterLocalAi", "checkAvailability error: ${e.javaClass.simpleName} - ${e.message}", e)
+      Log.e("FlutterLocalAi", "checkAvailability error: ${e.javaClass.simpleName} - ${e.message}", e)
       
       // More specific AICore error detection
       // Check for specific error code -101 which indicates AICore issues
@@ -132,7 +135,7 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
       }
     } catch (e: Exception) {
       // Log the actual error for debugging
-      android.util.Log.e("FlutterLocalAi", "initializeModel error: ${e.javaClass.simpleName} - ${e.message}", e)
+      Log.e("FlutterLocalAi", "initializeModel error: ${e.javaClass.simpleName} - ${e.message}", e)
       
       val errorMessage = e.message ?: ""
       val errorCode = extractErrorCode(errorMessage)
@@ -180,22 +183,21 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
       val generationTime = System.currentTimeMillis() - startTime
 
       // Extract response text from candidates
-      // Based on the example: result.candidates.first().text
       val generatedText = response.candidates.firstOrNull()?.text ?: ""
       
       // Token count is not directly available in the response
       // Use word count as an approximation
-      val tokenCount = generatedText.split(" ").size
+      val tokenCount = generatedText.split(" ").filter { it.isNotEmpty() }.size
 
       // Return response matching AiResponse model structure
       mapOf(
         "text" to generatedText,
         "generationTimeMs" to generationTime,
-        "tokenCount" to (tokenCount ?: generatedText.split(" ").size) // Fallback to word count if token count unavailable
+        "tokenCount" to tokenCount
       )
     } catch (e: Exception) {
       // Log the actual error for debugging
-      android.util.Log.e("FlutterLocalAi", "generateText error: ${e.javaClass.simpleName} - ${e.message}", e)
+      Log.e("FlutterLocalAi", "generateText error: ${e.javaClass.simpleName} - ${e.message}", e)
       
       val errorMessage = e.message ?: ""
       val errorCode = extractErrorCode(errorMessage)
@@ -210,8 +212,9 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
   }
 
   private fun openAICoreInPlayStore() {
-    val context = flutterPluginBinding?.applicationContext 
-      ?: throw Exception("Application context not available")
+    if (!::context.isInitialized) {
+      throw Exception("Context not initialized")
+    }
     
     val packageName = "com.google.android.aicore"
     try {
@@ -220,7 +223,16 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
         data = Uri.parse("market://details?id=$packageName")
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
       }
-      context.startActivity(intent)
+      if (intent.resolveActivity(context.packageManager) != null) {
+        context.startActivity(intent)
+      } else {
+        // If Play Store app not available, open in browser
+        val browserIntent = Intent(Intent.ACTION_VIEW).apply {
+          data = Uri.parse("https://play.google.com/store/apps/details?id=$packageName")
+          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(browserIntent)
+      }
     } catch (e: ActivityNotFoundException) {
       // If Play Store app not available, open in browser
       val intent = Intent(Intent.ACTION_VIEW).apply {
@@ -233,9 +245,9 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
 
   override fun onDetachedFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
     channel.setMethodCallHandler(null)
+    coroutineScope.cancel()
     generativeModel?.close()
     generativeModel = null
     instructions = null
-    flutterPluginBinding = null
   }
 }
