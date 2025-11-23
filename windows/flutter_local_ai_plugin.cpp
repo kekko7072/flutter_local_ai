@@ -1,4 +1,4 @@
-#include "flutter_local_ai_plugin.h"
+#include "flutter_local_ai/flutter_local_ai_plugin.h"
 
 #include <flutter/method_channel.h>
 #include <flutter/plugin_registrar_windows.h>
