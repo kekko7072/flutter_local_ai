@@ -639,26 +639,59 @@ await aiEngine.initialize(
 ```
 
 ### Windows
-The Windows implementation uses Windows AI APIs (Windows AI Foundry) for local AI inference.
+The Windows implementation uses Windows AI APIs (Microsoft Foundry on Windows) for local AI inference on Copilot+ PCs.
+
+**What are Copilot+ PCs?**
+Copilot+ PCs are a new class of Windows 11 hardware powered by a high-performance Neural Processing Unit (NPU) that can perform more than 40 trillion operations per second (40+ TOPS). These devices provide all-day battery life and access to advanced AI features and models. The NPU is a specialized chip for AI-intensive processes like real-time translations and image generation, working in alignment with the CPU and GPU to deliver fast and efficient performance.
 
 **Key Windows Requirements:**
-- Windows 11 22H2 (build 22621) or later
+- **Copilot+ PC** with NPU capable of 40+ TOPS (required for Windows AI APIs)
+- Windows 11 24H2 (build 26100) or later
 - Visual Studio 2022 with C++ development tools
-- Windows 11 SDK (10.0.22621.0 or later)
+- Windows 11 SDK (10.0.26100.0 or later)
 - CMake 3.14 or later
+
+**Supported Copilot+ PC Devices:**
+Windows AI APIs require a Copilot+ PC with an NPU capable of 40+ TOPS. Supported devices include:
+
+- Microsoft Surface Laptop Copilot+ PC
+- Microsoft Surface Pro Copilot+ PC
+- HP OmniBook X 14
+- Dell Latitude 7455, XPS 13, and Inspiron 14
+- Acer Swift 14 AI
+- Lenovo Yoga Slim 7x and ThinkPad T14s
+- Samsung Galaxy Book4 Edge
+- ASUS Vivobook S 15 and ProArt PZ13
+- Copilot+ PCs with AMD Ryzen AI 300 series
+- Copilot+ PCs with Intel Core Ultra 200V series
+- Surface Copilot+ PCs for Business (Series 2) with Intel Core Ultra processors
+
+For a complete list of supported devices, see: [Windows AI NPU Devices Documentation](https://learn.microsoft.com/en-us/windows/ai/npu-devices/)
+
+**What is the Arm-based Snapdragon Elite X chip?**
+The Snapdragon X Elite Arm-based chip built by Qualcomm emphasizes AI integration through its industry-leading Neural Processing Unit (NPU). This NPU processes large amounts of data in parallel, performing trillions of operations per second, using energy more efficiently than a CPU or GPU, resulting in longer device battery life. The NPU works in alignment with the CPU and GPU, with Windows 11 assigning processing tasks to the most appropriate component for optimal performance.
 
 **Windows Implementation Details:**
 - Uses C++/WinRT for Windows Runtime API access
 - Implements Flutter method channel for cross-platform communication
-- Checks Windows version to determine AI API availability
-- Plugin structure is in place and ready for full Windows AI API integration
+- Checks Windows version and Copilot+ PC compatibility to determine AI API availability
+- Leverages Windows AI APIs (`Microsoft.Windows.AI.LanguageModel`) for local inference
+- Uses **Windows ML** (recommended) for NPU acceleration - Windows ML automatically:
+  - Detects available hardware accelerators (NPU, GPU, CPU)
+  - Selects the most performant Execution Provider (EP) automatically
+  - Downloads required EPs via Windows Update (no manual bundling needed)
+  - Falls back gracefully if preferred EP fails or is unavailable
+- ONNX Runtime is used under the hood for model inference
+- Optimized for NPU execution with automatic hardware acceleration
 
 **Windows Status:**
-Windows AI API integration is implemented and ready to use. The plugin provides:
-- Platform availability checking (Windows 11 24H2+)
+Windows AI API integration is implemented and ready to use on Copilot+ PCs. The plugin provides:
+- Platform availability checking for Copilot+ PCs (Windows 11 24H2+ with 40+ TOPS NPU)
 - Method channel implementation matching other platforms
 - Full Windows AI API integration using `Microsoft.Windows.AI.LanguageModel`
+- Automatic NPU acceleration via Windows ML
 - Error handling and initialization flow
+- Graceful fallback messaging when Copilot+ PC requirements are not met
 
 **Windows Configuration:**
 The plugin automatically registers via Flutter's plugin registration system. The Windows plugin is built using CMake and integrated into the Flutter Windows build process.
@@ -680,6 +713,46 @@ To enable Windows AI support:
 5. Set `WINDOWS_AI_AVAILABLE` to `1` or define it in CMakeLists.txt
 
 Alternatively, if using Visual Studio, you can add the Windows AI NuGet package to your project, which will provide the headers automatically.
+
+**How Windows AI Accesses the NPU:**
+The Neural Processing Unit (NPU) is a hardware resource that requires specific software programming to take advantage of its benefits. NPUs are designed to execute the deep learning math operations that make up AI models.
+
+**Programmatic Access via Windows ML:**
+The recommended way to programmatically access the NPU for AI acceleration is through **Windows ML** (not DirectML). Windows ML provides:
+
+- **Built-in EP discovery**: Automatically detects available hardware and downloads appropriate Execution Providers (EPs) as needed
+- **Integrated EP delivery**: Required EPs (e.g., Qualcomm's QNNExecutionProvider, Intel's OpenVINO EP) are bundled with Windows or delivered via Windows Update
+- **ORT under the hood**: Uses ONNX Runtime as the inference engine while abstracting EP management complexity
+- **Hardware vendor collaboration**: Microsoft works with Qualcomm, Intel, and AMD to ensure EP compatibility
+
+When deploying an AI model using Windows ML on a Copilot+ PC:
+1. Windows ML queries the system for available hardware accelerators
+2. It selects the most performant EP (QNN for Qualcomm NPUs, OpenVINO for Intel NPUs)
+3. The EP is loaded automatically, and inference begins
+4. If the preferred EP fails, Windows ML gracefully falls back to GPU or CPU
+
+**Supported Model Formats:**
+- AI models need to be converted (quantized) to run on NPUs, typically to INT8 format for increased performance and power efficiency
+- **Qualcomm AI Hub**: Provides pre-validated models optimized for Snapdragon X Elite NPU
+- **ONNX Model Zoo**: Open source repository with pre-trained models in ONNX format, recommended for all Copilot+ PCs
+- **Bring Your Own Model (BYOM)**: Use hardware-aware optimization tools like Olive for model compression and compilation
+
+**Performance Measurement:**
+Windows provides several tools to measure AI model performance:
+- **Task Manager**: View real-time NPU utilization, memory usage, and driver information
+- **Windows Performance Recorder (WPR)**: Records NPU activity with Neural Processing profile
+- **Windows Performance Analyzer (WPA)**: Analyzes NPU usage, callstacks, and ONNX Runtime events
+- **GPUView**: Visualizes both GPU and NPU operations
+- **ONNX Runtime Profiling**: Track inference times, EP parameters, and operator-level performance
+
+For detailed performance measurement guidance, see: [How to measure performance of AI models running locally on the device NPU](https://learn.microsoft.com/en-us/windows/ai/develop-ai-apps-for-copilot-plus-pcs#how-to-measure-performance-of-ai-models-running-locally-on-the-device-npu)
+
+**Additional Resources:**
+- [Develop AI applications for Copilot+ PCs](https://learn.microsoft.com/en-us/windows/ai/develop-ai-apps-for-copilot-plus-pcs)
+- [What is Microsoft Foundry on Windows?](https://learn.microsoft.com/en-us/windows/ai/what-is-microsoft-foundry-on-windows)
+- [What are Windows AI APIs?](https://learn.microsoft.com/en-us/windows/ai/what-are-windows-ai-apis)
+- [Windows ML Documentation](https://learn.microsoft.com/en-us/windows/ai/windows-ml/)
+- [Windows on Arm Overview](https://learn.microsoft.com/en-us/windows/arm/overview)
 
 ## Contributing
 

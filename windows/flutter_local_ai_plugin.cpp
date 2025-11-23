@@ -1,3 +1,5 @@
+// Define FLUTTER_PLUGIN_IMPL before including the header to ensure proper DLL export
+#define FLUTTER_PLUGIN_IMPL
 #include "flutter_local_ai/flutter_local_ai_plugin.h"
 
 #include <flutter/method_channel.h>
