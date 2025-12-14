@@ -31,10 +31,10 @@ A Flutter package that provides a unified API for local AI inference on Android 
 
 | Feature            | iOS / macOS (26+) | Android (API 26+) | Windows (11 22H2+) |
 |--------------------|-------------------|-------------------|-------------------|
-| Text generation    | ✅                | ✅                 | 🚧 In Progress     |
+| Text generation    | ✅                | ✅                 | ⚠️ Testing         |
 | Summarization*     | 🚧 Planned        | 🚧 Planned         | 🚧 Planned         |
 | Image generation   | 🚧 Planned        | ❌                 | 🚧 Planned         |
-| Tool call          | ✅ (Darwin)       | ❌                 | ❌                 |
+| Tool call          | ✅                | 🚧 Planned         | 🚧 Planned         |
 
 *Summarization is achieved through text-generation prompts and shares the same API surface.
 

@@ -1,3 +1,8 @@
+## 0.0.3
+
+### Apple platforms - Tool Support
+* ✅ **Tools API support (iOS & macOS only)** - Added support for tool execution on Apple platforms; Android and Windows tooling support is planned
+
 ## 0.0.2
 
 ### Windows - Initial Support
