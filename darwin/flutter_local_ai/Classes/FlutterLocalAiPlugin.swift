@@ -11,6 +11,8 @@ import FoundationModels
 #endif
 
 @objc public class FlutterLocalAiPlugin: NSObject, FlutterPlugin {
+  private var channel: FlutterMethodChannel?
+  
   #if canImport(FoundationModels)
   @available(iOS 26.0, macOS 26.0, *)
   private var cachedModel: SystemLanguageModel?
@@ -20,6 +22,9 @@ import FoundationModels
   
   @available(iOS 26.0, macOS 26.0, *)
   private var instructions: String = "You are a helpful assistant. Provide concise answers."
+  
+  @available(iOS 26.0, macOS 26.0, *)
+  private var registeredTools: [any Tool] = []
   #endif
   
   public static func register(with registrar: FlutterPluginRegistrar) {
@@ -29,6 +34,7 @@ import FoundationModels
     let channel = FlutterMethodChannel(name: "flutter_local_ai", binaryMessenger: registrar.messenger())
     #endif
     let instance = FlutterLocalAiPlugin()
+    instance.channel = channel
     registrar.addMethodCallDelegate(instance, channel: channel)
   }
 
@@ -40,6 +46,8 @@ import FoundationModels
       initialize(call: call, result: result)
     case "generateText":
       generateText(call: call, result: result)
+    case "registerTools":
+      registerTools(call: call, result: result)
     default:
       result(FlutterMethodNotImplemented)
     }
@@ -64,6 +72,44 @@ import FoundationModels
     #endif
   }
 
+  private func registerTools(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    #if canImport(FoundationModels)
+    if #available(iOS 26.0, macOS 26.0, *) {
+      guard let toolsPayload = call.arguments as? [[String: Any]] else {
+        result(FlutterError(
+          code: "INVALID_ARGUMENT",
+          message: "Tools array is required",
+          details: nil
+        ))
+        return
+      }
+      
+      do {
+        try updateRegisteredTools(from: toolsPayload)
+        result(true)
+      } catch {
+        result(FlutterError(
+          code: "TOOL_REGISTRATION_FAILED",
+          message: "Failed to register tools: \(error.localizedDescription)",
+          details: nil
+        ))
+      }
+    } else {
+      result(FlutterError(
+        code: "UNSUPPORTED_VERSION",
+        message: "FoundationModels requires iOS 26.0 or macOS 26.0 or later",
+        details: nil
+      ))
+    }
+    #else
+    result(FlutterError(
+      code: "NOT_AVAILABLE",
+      message: "FoundationModels framework is not available",
+      details: nil
+    ))
+    #endif
+  }
+
   #if canImport(FoundationModels)
   @available(iOS 26.0, macOS 26.0, *)
   private func checkModelAvailability() async throws -> Bool {
@@ -83,6 +129,25 @@ import FoundationModels
     } catch {
       return false
     }
+  }
+  #endif
+
+  #if canImport(FoundationModels)
+  @available(iOS 26.0, macOS 26.0, *)
+  private func updateRegisteredTools(from payload: [[String: Any]]) throws {
+    guard let channel = channel else {
+      throw NSError(
+        domain: "FlutterLocalAiPlugin",
+        code: 3,
+        userInfo: [NSLocalizedDescriptionKey: "Method channel not available for tool registration."]
+      )
+    }
+    
+    let parsedTools = try payload.map { try FlutterTool(from: $0, channel: channel) }
+    registeredTools = parsedTools
+    
+    // Ensure the session picks up new tools on the next generation call
+    session = nil
   }
   #endif
 
@@ -202,6 +267,8 @@ import FoundationModels
     
     // Create a customized session with explicit parameters
     let newSession = LanguageModelSession(
+      model: model,
+      tools: registeredTools,
       instructions: instructions
     )
     
@@ -249,3 +316,231 @@ import FoundationModels
   }
   #endif
 }
+
+#if canImport(FoundationModels)
+@available(iOS 26.0, macOS 26.0, *)
+private struct FlutterToolArguments: ConvertibleFromGeneratedContent {
+  let content: GeneratedContent
+  
+  init(_ content: GeneratedContent) throws {
+    self.content = content
+  }
+  
+  func toJSONObject() throws -> Any {
+    let data = Data(content.jsonString.utf8)
+    return try JSONSerialization.jsonObject(with: data, options: [])
+  }
+}
+
+@available(iOS 26.0, macOS 26.0, *)
+private struct FlutterTool: Tool {
+  typealias Arguments = FlutterToolArguments
+  typealias Output = GeneratedContent
+  
+  let name: String
+  let description: String
+  let parameters: GenerationSchema
+  weak var channel: FlutterMethodChannel?
+  
+  init(from dictionary: [String: Any], channel: FlutterMethodChannel) throws {
+    guard let name = dictionary["name"] as? String, !name.isEmpty else {
+      throw FlutterToolParsingError.missingName
+    }
+    
+    self.name = name
+    self.description = dictionary["description"] as? String ?? ""
+    let parametersPayload = dictionary["parameters"] as? [[String: Any]] ?? []
+    self.parameters = try FlutterTool.buildSchema(
+      toolName: name,
+      toolDescription: description,
+      payload: parametersPayload
+    )
+    self.channel = channel
+  }
+  
+  func call(arguments: FlutterToolArguments) async throws -> GeneratedContent {
+    guard let channel = channel else {
+      throw FlutterToolParsingError.channelMissing
+    }
+    
+    let serializedArguments: Any
+    do {
+      serializedArguments = try arguments.toJSONObject()
+    } catch {
+      throw FlutterToolParsingError.serializationFailed("Unable to serialize tool arguments: \(error.localizedDescription)")
+    }
+    
+    let request: [String: Any] = [
+      "toolName": name,
+      "arguments": serializedArguments
+    ]
+    
+    return try await withCheckedThrowingContinuation { continuation in
+      DispatchQueue.main.async {
+        channel.invokeMethod("onToolCall", arguments: request) { result in
+          if let error = result as? FlutterError {
+            continuation.resume(throwing: FlutterTool.toNSError(error))
+            return
+          }
+          
+          if let error = result as? NSError {
+            continuation.resume(throwing: error)
+            return
+          }
+          
+          guard let resultValue = result else {
+            continuation.resume(throwing: FlutterToolParsingError.missingResult)
+            return
+          }
+          
+          do {
+            let content = try FlutterTool.convertResultToGeneratedContent(resultValue)
+            continuation.resume(returning: content)
+          } catch {
+            continuation.resume(throwing: error)
+          }
+        }
+      }
+    }
+  }
+  
+  private static func toNSError(_ error: FlutterError) -> NSError {
+    NSError(
+      domain: "FlutterToolError",
+      code: 0,
+      userInfo: [
+        NSLocalizedDescriptionKey: error.message ?? error.code,
+        "details": error.details ?? ""
+      ]
+    )
+  }
+  
+  private static func buildSchema(
+    toolName: String,
+    toolDescription: String,
+    payload: [[String: Any]]
+  ) throws -> GenerationSchema {
+    let parameters = try payload.map { try FlutterToolParameter(from: $0) }
+    let properties = try parameters.map { parameter in
+      let schema = try FlutterTool.schema(for: parameter.type)
+      return DynamicGenerationSchema.Property(
+        name: parameter.name,
+        description: parameter.description,
+        schema: schema,
+        isOptional: parameter.isOptional
+      )
+    }
+    
+    let root = DynamicGenerationSchema(
+      name: toolName,
+      description: toolDescription.isEmpty ? nil : toolDescription,
+      properties: properties
+    )
+    
+    return try GenerationSchema(root: root, dependencies: [])
+  }
+  
+  private static func schema(for type: FlutterToolParameter.ParameterType) throws -> DynamicGenerationSchema {
+    switch type {
+    case .string:
+      return DynamicGenerationSchema(type: String.self)
+    case .integer:
+      return DynamicGenerationSchema(type: Int.self)
+    case .number:
+      return DynamicGenerationSchema(type: Double.self)
+    case .boolean:
+      return DynamicGenerationSchema(type: Bool.self)
+    }
+  }
+  
+  private static func convertResultToGeneratedContent(_ result: Any) throws -> GeneratedContent {
+    if let stringValue = result as? String {
+      return GeneratedContent(stringValue)
+    }
+    
+    if let boolValue = result as? Bool {
+      return GeneratedContent(boolValue)
+    }
+    
+    if let numberValue = result as? NSNumber {
+      if CFGetTypeID(numberValue) == CFBooleanGetTypeID() {
+        return GeneratedContent(numberValue.boolValue)
+      } else {
+        return GeneratedContent(numberValue.doubleValue)
+      }
+    }
+    
+    if result is NSNull {
+      return try GeneratedContent(json: "null")
+    }
+    
+    if JSONSerialization.isValidJSONObject(result) {
+      let data = try JSONSerialization.data(withJSONObject: result, options: [])
+      guard let jsonString = String(data: data, encoding: .utf8) else {
+        throw FlutterToolParsingError.serializationFailed("Could not encode tool result to JSON.")
+      }
+      return try GeneratedContent(json: jsonString)
+    }
+    
+    throw FlutterToolParsingError.serializationFailed("Unsupported tool result type \(type(of: result))")
+  }
+}
+
+@available(iOS 26.0, macOS 26.0, *)
+private struct FlutterToolParameter {
+  enum ParameterType: String {
+    case string
+    case integer
+    case number
+    case boolean
+  }
+  
+  let name: String
+  let description: String?
+  let type: ParameterType
+  let isOptional: Bool
+  
+  init(from dictionary: [String: Any]) throws {
+    guard let name = dictionary["name"] as? String, !name.isEmpty else {
+      throw FlutterToolParsingError.invalidParameterDefinition("Parameter name is required")
+    }
+    self.name = name
+    self.description = dictionary["description"] as? String
+    
+    let typeString = (dictionary["type"] as? String ?? "string").lowercased()
+    guard let type = ParameterType(rawValue: typeString) else {
+      throw FlutterToolParsingError.unsupportedParameterType(typeString)
+    }
+    self.type = type
+    
+    self.isOptional = dictionary["optional"] as? Bool ?? false
+  }
+}
+
+@available(iOS 26.0, macOS 26.0, *)
+private enum FlutterToolParsingError: Error, LocalizedError {
+  case missingName
+  case channelMissing
+  case missingResult
+  case invalidParameterDefinition(String)
+  case unsupportedParameterType(String)
+  case serializationFailed(String)
+  
+  var errorDescription: String? {
+    switch self {
+    case .missingName:
+      return "Tool name is required."
+    case .channelMissing:
+      return "Method channel not available to execute tool."
+    case .missingResult:
+      return "Tool returned no result."
+    case .invalidParameterDefinition(let message):
+      return message
+    case .unsupportedParameterType(let type):
+      return "Unsupported parameter type '\(type)'."
+    case .serializationFailed(let message):
+      return message
+    }
+  }
+}
+#endif

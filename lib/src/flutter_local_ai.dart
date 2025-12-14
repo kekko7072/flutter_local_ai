@@ -2,10 +2,63 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'models/ai_response.dart';
 import 'models/generation_config.dart';
+import 'models/tool.dart';
 
 /// Main class for interacting with local AI
 class FlutterLocalAi {
   static const MethodChannel _channel = MethodChannel('flutter_local_ai');
+  static bool _toolHandlerRegistered = false;
+  static final Map<String, LocalAiTool> _registeredTools = {};
+
+  FlutterLocalAi() {
+    _registerToolHandlerIfNeeded();
+  }
+
+  static void _registerToolHandlerIfNeeded() {
+    if (_toolHandlerRegistered) return;
+    _channel.setMethodCallHandler(_handlePlatformMethod);
+    _toolHandlerRegistered = true;
+  }
+
+  static Future<dynamic> _handlePlatformMethod(MethodCall call) async {
+    if (call.method == 'onToolCall') {
+      final args = (call.arguments as Map?) ?? {};
+      final toolName = args['toolName']?.toString();
+      final rawArgs = args['arguments'];
+
+      if (toolName == null) {
+        throw PlatformException(
+          code: 'INVALID_TOOL_REQUEST',
+          message: 'Tool name was not provided by native layer.',
+        );
+      }
+
+      final tool = _registeredTools[toolName];
+      if (tool == null) {
+        throw PlatformException(
+          code: 'TOOL_NOT_FOUND',
+          message: 'No Dart tool registered with name $toolName',
+        );
+      }
+
+      final parsedArgs = _normalizeArguments(rawArgs);
+      return await tool.onCall(parsedArgs);
+    }
+
+    return null;
+  }
+
+  static Map<String, dynamic> _normalizeArguments(Object? rawArgs) {
+    if (rawArgs == null) {
+      return {};
+    }
+
+    if (rawArgs is Map) {
+      return rawArgs.map((key, value) => MapEntry(key.toString(), value));
+    }
+
+    return {};
+  }
 
   /// Check if local AI is available on the device
   Future<bool> isAvailable() async {
@@ -33,6 +86,20 @@ class FlutterLocalAi {
     } on PlatformException catch (e) {
       throw Exception('Failed to initialize: ${e.message}');
     }
+  }
+
+  /// Register Dart tools to be exposed to the native model (Darwin only).
+  Future<void> registerTools(List<LocalAiTool> tools) async {
+    _registerToolHandlerIfNeeded();
+
+    _registeredTools
+      ..clear()
+      ..addEntries(tools.map((tool) => MapEntry(tool.name, tool)));
+
+    await _channel.invokeMethod<bool>(
+      'registerTools',
+      tools.map((tool) => tool.toMap()).toList(),
+    );
   }
 
   /// Generate text from a prompt

@@ -34,7 +34,7 @@ A Flutter package that provides a unified API for local AI inference on Android 
 | Text generation    | ✅                | ✅                 | 🚧 In Progress     |
 | Summarization*     | 🚧 Planned        | 🚧 Planned         | 🚧 Planned         |
 | Image generation   | 🚧 Planned        | ❌                 | 🚧 Planned         |
-| Tool call          | ❌                | ❌                 | ❌                 |
+| Tool call          | ✅ (Darwin)       | ❌                 | ❌                 |
 
 *Summarization is achieved through text-generation prompts and shares the same API surface.
 
@@ -384,6 +384,53 @@ final response = await aiEngine.generateText(
 print('Generated text: ${response.text}');
 print('Token count: ${response.tokenCount}');
 print('Generation time: ${response.generationTimeMs}ms');
+```
+
+### Tool Calls on Apple Platforms (Darwin)
+
+Tool calling is supported on iOS 26.0+ and macOS 26.0+ through Apple FoundationModels. Define tools in Dart, register them, and return JSON-serializable data from the handler.
+
+```dart
+import 'package:flutter_local_ai/flutter_local_ai.dart';
+
+final aiEngine = FlutterLocalAi();
+
+await aiEngine.registerTools([
+  LocalAiTool(
+    name: 'searchBreadDatabase',
+    description: 'Searches a local database for bread recipes.',
+    parameters: const [
+      ToolParameter(
+        name: 'searchTerm',
+        type: ToolArgumentType.string,
+        description: 'Type of bread to search for',
+      ),
+      ToolParameter(
+        name: 'limit',
+        type: ToolArgumentType.integer,
+        description: 'Number of recipes to return',
+      ),
+    ],
+    onCall: (arguments) async {
+      final term = arguments['searchTerm'] as String? ?? '';
+      final limit = (arguments['limit'] as num?)?.toInt() ?? 3;
+      // Replace with your own lookup logic.
+      return List.generate(
+        limit,
+        (index) => 'Recipe ${index + 1} for "$term"',
+      );
+    },
+  ),
+]);
+
+await aiEngine.initialize(
+  instructions: 'You are a helpful baking assistant. Use tools when needed.',
+);
+
+final response = await aiEngine.generateText(
+  prompt: 'Find 2 sourdough recipes I might like.',
+);
+print(response.text);
 ```
 
 ### Streaming Text Generation (Coming Soon)

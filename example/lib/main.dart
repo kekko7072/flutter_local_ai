@@ -44,6 +44,8 @@ class _MyHomePageState extends State<MyHomePage> {
   bool _isAvailable = false;
   bool _isInitialized = false;
   bool _isInitializing = false;
+  bool _toolsRegistered = false;
+  bool _toolsEnabled = false;
 
   @override
   void initState() {
@@ -73,7 +75,8 @@ class _MyHomePageState extends State<MyHomePage> {
       // Check if it's an AICore error (error code -101) - Android only
       if (errorStr.contains('-101') || errorStr.contains('AICore')) {
         _showAICoreErrorDialog();
-      } else if (errorStr.contains('Windows AI') || errorStr.contains('cppwinrt')) {
+      } else if (errorStr.contains('Windows AI') ||
+          errorStr.contains('cppwinrt')) {
         // Windows AI headers not available
         if (mounted) {
           _showWindowsAIErrorDialog();
@@ -89,6 +92,100 @@ class _MyHomePageState extends State<MyHomePage> {
         }
       }
     }
+  }
+
+  Future<void> _configureTools(bool enable) async {
+    if (!Platform.isIOS && !Platform.isMacOS) return;
+    try {
+      final tools = enable ? _buildSampleTools() : <LocalAiTool>[];
+      await _aiEngine.registerTools(tools);
+      setState(() {
+        _toolsRegistered = enable;
+        _toolsEnabled = enable;
+      });
+    } catch (e) {
+      debugPrint('Failed to register tools: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to ${enable ? "enable" : "disable"} tools: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  List<LocalAiTool> _buildSampleTools() {
+    return [
+      LocalAiTool(
+        name: 'searchBreadDatabase',
+        description: 'Searches a local database for bread recipes.',
+        parameters: const [
+          ToolParameter(
+              name: 'searchTerm',
+              type: ToolArgumentType.string,
+              description: 'Type of bread to search for',
+            ),
+            ToolParameter(
+              name: 'limit',
+              type: ToolArgumentType.integer,
+              description: 'Number of recipes to return',
+            ),
+          ],
+          onCall: (arguments) async {
+            final term = arguments['searchTerm']?.toString() ?? '';
+            final limit = (arguments['limit'] as num?)?.toInt() ?? 2;
+            // Replace with your own data lookup
+            return List.generate(
+              limit,
+              (index) => 'Recipe ${index + 1} for "$term"',
+            );
+          },
+        ),
+      LocalAiTool(
+        name: 'quickMath',
+        description: 'Performs a basic arithmetic operation on two numbers.',
+        parameters: const [
+          ToolParameter(
+            name: 'a',
+            type: ToolArgumentType.number,
+            description: 'First number',
+          ),
+          ToolParameter(
+            name: 'b',
+            type: ToolArgumentType.number,
+            description: 'Second number',
+          ),
+          ToolParameter(
+            name: 'operation',
+            type: ToolArgumentType.string,
+            description: 'One of add, subtract, multiply, divide',
+          ),
+        ],
+        onCall: (arguments) async {
+          final a = (arguments['a'] as num?)?.toDouble() ?? 0;
+          final b = (arguments['b'] as num?)?.toDouble() ?? 0;
+          final op = (arguments['operation']?.toString() ?? '').toLowerCase();
+
+          switch (op) {
+            case 'add':
+              return a + b;
+            case 'subtract':
+              return a - b;
+            case 'multiply':
+              return a * b;
+            case 'divide':
+              if (b == 0) {
+                return 'Cannot divide by zero';
+              }
+              return a / b;
+            default:
+              return 'Unsupported operation "$op". Try add, subtract, multiply, or divide.';
+          }
+        },
+      ),
+    ];
   }
 
   Future<void> _initialize() async {
@@ -138,7 +235,8 @@ class _MyHomePageState extends State<MyHomePage> {
       // Check if it's an AICore error (error code -101) - Android only
       if (e.toString().contains('-101') || e.toString().contains('AICore')) {
         _showAICoreErrorDialog();
-      } else if (e.toString().contains('Windows AI') || e.toString().contains('cppwinrt')) {
+      } else if (e.toString().contains('Windows AI') ||
+          e.toString().contains('cppwinrt')) {
         // Windows AI headers not available
         if (mounted) {
           _showWindowsAIErrorDialog();
@@ -202,7 +300,8 @@ class _MyHomePageState extends State<MyHomePage> {
       // Check if it's an AICore error (error code -101) - Android only
       if (e.toString().contains('-101') || e.toString().contains('AICore')) {
         _showAICoreErrorDialog();
-      } else if (e.toString().contains('Windows AI') || e.toString().contains('cppwinrt')) {
+      } else if (e.toString().contains('Windows AI') ||
+          e.toString().contains('cppwinrt')) {
         // Windows AI headers not available
         if (mounted) {
           _showWindowsAIErrorDialog();
@@ -360,9 +459,12 @@ class _MyHomePageState extends State<MyHomePage> {
                                               : Platform.isMacOS
                                                   ? 'macOS'
                                                   : 'Unknown',
-                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: Colors.grey,
-                                  ),
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(
+                                        color: Colors.grey,
+                                      ),
                                 ),
                             ],
                           ),
@@ -393,12 +495,13 @@ class _MyHomePageState extends State<MyHomePage> {
                     ] else if (_errorMessage.isNotEmpty) ...[
                       const SizedBox(height: 8),
                       Text(
-                        _errorMessage.contains('Windows AI') || _errorMessage.contains('cppwinrt')
+                        _errorMessage.contains('Windows AI') ||
+                                _errorMessage.contains('cppwinrt')
                             ? 'Windows AI headers not configured'
-                            : 'Error: ${_errorMessage.length > 100 ? _errorMessage.substring(0, 100) + "..." : _errorMessage}',
+                            : 'Error: ${_errorMessage.length > 100 ? "${_errorMessage.substring(0, 100)}..." : _errorMessage}',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Colors.orange,
-                        ),
+                              color: Colors.orange,
+                            ),
                       ),
                     ],
                   ],
