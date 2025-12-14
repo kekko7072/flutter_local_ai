@@ -89,4 +89,3 @@ coverage/
 .fvm/
 
 darwin/.build
-darwin/flutter_local_ai/.build
