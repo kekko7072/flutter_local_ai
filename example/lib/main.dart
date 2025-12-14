@@ -414,6 +414,8 @@ class _MyHomePageState extends State<MyHomePage> {
 
   @override
   Widget build(BuildContext context) {
+    final isDarwin = !kIsWeb && (Platform.isIOS || Platform.isMacOS);
+    
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
@@ -532,6 +534,32 @@ class _MyHomePageState extends State<MyHomePage> {
               ],
             ),
             const SizedBox(height: 8),
+            
+            if (isDarwin) ...[
+              Card(
+                child: SwitchListTile(
+                  title: const Text('Enable tool calls (iOS/macOS only)'),
+                  subtitle: const Text(
+                    'Expose sample tools: searchBreadDatabase and quickMath.',
+                  ),
+                  value: _toolsEnabled,
+                  onChanged: (value) async {
+                    await _configureTools(value);
+                  },
+                ),
+              ),
+              if (_toolsEnabled)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8.0),
+                  child: Text(
+                    'Try: "Use quickMath to add 4 and 9" or "Find 2 sourdough recipes with searchBreadDatabase".',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: Colors.grey[700]),
+                  ),
+                ),
+            ],
 
             // Initialize Button
             if (_isAvailable && !_isInitialized)
