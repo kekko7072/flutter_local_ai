@@ -6,7 +6,7 @@
 
 # Flutter Local AI
 
-A Flutter package that provides a unified API for local AI inference on Android with [*ML Kit GenAI*](https://developer.android.com/ai/gemini-nano/ml-kit-genai), on Apple Platforms using [*Foundation Models*](https://developer.apple.com/documentation/FoundationModels), and on Windows using [*Windows AI APIs*](https://learn.microsoft.com/en-us/windows/ai/) (Windows AI Foundry).
+A Flutter package that provides a unified API for local AI inference on Android with [*ML Kit GenAI*](https://developers.google.com/ml-kit/genai), on Apple Platforms using [*Foundation Models*](https://developer.apple.com/documentation/FoundationModels), and on Windows using [*Windows AI APIs*](https://learn.microsoft.com/en-us/windows/ai/) (Windows AI Foundry).
 
 </div>
 
