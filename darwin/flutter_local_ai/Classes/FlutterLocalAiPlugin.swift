@@ -15,17 +15,15 @@ import FoundationModels
   
   #if canImport(FoundationModels)
   @available(iOS 26.0, macOS 26.0, *)
-  private var cachedModel: SystemLanguageModel?
-  
-  @available(iOS 26.0, macOS 26.0, *)
-  private var session: LanguageModelSession?
-  
-  @available(iOS 26.0, macOS 26.0, *)
-  private var instructions: String = "You are a helpful assistant. Provide concise answers."
-  
-  @available(iOS 26.0, macOS 26.0, *)
-  private var registeredTools: [any Tool] = []
+  private final class ModelState {
+    var cachedModel: SystemLanguageModel?
+    var session: LanguageModelSession?
+    var instructions: String = "You are a helpful assistant. Provide concise answers."
+    var registeredTools: [any Tool] = []
+  }
   #endif
+  
+  private var modelState: Any?
   
   public static func register(with registrar: FlutterPluginRegistrar) {
     #if os(OSX)
@@ -112,6 +110,16 @@ import FoundationModels
 
   #if canImport(FoundationModels)
   @available(iOS 26.0, macOS 26.0, *)
+  private func requireModelState() -> ModelState {
+    if let state = modelState as? ModelState {
+      return state
+    }
+    let state = ModelState()
+    modelState = state
+    return state
+  }
+  
+  @available(iOS 26.0, macOS 26.0, *)
   private func checkModelAvailability() async throws -> Bool {
     do {
       let model = try await loadModel()
@@ -144,10 +152,11 @@ import FoundationModels
     }
     
     let parsedTools = try payload.map { try FlutterTool(from: $0, channel: channel) }
-    registeredTools = parsedTools
+    let state = requireModelState()
+    state.registeredTools = parsedTools
     
     // Ensure the session picks up new tools on the next generation call
-    session = nil
+    state.session = nil
   }
   #endif
 
@@ -246,34 +255,36 @@ import FoundationModels
   #if canImport(FoundationModels)
   @available(iOS 26.0, macOS 26.0, *)
   private func loadModel() async throws -> SystemLanguageModel {
+    let state = requireModelState()
     // Return cached model if available
-    if let cached = cachedModel {
+    if let cached = state.cachedModel {
       return cached
     }
     
     // Load the default system language model
     let model = SystemLanguageModel.default
-    cachedModel = model
+    state.cachedModel = model
     return model
   }
   
   @available(iOS 26.0, macOS 26.0, *)
   private func initializeSession(instructions: String) async throws {
+    let state = requireModelState()
     // Load the model
     let model = try await loadModel()
     
     // Store instructions
-    self.instructions = instructions
+    state.instructions = instructions
     
     // Create a customized session with explicit parameters
     let newSession = LanguageModelSession(
       model: model,
-      tools: registeredTools,
+      tools: state.registeredTools,
       instructions: instructions
     )
     
     // Cache the session for future use
-    self.session = newSession
+    state.session = newSession
   }
   
   @available(iOS 26.0, macOS 26.0, *)
@@ -282,14 +293,15 @@ import FoundationModels
     maxTokens: Int,
     temperature: Double?,
   ) async throws -> [String: Any] {
+    let state = requireModelState()
     let startTime = Date()
     
     // Ensure session is initialized
-    if session == nil {
-      try await initializeSession(instructions: instructions)
+    if state.session == nil {
+      try await initializeSession(instructions: state.instructions)
     }
     
-    guard let session = session else {
+    guard let session = state.session else {
       throw NSError(
         domain: "FlutterLocalAiPlugin",
         code: 2,

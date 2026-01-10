@@ -43,7 +43,7 @@
       ],
       "otherArguments" : [
         "-target",
-        "arm64-apple-macosx26.0",
+        "arm64-apple-macosx12.0",
         "-incremental",
         "-enable-batch-mode",
         "-serialize-diagnostics",
@@ -132,7 +132,7 @@
       "-I",
       "/Users/francescovezzani/Developer/flutter_local_ai/darwin/flutter_local_ai/.build/index-build/arm64-apple-macosx/debug/Modules",
       "-target",
-      "arm64-apple-macosx26.0",
+      "arm64-apple-macosx12.0",
       "-incremental",
       "-enable-batch-mode",
       "-serialize-diagnostics",

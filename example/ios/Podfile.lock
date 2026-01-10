@@ -1,22 +1,15 @@
 PODS:
   - Flutter (1.0.0)
-  - flutter_local_ai (0.0.1):
-    - Flutter
-    - FlutterMacOS
 
 DEPENDENCIES:
   - Flutter (from `Flutter`)
-  - flutter_local_ai (from `.symlinks/plugins/flutter_local_ai/darwin`)
 
 EXTERNAL SOURCES:
   Flutter:
     :path: Flutter
-  flutter_local_ai:
-    :path: ".symlinks/plugins/flutter_local_ai/darwin"
 
 SPEC CHECKSUMS:
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
-  flutter_local_ai: 884c47c48843c3db7c95cffa31ca3516a026155a
 
 PODFILE CHECKSUM: 3c63482e143d1b91d2d2560aee9fb04ecc74ac7e
 

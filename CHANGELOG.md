@@ -1,3 +1,9 @@
+## 0.0.4
+
+### Apple platforms - Improvements 
+* Lowered iOS and macOS deployment targets to allow plugin compilation on older OS versions; runtime still reports unsupported below 26.0.
+
+
 ## 0.0.3
 
 ### Apple platforms - Tool Support

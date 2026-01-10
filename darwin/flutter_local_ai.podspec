@@ -17,8 +17,8 @@ Flutter plugin for handling Flutter Local AI.
 
   s.ios.dependency 'Flutter'
   s.osx.dependency 'FlutterMacOS'
-  s.ios.deployment_target = '26.0'
-  s.osx.deployment_target = '26.0'
+  s.ios.deployment_target = '13.0'
+  s.osx.deployment_target = '12.0'
 
   # Flutter.framework does not contain a i386 slice. Only x86_64 simulators are supported.
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES', 'VALID_ARCHS[sdk=iphonesimulator*]' => 'x86_64' }

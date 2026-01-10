@@ -6,8 +6,8 @@ import PackageDescription
 let package = Package(
     name: "flutter_local_ai",
     platforms: [
-        .iOS("26.0"),
-        .macOS("26.0")
+        .iOS("13.0"),
+        .macOS("12.0")
     ],
     products: [
         .library(
