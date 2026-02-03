@@ -15,15 +15,116 @@ import FoundationModels
   
   #if canImport(FoundationModels)
   @available(iOS 26.0, macOS 26.0, *)
-  private final class ModelState {
+  actor ModelManager {
     var cachedModel: SystemLanguageModel?
     var session: LanguageModelSession?
     var instructions: String = "You are a helpful assistant. Provide concise answers."
     var registeredTools: [any Tool] = []
+
+    func loadModel() async throws -> SystemLanguageModel {
+      // Return cached model if available
+      if let cached = cachedModel {
+        return cached
+      }
+      
+      // Load the default system language model
+      let model = SystemLanguageModel.default
+      cachedModel = model
+      return model
+    }
+
+    func checkAvailability() async -> Bool {
+      do {
+        let model = try await loadModel()
+        switch model.availability {
+        case .available:
+          return true
+        case .unavailable(let reason):
+          print("Model is unavailable: \(reason)")
+          return false
+        @unknown default:
+          print("Model is unavailable: \(model.availability)")
+          return false
+        }
+      } catch {
+        return false
+      }
+    }
+
+    func updateRegisteredTools(from payload: [[String: Any]], channel: FlutterMethodChannel) throws {
+      let parsedTools = try payload.map { try FlutterTool(from: $0, channel: channel) }
+      registeredTools = parsedTools
+      
+      // Ensure the session picks up new tools on the next generation call
+      session = nil
+    }
+
+    func initializeSession(instructions: String) async throws {
+      // Load the model
+      let model = try await loadModel()
+      
+      // Store instructions
+      self.instructions = instructions
+      
+      // Create a customized session with explicit parameters
+      let newSession = LanguageModelSession(
+        model: model,
+        tools: registeredTools,
+        instructions: instructions
+      )
+      
+      // Cache the session for future use
+      session = newSession
+    }
+
+    func generateText(
+      prompt: String,
+      maxTokens: Int,
+      temperature: Double?
+    ) async throws -> [String: Any] {
+      let startTime = Date()
+      
+      // Ensure session is initialized
+      if session == nil {
+        try await initializeSession(instructions: instructions)
+      }
+      
+      guard let session = session else {
+        throw NSError(
+          domain: "FlutterLocalAiPlugin",
+          code: 2,
+          userInfo: [NSLocalizedDescriptionKey: "Session not initialized. Call initialize first."]
+        )
+      }
+      
+      // Use the session to generate text
+      let response = try await session.respond(to: prompt, options: .init(sampling: .greedy, temperature: temperature ?? 0.7, maximumResponseTokens: maxTokens))
+      let generatedText = response.content
+      
+      // Calculate generation time in milliseconds
+      let generationTime = Int(Date().timeIntervalSince(startTime) * 1000)
+      
+      // Estimate token count (approximate based on word count)
+      let tokenCount = generatedText.split(separator: " ").count
+      
+      // Return the response in the format expected by Flutter
+      return [
+        "text": generatedText,
+        "generationTimeMs": generationTime,
+        "tokenCount": tokenCount
+      ]
+    }
+  }
+
+  private var modelManager: Any?
+  
+  override init() {
+    super.init()
+    if #available(iOS 26.0, macOS 26.0, *) {
+      modelManager = ModelManager()
+    }
   }
   #endif
-  
-  private var modelState: Any?
   
   public static func register(with registrar: FlutterPluginRegistrar) {
     #if os(OSX)
@@ -54,13 +155,13 @@ import FoundationModels
   private func checkAvailability(result: @escaping FlutterResult) {
     #if canImport(FoundationModels)
     if #available(iOS 26.0, macOS 26.0, *) {
+      guard let manager = modelManager as? ModelManager else {
+        result(false)
+        return
+      }
       Task {
-        do {
-          let available = try await checkModelAvailability()
-          result(available)
-        } catch {
-          result(false)
-        }
+        let available = await manager.checkAvailability()
+        result(available)
       }
     } else {
       result(false)
@@ -82,15 +183,26 @@ import FoundationModels
         return
       }
       
-      do {
-        try updateRegisteredTools(from: toolsPayload)
-        result(true)
-      } catch {
+      guard let manager = modelManager as? ModelManager, let channel = channel else {
         result(FlutterError(
-          code: "TOOL_REGISTRATION_FAILED",
-          message: "Failed to register tools: \(error.localizedDescription)",
+          code: "PluginError",
+          message: "Internal model manager or channel missing",
           details: nil
         ))
+        return
+      }
+      
+      Task {
+        do {
+          try await manager.updateRegisteredTools(from: toolsPayload, channel: channel)
+          result(true)
+        } catch {
+          result(FlutterError(
+            code: "TOOL_REGISTRATION_FAILED",
+            message: "Failed to register tools: \(error.localizedDescription)",
+            details: nil
+          ))
+        }
       }
     } else {
       result(FlutterError(
@@ -108,58 +220,6 @@ import FoundationModels
     #endif
   }
 
-  #if canImport(FoundationModels)
-  @available(iOS 26.0, macOS 26.0, *)
-  private func requireModelState() -> ModelState {
-    if let state = modelState as? ModelState {
-      return state
-    }
-    let state = ModelState()
-    modelState = state
-    return state
-  }
-  
-  @available(iOS 26.0, macOS 26.0, *)
-  private func checkModelAvailability() async throws -> Bool {
-    do {
-      let model = try await loadModel()
-      switch model.availability {
-        case .available:
-            // Model is ready to use
-            return true
-        case .unavailable(let reason):
-            print("Model is unavailable: \(reason)")
-            return false
-        @unknown default:
-            print("Model is unavailable: \(model.availability)")
-            return false
-        }
-    } catch {
-      return false
-    }
-  }
-  #endif
-
-  #if canImport(FoundationModels)
-  @available(iOS 26.0, macOS 26.0, *)
-  private func updateRegisteredTools(from payload: [[String: Any]]) throws {
-    guard let channel = channel else {
-      throw NSError(
-        domain: "FlutterLocalAiPlugin",
-        code: 3,
-        userInfo: [NSLocalizedDescriptionKey: "Method channel not available for tool registration."]
-      )
-    }
-    
-    let parsedTools = try payload.map { try FlutterTool(from: $0, channel: channel) }
-    let state = requireModelState()
-    state.registeredTools = parsedTools
-    
-    // Ensure the session picks up new tools on the next generation call
-    state.session = nil
-  }
-  #endif
-
   private func initialize(call: FlutterMethodCall, result: @escaping FlutterResult) {
     #if canImport(FoundationModels)
     if #available(iOS 26.0, macOS 26.0, *) {
@@ -172,12 +232,21 @@ import FoundationModels
         return
       }
       
+      guard let manager = modelManager as? ModelManager else {
+         result(FlutterError(
+          code: "PluginError",
+          message: "Internal model manager missing",
+          details: nil
+        ))
+        return
+      }
+      
       // Get instructions if provided
       let instructionsText = args["instructions"] as? String ?? "You are a helpful assistant. Provide concise answers."
       
       Task {
         do {
-          try await initializeSession(instructions: instructionsText)
+          try await manager.initializeSession(instructions: instructionsText)
           result(true)
         } catch {
           result(FlutterError(
@@ -215,6 +284,15 @@ import FoundationModels
         ))
         return
       }
+      
+      guard let manager = modelManager as? ModelManager else {
+         result(FlutterError(
+          code: "PluginError",
+          message: "Internal model manager missing",
+          details: nil
+        ))
+        return
+      }
 
       let configMap = args["config"] as? [String: Any]
       let maxTokens = configMap?["maxTokens"] as? Int ?? 100
@@ -222,10 +300,10 @@ import FoundationModels
 
       Task {
         do {
-          let response = try await generateTextAsync(
+          let response = try await manager.generateText(
             prompt: prompt,
             maxTokens: maxTokens,
-            temperature: temperature,
+            temperature: temperature
           )
           result(response)
         } catch {
@@ -251,82 +329,6 @@ import FoundationModels
     ))
     #endif
   }
-
-  #if canImport(FoundationModels)
-  @available(iOS 26.0, macOS 26.0, *)
-  private func loadModel() async throws -> SystemLanguageModel {
-    let state = requireModelState()
-    // Return cached model if available
-    if let cached = state.cachedModel {
-      return cached
-    }
-    
-    // Load the default system language model
-    let model = SystemLanguageModel.default
-    state.cachedModel = model
-    return model
-  }
-  
-  @available(iOS 26.0, macOS 26.0, *)
-  private func initializeSession(instructions: String) async throws {
-    let state = requireModelState()
-    // Load the model
-    let model = try await loadModel()
-    
-    // Store instructions
-    state.instructions = instructions
-    
-    // Create a customized session with explicit parameters
-    let newSession = LanguageModelSession(
-      model: model,
-      tools: state.registeredTools,
-      instructions: instructions
-    )
-    
-    // Cache the session for future use
-    state.session = newSession
-  }
-  
-  @available(iOS 26.0, macOS 26.0, *)
-  private func generateTextAsync(
-    prompt: String,
-    maxTokens: Int,
-    temperature: Double?,
-  ) async throws -> [String: Any] {
-    let state = requireModelState()
-    let startTime = Date()
-    
-    // Ensure session is initialized
-    if state.session == nil {
-      try await initializeSession(instructions: state.instructions)
-    }
-    
-    guard let session = state.session else {
-      throw NSError(
-        domain: "FlutterLocalAiPlugin",
-        code: 2,
-        userInfo: [NSLocalizedDescriptionKey: "Session not initialized. Call initialize first."]
-      )
-    }
-    
-    // Use the session to generate text
-    let response = try await session.respond(to: prompt, options: .init(sampling: .greedy, temperature: temperature ?? 0.7, maximumResponseTokens: maxTokens))
-    let generatedText = response.content
-    
-    // Calculate generation time in milliseconds
-    let generationTime = Int(Date().timeIntervalSince(startTime) * 1000)
-    
-    // Estimate token count (approximate based on word count)
-    let tokenCount = generatedText.split(separator: " ").count
-    
-    // Return the response in the format expected by Flutter
-    return [
-      "text": generatedText,
-      "generationTimeMs": generationTime,
-      "tokenCount": tokenCount
-    ]
-  }
-  #endif
 }
 
 #if canImport(FoundationModels)

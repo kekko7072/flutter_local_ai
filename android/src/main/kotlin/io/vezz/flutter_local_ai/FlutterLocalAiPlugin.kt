@@ -10,6 +10,8 @@ import com.google.mlkit.genai.prompt.GenerativeModel
 import com.google.mlkit.genai.prompt.GenerateContentResponse
 import com.google.mlkit.genai.prompt.TextPart
 import com.google.mlkit.genai.prompt.generateContentRequest
+import com.google.mlkit.genai.prompt.FeatureStatus
+import com.google.mlkit.genai.prompt.GenAiException
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -92,28 +94,36 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
   }
 
   private suspend fun checkAvailability(): Boolean = withContext(Dispatchers.IO) {
+    // Use the context to get the client, consistent with best practices
+    val model = com.google.mlkit.genai.prompt.Generation.getClient(context)
     try {
-      // Try to get the GenerativeModel client
-      val testModel = com.google.mlkit.genai.prompt.Generation.getClient()
-      testModel.close()
-      true
-    } catch (e: Exception) {
-      // Log the actual error for debugging
-      Log.e("FlutterLocalAi", "checkAvailability error: ${e.javaClass.simpleName} - ${e.message}", e)
-      
-      // More specific AICore error detection
-      // Check for specific error code -101 which indicates AICore issues
-      val errorMessage = e.message ?: ""
-      val errorCode = extractErrorCode(errorMessage)
-      
-      if (errorCode == -101) {
-        // Specifically error code -101 = AICore not installed or too old
-        throw Exception("AICore is not installed or version is too low. Error code: -101. Please install or update Google AICore from the Play Store.")
+      when (model.checkStatus()) {
+        FeatureStatus.AVAILABLE -> true
+        FeatureStatus.DOWNLOADABLE,
+        FeatureStatus.DOWNLOADING,
+        FeatureStatus.UNAVAILABLE -> false
+        else -> false
       }
-      
-      // For other errors, just return false without throwing
-      // This allows the app to handle other issues gracefully
+    } catch (e: GenAiException) {
+      // Log the actual error for debugging
+      Log.e("FlutterLocalAi", "checkAvailability error: ${e.message}", e)
+
+      if (e.errorCode == GenAiException.ErrorCode.AICORE_INCOMPATIBLE) { // -101
+         // Throw specific exception to be handled by caller or just return false
+         // Since the original signature returns Boolean, we should probably just Log and return false
+         // or if we want to propagate the error message, we need to change how this is called.
+         // However, the caller catches Exception (line 46) and returns error.
+         // So throwing here will result in result.error("UNAVAILABLE", ...)
+         throw IllegalStateException(
+             "Google AICore or MLKit is not installed or version is too low. Error code: -101. Please install or update Google AICore from the Play Store.", e
+         )
+      }
       false
+    } catch (e: Exception) {
+       Log.e("FlutterLocalAi", "checkAvailability generic error: ${e.message}", e)
+       false
+    } finally {
+      model.close()
     }
   }
   
