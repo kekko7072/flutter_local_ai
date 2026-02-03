@@ -53,7 +53,7 @@ Or if published to pub.dev:
 
 ```yaml
 dependencies:
-  flutter_local_ai: 0.0.4
+  flutter_local_ai: 0.0.5
 ```
 
 ### Android Setup

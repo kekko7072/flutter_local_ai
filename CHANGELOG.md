@@ -1,3 +1,12 @@
+## 0.0.5 
+
+### Apple platforms - Thread Safety
+* Introduced a `ModelManager` actor for thread-safe FoundationModels access, session initialization, tool registration, and text generation. (Contributed by [kaitotokyo](https://github.com/kaitotokyo))
+
+### Android - Availability Check
+* Improved availability checks using `FeatureStatus`, better `GenAiException` handling, and ensured the model client is closed. (Contributed by [kaitotokyo](https://github.com/kaitotokyo))
+* Updated AICore/MLKit incompatibility error message for clarity. (Contributed by [kaitotokyo](https://github.com/kaitotokyo))
+
 ## 0.0.4
 
 ### Apple platforms - Improvements 
