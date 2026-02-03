@@ -9,9 +9,10 @@ import androidx.annotation.NonNull
 import com.google.mlkit.genai.prompt.GenerativeModel
 import com.google.mlkit.genai.prompt.GenerateContentResponse
 import com.google.mlkit.genai.prompt.TextPart
+import com.google.mlkit.genai.prompt.Generation
 import com.google.mlkit.genai.prompt.generateContentRequest
-import com.google.mlkit.genai.prompt.FeatureStatus
-import com.google.mlkit.genai.prompt.GenAiException
+import com.google.mlkit.genai.common.FeatureStatus
+import com.google.mlkit.genai.common.GenAiException
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -64,7 +65,6 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
       "generateText" -> {
         val prompt = call.argument<String>("prompt")
         val configMap = call.argument<Map<String, Any>>("config")
-        
         if (prompt == null) {
           result.error("INVALID_ARGUMENT", "Prompt is required", null)
           return
@@ -94,8 +94,7 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
   }
 
   private suspend fun checkAvailability(): Boolean = withContext(Dispatchers.IO) {
-    // Use the context to get the client, consistent with best practices
-    val model = com.google.mlkit.genai.prompt.Generation.getClient(context)
+    val model = Generation.getClient()
     try {
       when (model.checkStatus()) {
         FeatureStatus.AVAILABLE -> true
@@ -105,30 +104,23 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
         else -> false
       }
     } catch (e: GenAiException) {
-      // Log the actual error for debugging
       Log.e("FlutterLocalAi", "checkAvailability error: ${e.message}", e)
 
-      if (e.errorCode == GenAiException.ErrorCode.AICORE_INCOMPATIBLE) { // -101
-         // Throw specific exception to be handled by caller or just return false
-         // Since the original signature returns Boolean, we should probably just Log and return false
-         // or if we want to propagate the error message, we need to change how this is called.
-         // However, the caller catches Exception (line 46) and returns error.
-         // So throwing here will result in result.error("UNAVAILABLE", ...)
-         throw IllegalStateException(
-             "Google AICore or MLKit is not installed or version is too low. Error code: -101. Please install or update Google AICore from the Play Store.", e
-         )
+      if (e.errorCode == GenAiException.ErrorCode.AICORE_INCOMPATIBLE) {
+        throw IllegalStateException(
+          "Google AICore or MLKit is not installed or version is too low. Error code: -101.", e
+        )
       }
       false
     } catch (e: Exception) {
-       Log.e("FlutterLocalAi", "checkAvailability generic error: ${e.message}", e)
-       false
+      Log.e("FlutterLocalAi", "checkAvailability generic error: ${e.message}", e)
+      false
     } finally {
       model.close()
     }
   }
-  
+
   private fun extractErrorCode(message: String): Int? {
-    // Extract error code from messages like "Error code: -101" or "(-101)" or "-101"
     val regex = Regex("""[(\s](-?\d+)[)\s]""")
     val match = regex.find(message)
     return match?.groupValues?.get(1)?.toIntOrNull()
@@ -136,25 +128,26 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
 
   private suspend fun initializeModel(instructionsArg: String?) = withContext(Dispatchers.IO) {
     try {
-      // Store instructions if provided (for consistency with iOS API)
       instructions = instructionsArg
-      
-      // Initialize model if not already done
+
       if (generativeModel == null) {
-        generativeModel = com.google.mlkit.genai.prompt.Generation.getClient()
+        generativeModel = Generation.getClient()
       }
     } catch (e: Exception) {
-      // Log the actual error for debugging
       Log.e("FlutterLocalAi", "initializeModel error: ${e.javaClass.simpleName} - ${e.message}", e)
-      
+
+      // Check for AICore incompatible error
+      if (e is GenAiException && e.errorCode == GenAiException.ErrorCode.AICORE_INCOMPATIBLE) {
+        throw Exception("AICore is not installed or version is too low (Error -101).")
+      }
+
       val errorMessage = e.message ?: ""
       val errorCode = extractErrorCode(errorMessage)
-      
+
       if (errorCode == -101) {
-        throw Exception("AICore is not installed or version is too low (Error -101). Please install or update Google AICore from the Play Store: https://play.google.com/store/apps/details?id=com.google.android.aicore")
+        throw Exception("AICore is not installed or version is too low (Error -101). Please install or update Google AICore from the Play Store.")
       }
-      
-      // Re-throw the original exception for other errors
+
       throw Exception("Failed to initialize model: ${e.message}")
     }
   }
@@ -164,59 +157,43 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
     configMap: Map<String, Any>?
   ): Map<String, Any> = withContext(Dispatchers.IO) {
     try {
-      // Initialize model if not already done
       if (generativeModel == null) {
-        generativeModel = com.google.mlkit.genai.prompt.Generation.getClient()
+        generativeModel = Generation.getClient()
       }
 
-      // Build the prompt with instructions if available
       val fullPrompt = if (instructions != null) {
         "${instructions}\n\n$prompt"
       } else {
         prompt
       }
 
-      // Extract generation config parameters
-      val maxOutputTokensValue = configMap?.get("maxTokens")?.let { (it as Number).toInt() }
-      val temperatureValue = configMap?.get("temperature")?.let { (it as Number).toDouble()?.toFloat() }
+      val maxOutputTokensValue = (configMap?.get("maxTokens") as? Number)?.toInt()
+      val temperatureValue = (configMap?.get("temperature") as? Number)?.toFloat()
 
-      // Create request using generateContentRequest utility function
-      // https://developers.google.com/ml-kit/genai/prompt/android/get-started
       val request = generateContentRequest(TextPart(fullPrompt)) {
-        maxOutputTokens = maxOutputTokensValue
-        temperature = temperatureValue
+        if (maxOutputTokensValue != null) maxOutputTokens = maxOutputTokensValue
+        if (temperatureValue != null) temperature = temperatureValue
       }
 
-      // Generate content - the API returns GenerateContentResponse directly (suspending function)
       val startTime = System.currentTimeMillis()
       val response: GenerateContentResponse = generativeModel!!.generateContent(request)
       val generationTime = System.currentTimeMillis() - startTime
 
-      // Extract response text from candidates
       val generatedText = response.candidates.firstOrNull()?.text ?: ""
-      
-      // Token count is not directly available in the response
-      // Use word count as an approximation
       val tokenCount = generatedText.split(" ").filter { it.isNotEmpty() }.size
 
-      // Return response matching AiResponse model structure
       mapOf(
         "text" to generatedText,
         "generationTimeMs" to generationTime,
         "tokenCount" to tokenCount
       )
     } catch (e: Exception) {
-      // Log the actual error for debugging
       Log.e("FlutterLocalAi", "generateText error: ${e.javaClass.simpleName} - ${e.message}", e)
-      
-      val errorMessage = e.message ?: ""
-      val errorCode = extractErrorCode(errorMessage)
-      
-      if (errorCode == -101) {
-        throw Exception("AICore is not installed or version is too low (Error -101). Please install or update Google AICore from the Play Store: https://play.google.com/store/apps/details?id=com.google.android.aicore")
+
+      if (e is GenAiException && e.errorCode == GenAiException.ErrorCode.AICORE_INCOMPATIBLE) {
+        throw Exception("AICore is not installed or version is too low (Error -101).")
       }
-      
-      // For other errors, provide the actual error message
+
       throw Exception("Error generating text: ${e.message}")
     }
   }
@@ -225,10 +202,9 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
     if (!::context.isInitialized) {
       throw Exception("Context not initialized")
     }
-    
+
     val packageName = "com.google.android.aicore"
     try {
-      // Try to open in Play Store app
       val intent = Intent(Intent.ACTION_VIEW).apply {
         data = Uri.parse("market://details?id=$packageName")
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -236,7 +212,6 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
       if (intent.resolveActivity(context.packageManager) != null) {
         context.startActivity(intent)
       } else {
-        // If Play Store app not available, open in browser
         val browserIntent = Intent(Intent.ACTION_VIEW).apply {
           data = Uri.parse("https://play.google.com/store/apps/details?id=$packageName")
           addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -244,7 +219,6 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
         context.startActivity(browserIntent)
       }
     } catch (e: ActivityNotFoundException) {
-      // If Play Store app not available, open in browser
       val intent = Intent(Intent.ACTION_VIEW).apply {
         data = Uri.parse("https://play.google.com/store/apps/details?id=$packageName")
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
