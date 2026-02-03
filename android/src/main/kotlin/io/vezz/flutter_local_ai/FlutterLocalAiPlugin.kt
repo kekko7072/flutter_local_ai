@@ -115,7 +115,7 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
          // However, the caller catches Exception (line 46) and returns error.
          // So throwing here will result in result.error("UNAVAILABLE", ...)
          throw IllegalStateException(
-             "Google AICore 未安装或版本过低（-101）。请安装/更新 Google AICore。", e
+             "Google AICore or MLKit is not installed or version is too low. Error code: -101. Please install or update Google AICore from the Play Store.", e
          )
       }
       false
