@@ -89,3 +89,4 @@ coverage/
 .fvm/
 
 darwin/.build
+**/.build
