@@ -1,5 +1,4 @@
-import 'dart:async';
-import 'package:flutter/services.dart';
+import 'flutter_local_ai_platform_interface.dart';
 import 'models/ai_response.dart';
 import 'models/generation_config.dart';
 import 'models/model_status.dart';
@@ -8,142 +7,20 @@ import 'models/tool.dart';
 
 /// Main class for interacting with local AI
 class FlutterLocalAi {
-  static const MethodChannel _channel = MethodChannel('flutter_local_ai');
-  static bool _toolHandlerRegistered = false;
-  static final Map<String, LocalAiTool> _registeredTools = {};
-  static final StreamController<ModelDownloadStatus>
-      _downloadStatusController = StreamController.broadcast();
-
-  FlutterLocalAi() {
-    _registerToolHandlerIfNeeded();
-  }
-
-  static void _registerToolHandlerIfNeeded() {
-    if (_toolHandlerRegistered) return;
-    _channel.setMethodCallHandler(_handlePlatformMethod);
-    _toolHandlerRegistered = true;
-  }
-
-  static Future<dynamic> _handlePlatformMethod(MethodCall call) async {
-    if (call.method == 'onToolCall') {
-      final args = (call.arguments as Map?) ?? {};
-      final toolName = args['toolName']?.toString();
-      final rawArgs = args['arguments'];
-
-      if (toolName == null) {
-        throw PlatformException(
-          code: 'INVALID_TOOL_REQUEST',
-          message: 'Tool name was not provided by native layer.',
-        );
-      }
-
-      final tool = _registeredTools[toolName];
-      if (tool == null) {
-        throw PlatformException(
-          code: 'TOOL_NOT_FOUND',
-          message: 'No Dart tool registered with name $toolName',
-        );
-      }
-
-      final parsedArgs = _normalizeArguments(rawArgs);
-      return await tool.onCall(parsedArgs);
-    }
-
-    if (call.method == 'onDownloadStatus') {
-      final args = (call.arguments as Map?) ?? {};
-      final status =
-          ModelDownloadStatus.fromMap(Map<String, dynamic>.from(args));
-      _downloadStatusController.add(status);
-      return null;
-    }
-
-    return null;
-  }
-
-  static Map<String, dynamic> _normalizeArguments(Object? rawArgs) {
-    if (rawArgs == null) {
-      return {};
-    }
-
-    if (rawArgs is Map) {
-      return rawArgs.map((key, value) => MapEntry(key.toString(), value));
-    }
-
-    return {};
-  }
-
   /// Check if local AI is available on the device
-  Future<bool> isAvailable() async {
-    try {
-      final result = await _channel.invokeMethod<bool>('isAvailable');
-      return result ?? false;
-    } catch (e) {
-      return false;
-    }
-  }
+  Future<bool> isAvailable() => FlutterLocalAiPlatform.instance.isAvailable();
 
   /// Returns platform-specific local AI backend information.
-  Future<LocalAiPlatformInfo> getPlatformInfo() async {
-    try {
-      final result = await _channel.invokeMethod<Map<Object?, Object?>>(
-        'getPlatformInfo',
-      );
-      if (result == null) {
-        return const LocalAiPlatformInfo(
-          backend: LocalAiBackend.unsupported,
-          platform: 'unknown',
-          apiName: 'Unknown',
-          supportsToolCalling: false,
-          supportsModelDownload: false,
-          supportsPlayStoreRedirect: false,
-          isConfigured: false,
-        );
-      }
-      return LocalAiPlatformInfo.fromMap(Map<String, dynamic>.from(result));
-    } on PlatformException {
-      return const LocalAiPlatformInfo(
-        backend: LocalAiBackend.unsupported,
-        platform: 'unknown',
-        apiName: 'Unknown',
-        supportsToolCalling: false,
-        supportsModelDownload: false,
-        supportsPlayStoreRedirect: false,
-        isConfigured: false,
-      );
-    }
-  }
+  Future<LocalAiPlatformInfo> getPlatformInfo() =>
+      FlutterLocalAiPlatform.instance.getPlatformInfo();
 
   /// Initialize the model and create a session with instruction text
   ///
   /// [instructions] - Optional instruction text for the session (default: "You are a helpful assistant. Provide concise answers.")
   ///
   /// Returns true if initialization was successful
-  Future<bool> initialize({String? instructions}) async {
-    try {
-      final arguments = {
-        if (instructions != null) 'instructions': instructions,
-      };
-
-      final result = await _channel.invokeMethod<bool>('initialize', arguments);
-      return result ?? false;
-    } on PlatformException catch (e) {
-      throw Exception('Failed to initialize: ${e.message}');
-    }
-  }
-
-  /// Register Dart tools to be exposed to the native model (Darwin only).
-  Future<void> registerTools(List<LocalAiTool> tools) async {
-    _registerToolHandlerIfNeeded();
-
-    _registeredTools
-      ..clear()
-      ..addEntries(tools.map((tool) => MapEntry(tool.name, tool)));
-
-    await _channel.invokeMethod<bool>(
-      'registerTools',
-      tools.map((tool) => tool.toMap()).toList(),
-    );
-  }
+  Future<bool> initialize({String? instructions}) =>
+      FlutterLocalAiPlatform.instance.initialize(instructions: instructions);
 
   /// Generate text from a prompt
   ///
@@ -154,27 +31,11 @@ class FlutterLocalAi {
   Future<AiResponse> generateText({
     required String prompt,
     GenerationConfig? config,
-  }) async {
-    try {
-      final arguments = {
-        'prompt': prompt,
-        if (config != null) 'config': config.toMap(),
-      };
-
-      final result = await _channel.invokeMethod<Map<Object?, Object?>>(
-        'generateText',
-        arguments,
+  }) =>
+      FlutterLocalAiPlatform.instance.generateText(
+        prompt: prompt,
+        config: config,
       );
-
-      if (result == null) {
-        throw Exception('Failed to generate text: null response');
-      }
-
-      return AiResponse.fromMap(Map<String, dynamic>.from(result));
-    } on PlatformException catch (e) {
-      throw Exception('Failed to generate text: ${e.message}');
-    }
-  }
 
   /// Generate text with a simple prompt (convenience method)
   ///
@@ -199,34 +60,20 @@ class FlutterLocalAi {
   /// or the version is too low (error code -101).
   ///
   /// Returns true if the Play Store was opened successfully
-  Future<bool> openAICorePlayStore() async {
-    try {
-      final result = await _channel.invokeMethod<bool>('openAICorePlayStore');
-      return result ?? false;
-    } on PlatformException catch (e) {
-      // If platform doesn't support this (e.g., iOS), fail silently
-      if (e.code == 'unimplemented') {
-        return false;
-      }
-      throw Exception('Failed to open Play Store: ${e.message}');
-    }
-  }
+  Future<bool> openAICorePlayStore() =>
+      FlutterLocalAiPlatform.instance.openAICorePlayStore();
+
+  /// Register Dart tools to be exposed to the native model (Darwin only).
+  Future<void> registerTools(List<LocalAiTool> tools) =>
+      FlutterLocalAiPlatform.instance.registerTools(tools);
 
   /// Check the model status (Android only).
-  Future<ModelFeatureStatus> getModelStatus() async {
-    try {
-      final result = await _channel.invokeMethod<String>('getModelStatus');
-      return modelFeatureStatusFromString(result);
-    } on PlatformException catch (e) {
-      throw Exception('Failed to get model status: ${e.message}');
-    }
-  }
+  Future<ModelFeatureStatus> getModelStatus() =>
+      FlutterLocalAiPlatform.instance.getModelStatus();
 
   /// Download the model if needed (Android only).
   ///
   /// Returns a stream of download status updates.
-  Stream<ModelDownloadStatus> downloadModel() {
-    _channel.invokeMethod<void>('downloadModel');
-    return _downloadStatusController.stream;
-  }
+  Stream<ModelDownloadStatus> downloadModel() =>
+      FlutterLocalAiPlatform.instance.downloadModel();
 }
