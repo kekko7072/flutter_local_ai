@@ -1,6 +1,6 @@
 {
   "": {
-    "swift-dependencies": "/Users/francescovezzani/Developer/flutter_local_ai/darwin/flutter_local_ai/.build/index-build/arm64-apple-macosx/debug/flutter_local_ai.build/master.swiftdeps"
+    "swift-dependencies": "/Users/francescovezzani/Developer/flutter_local_ai/darwin/flutter_local_ai/.build/index-build/arm64-apple-macosx/debug/flutter_local_ai.build/primary.swiftdeps"
   },
   "/Users/francescovezzani/Developer/flutter_local_ai/darwin/flutter_local_ai/Classes/FlutterLocalAiPlugin.swift": {
     "dependencies": "/Users/francescovezzani/Developer/flutter_local_ai/darwin/flutter_local_ai/.build/index-build/arm64-apple-macosx/debug/flutter_local_ai.build/FlutterLocalAiPlugin.d",
