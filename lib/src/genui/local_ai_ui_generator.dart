@@ -113,13 +113,23 @@ Keep copy warm, plain and encouraging. Never use emoji.
   }
 
   /// Generate a module for [goal]. Returns null on any failure.
-  Future<GenUiModuleSpec?> generateModule(String goal, {String? principles}) async {
+  ///
+  /// [language] — when set to an English language name (e.g. "Italian",
+  /// "German") — forces all generated user-facing copy (title, blurb, every
+  /// block label/item/note) into that language. Null/empty leaves the model to
+  /// answer in the goal's own language.
+  Future<GenUiModuleSpec?> generateModule(String goal,
+      {String? principles, String? language}) async {
     final clean = goal.trim();
     if (clean.isEmpty) return null;
     if (!await ensureReady()) return null;
 
     final principleLine = (principles != null && principles.isNotEmpty)
         ? '\nThe user\'s guiding principles: $principles. Respect them.'
+        : '';
+    final languageLine = (language != null && language.isNotEmpty)
+        ? '\nWrite ALL user-facing text (title, blurb, and every label, item '
+            'and note) in $language.'
         : '';
     // Gemini Nano (ML Kit GenAI) caps output at 256 tokens, so a verbose module
     // gets truncated mid-JSON. Ask the small model for compact output and fewer
@@ -131,7 +141,8 @@ Keep copy warm, plain and encouraging. Never use emoji.
             'or commas, and no trailing commas.'
         : '';
     final prompt =
-        'Design the Fledge module for this goal: "$clean".$principleLine\n'
+        'Design the Fledge module for this goal: "$clean".$principleLine'
+        '$languageLine\n'
         'Return ONLY the JSON object.$sizeHint';
 
     try {

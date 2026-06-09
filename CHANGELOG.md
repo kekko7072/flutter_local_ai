@@ -1,3 +1,12 @@
+## 0.0.11
+
+### genUI — localized generation
+* `LocalAiUiGenerator.generateModule` gains an optional `language` parameter (an
+  English language name such as "Italian" or "German"). When set, the prompt
+  instructs the on-device model to write all user-facing copy — title, blurb and
+  every block label, item and note — in that language, so generated modules match
+  the app's locale. Omitting it preserves the previous behaviour.
+
 ## 0.0.10
 
 ### genUI — reliable generation on Android (Gemini Nano)
