@@ -139,6 +139,8 @@ import FoundationModels
 
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     switch call.method {
+    case "getPlatformInfo":
+      getPlatformInfo(result: result)
     case "isAvailable":
       checkAvailability(result: result)
     case "initialize":
@@ -150,6 +152,39 @@ import FoundationModels
     default:
       result(FlutterMethodNotImplemented)
     }
+  }
+
+  private func getPlatformInfo(result: @escaping FlutterResult) {
+    #if os(iOS)
+    let platform = "ios"
+    #elseif os(OSX)
+    let platform = "macos"
+    #else
+    let platform = "unknown"
+    #endif
+
+    #if canImport(FoundationModels)
+    let configured = true
+    #else
+    let configured = false
+    #endif
+
+    let supportsFoundationModels: Bool
+    if #available(iOS 26.0, macOS 26.0, *) {
+      supportsFoundationModels = true
+    } else {
+      supportsFoundationModels = false
+    }
+
+    result([
+      "backend": "apple_foundation_models",
+      "platform": platform,
+      "apiName": "Apple Foundation Models",
+      "supportsToolCalling": supportsFoundationModels,
+      "supportsModelDownload": false,
+      "supportsPlayStoreRedirect": false,
+      "isConfigured": configured
+    ])
   }
 
   private func checkAvailability(result: @escaping FlutterResult) {

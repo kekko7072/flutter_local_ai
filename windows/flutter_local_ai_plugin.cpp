@@ -58,6 +58,7 @@ class FlutterLocalAiPlugin : public flutter::Plugin {
       std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
   // Method handlers
+  void GetPlatformInfo(std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
   void IsAvailable(std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
   void Initialize(const flutter::EncodableMap& args, std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
   void GenerateText(const flutter::EncodableMap& args, std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
@@ -107,6 +108,8 @@ void FlutterLocalAiPlugin::HandleMethodCall(
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
   if (method_call.method_name().compare("isAvailable") == 0) {
     IsAvailable(std::move(result));
+  } else if (method_call.method_name().compare("getPlatformInfo") == 0) {
+    GetPlatformInfo(std::move(result));
   } else if (method_call.method_name().compare("initialize") == 0) {
     const auto* args = std::get_if<EncodableMap>(method_call.arguments());
     if (args) {
@@ -127,6 +130,25 @@ void FlutterLocalAiPlugin::HandleMethodCall(
   } else {
     result->NotImplemented();
   }
+}
+
+void FlutterLocalAiPlugin::GetPlatformInfo(
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  EncodableMap response;
+  response[EncodableValue("platform")] = EncodableValue("windows");
+  response[EncodableValue("supportsToolCalling")] = EncodableValue(false);
+  response[EncodableValue("supportsModelDownload")] = EncodableValue(false);
+  response[EncodableValue("supportsPlayStoreRedirect")] = EncodableValue(false);
+#if WINDOWS_AI_AVAILABLE
+  response[EncodableValue("backend")] = EncodableValue("windows_ai_foundry");
+  response[EncodableValue("apiName")] = EncodableValue("Windows AI Foundry");
+  response[EncodableValue("isConfigured")] = EncodableValue(true);
+#else
+  response[EncodableValue("backend")] = EncodableValue("windows_ai_foundry_unconfigured");
+  response[EncodableValue("apiName")] = EncodableValue("Windows AI Foundry (SDK not configured)");
+  response[EncodableValue("isConfigured")] = EncodableValue(false);
+#endif
+  result->Success(flutter::EncodableValue(response));
 }
 
 void FlutterLocalAiPlugin::IsAvailable(

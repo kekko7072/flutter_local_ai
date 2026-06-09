@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'models/ai_response.dart';
 import 'models/generation_config.dart';
+import 'models/model_status.dart';
+import 'models/platform_info.dart';
 import 'models/tool.dart';
 
 /// Main class for interacting with local AI
@@ -9,6 +11,8 @@ class FlutterLocalAi {
   static const MethodChannel _channel = MethodChannel('flutter_local_ai');
   static bool _toolHandlerRegistered = false;
   static final Map<String, LocalAiTool> _registeredTools = {};
+  static final StreamController<ModelDownloadStatus>
+      _downloadStatusController = StreamController.broadcast();
 
   FlutterLocalAi() {
     _registerToolHandlerIfNeeded();
@@ -45,6 +49,14 @@ class FlutterLocalAi {
       return await tool.onCall(parsedArgs);
     }
 
+    if (call.method == 'onDownloadStatus') {
+      final args = (call.arguments as Map?) ?? {};
+      final status =
+          ModelDownloadStatus.fromMap(Map<String, dynamic>.from(args));
+      _downloadStatusController.add(status);
+      return null;
+    }
+
     return null;
   }
 
@@ -67,6 +79,37 @@ class FlutterLocalAi {
       return result ?? false;
     } catch (e) {
       return false;
+    }
+  }
+
+  /// Returns platform-specific local AI backend information.
+  Future<LocalAiPlatformInfo> getPlatformInfo() async {
+    try {
+      final result = await _channel.invokeMethod<Map<Object?, Object?>>(
+        'getPlatformInfo',
+      );
+      if (result == null) {
+        return const LocalAiPlatformInfo(
+          backend: LocalAiBackend.unsupported,
+          platform: 'unknown',
+          apiName: 'Unknown',
+          supportsToolCalling: false,
+          supportsModelDownload: false,
+          supportsPlayStoreRedirect: false,
+          isConfigured: false,
+        );
+      }
+      return LocalAiPlatformInfo.fromMap(Map<String, dynamic>.from(result));
+    } on PlatformException {
+      return const LocalAiPlatformInfo(
+        backend: LocalAiBackend.unsupported,
+        platform: 'unknown',
+        apiName: 'Unknown',
+        supportsToolCalling: false,
+        supportsModelDownload: false,
+        supportsPlayStoreRedirect: false,
+        isConfigured: false,
+      );
     }
   }
 
@@ -167,5 +210,23 @@ class FlutterLocalAi {
       }
       throw Exception('Failed to open Play Store: ${e.message}');
     }
+  }
+
+  /// Check the model status (Android only).
+  Future<ModelFeatureStatus> getModelStatus() async {
+    try {
+      final result = await _channel.invokeMethod<String>('getModelStatus');
+      return modelFeatureStatusFromString(result);
+    } on PlatformException catch (e) {
+      throw Exception('Failed to get model status: ${e.message}');
+    }
+  }
+
+  /// Download the model if needed (Android only).
+  ///
+  /// Returns a stream of download status updates.
+  Stream<ModelDownloadStatus> downloadModel() {
+    _channel.invokeMethod<void>('downloadModel');
+    return _downloadStatusController.stream;
   }
 }

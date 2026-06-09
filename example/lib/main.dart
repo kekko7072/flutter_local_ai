@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -46,6 +47,11 @@ class _MyHomePageState extends State<MyHomePage> {
   bool _isInitializing = false;
   bool _toolsRegistered = false;
   bool _toolsEnabled = false;
+  ModelFeatureStatus _modelStatus = ModelFeatureStatus.unknown;
+  bool _isDownloading = false;
+  int? _downloadedBytes;
+  String _downloadError = '';
+  StreamSubscription<ModelDownloadStatus>? _downloadSub;
 
   @override
   void initState() {
@@ -60,6 +66,10 @@ class _MyHomePageState extends State<MyHomePage> {
         _isAvailable = available;
         _errorMessage = ''; // Clear error on success
       });
+
+      if (Platform.isAndroid) {
+        await _refreshModelStatus();
+      }
 
       // Auto-initialize if available
       if (available && !_isInitialized) {
@@ -92,6 +102,91 @@ class _MyHomePageState extends State<MyHomePage> {
         }
       }
     }
+  }
+
+  Future<void> _refreshModelStatus() async {
+    try {
+      final status = await _aiEngine.getModelStatus();
+      setState(() {
+        _modelStatus = status;
+        _downloadError = '';
+      });
+    } catch (e) {
+      final errorStr = e.toString();
+      setState(() {
+        _downloadError = errorStr;
+        _modelStatus = ModelFeatureStatus.unknown;
+      });
+
+      if (errorStr.contains('-101') || errorStr.contains('AICore')) {
+        _showAICoreErrorDialog();
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error checking model status: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _downloadModel() {
+    if (!Platform.isAndroid || _isDownloading) return;
+
+    setState(() {
+      _isDownloading = true;
+      _downloadedBytes = null;
+      _downloadError = '';
+    });
+
+    _downloadSub?.cancel();
+    _downloadSub = _aiEngine.downloadModel().listen(
+      (status) async {
+        switch (status.type) {
+          case ModelDownloadStatusType.started:
+            setState(() {
+              _isDownloading = true;
+              _downloadError = '';
+            });
+            break;
+          case ModelDownloadStatusType.progress:
+            setState(() {
+              _downloadedBytes = status.totalBytesDownloaded;
+            });
+            break;
+          case ModelDownloadStatusType.completed:
+            setState(() {
+              _isDownloading = false;
+            });
+            await _refreshModelStatus();
+            await _checkAvailability();
+            break;
+          case ModelDownloadStatusType.failed:
+            setState(() {
+              _isDownloading = false;
+              _downloadError = status.errorMessage ?? 'Download failed';
+            });
+            break;
+          case ModelDownloadStatusType.unknown:
+            setState(() {
+              _downloadError = 'Unknown download status';
+            });
+            break;
+        }
+      },
+      onError: (e) {
+        setState(() {
+          _isDownloading = false;
+          _downloadError = e.toString();
+        });
+      },
+      onDone: () {
+        setState(() {
+          _isDownloading = false;
+        });
+      },
+    );
   }
 
   Future<void> _configureTools(bool enable) async {
@@ -407,9 +502,36 @@ class _MyHomePageState extends State<MyHomePage> {
 
   @override
   void dispose() {
+    _downloadSub?.cancel();
     _promptController.dispose();
     _instructionsController.dispose();
     super.dispose();
+  }
+
+  String _formatBytes(int bytes) {
+    if (bytes < 1024) return '${bytes} B';
+    final kb = bytes / 1024;
+    if (kb < 1024) return '${kb.toStringAsFixed(1)} KB';
+    final mb = kb / 1024;
+    if (mb < 1024) return '${mb.toStringAsFixed(1)} MB';
+    final gb = mb / 1024;
+    return '${gb.toStringAsFixed(2)} GB';
+  }
+
+  String _modelStatusLabel(ModelFeatureStatus status) {
+    switch (status) {
+      case ModelFeatureStatus.available:
+        return 'Model downloaded';
+      case ModelFeatureStatus.downloadable:
+        return 'Model not downloaded';
+      case ModelFeatureStatus.downloading:
+        return 'Download in progress';
+      case ModelFeatureStatus.unavailable:
+        return 'Model unavailable';
+      case ModelFeatureStatus.unknown:
+      default:
+        return 'Unknown status';
+    }
   }
 
   @override
@@ -511,6 +633,93 @@ class _MyHomePageState extends State<MyHomePage> {
               ),
             ),
             const SizedBox(height: 16),
+
+            if (Platform.isAndroid)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            _modelStatus == ModelFeatureStatus.available
+                                ? Icons.check_circle
+                                : _modelStatus ==
+                                        ModelFeatureStatus.downloadable
+                                    ? Icons.download
+                                    : _modelStatus ==
+                                            ModelFeatureStatus.downloading
+                                        ? Icons.downloading
+                                        : Icons.info,
+                            color: _modelStatus == ModelFeatureStatus.available
+                                ? Colors.green
+                                : _modelStatus ==
+                                        ModelFeatureStatus.downloadable
+                                    ? Colors.orange
+                                    : _modelStatus ==
+                                            ModelFeatureStatus.downloading
+                                        ? Colors.blue
+                                        : Colors.grey,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _modelStatusLabel(_modelStatus),
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (_isDownloading || _modelStatus == ModelFeatureStatus.downloading) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              _downloadedBytes != null
+                                  ? 'Downloading: ${_formatBytes(_downloadedBytes!)}'
+                                  : 'Downloading...',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                      ],
+                      if (_downloadError.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          _downloadError,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: Colors.red),
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                      ElevatedButton.icon(
+                        onPressed: (_modelStatus ==
+                                    ModelFeatureStatus.downloadable &&
+                                !_isDownloading)
+                            ? _downloadModel
+                            : null,
+                        icon: const Icon(Icons.download),
+                        label: const Text('Download Model'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue,
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            if (Platform.isAndroid) const SizedBox(height: 16),
 
             // Instructions TextField (expandable)
             ExpansionTile(

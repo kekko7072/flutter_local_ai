@@ -4,7 +4,9 @@
         android:label="flutter_local_ai_example"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <!-- Required for ML Kit GenAI -->
         <uses-library android:name="com.google.android.aicore" android:required="false" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

@@ -11,6 +11,7 @@ import com.google.mlkit.genai.prompt.GenerateContentResponse
 import com.google.mlkit.genai.prompt.TextPart
 import com.google.mlkit.genai.prompt.Generation
 import com.google.mlkit.genai.prompt.generateContentRequest
+import com.google.mlkit.genai.common.DownloadStatus
 import com.google.mlkit.genai.common.FeatureStatus
 import com.google.mlkit.genai.common.GenAiException
 import io.flutter.embedding.engine.plugins.FlutterPlugin
@@ -24,6 +25,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.collect
 
 /** FlutterLocalAiPlugin */
 class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
@@ -50,6 +52,9 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
             result.error("UNAVAILABLE", "Error checking availability: ${e.message}", null)
           }
         }
+      }
+      "getPlatformInfo" -> {
+        result.success(getPlatformInfo())
       }
       "initialize" -> {
         val instructionsArg = call.argument<String>("instructions")
@@ -87,10 +92,42 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
           result.error("PLAY_STORE_ERROR", "Could not open Play Store: ${e.message}", null)
         }
       }
+      "getModelStatus" -> {
+        coroutineScope.launch {
+          try {
+            val status = getModelStatus()
+            result.success(status)
+          } catch (e: Exception) {
+            result.error("STATUS_ERROR", "Error checking model status: ${e.message}", null)
+          }
+        }
+      }
+      "downloadModel" -> {
+        coroutineScope.launch {
+          try {
+            downloadModel()
+            result.success(true)
+          } catch (e: Exception) {
+            result.error("DOWNLOAD_ERROR", "Error downloading model: ${e.message}", null)
+          }
+        }
+      }
       else -> {
         result.notImplemented()
       }
     }
+  }
+
+  private fun getPlatformInfo(): Map<String, Any> {
+    return mapOf(
+      "backend" to "android_mlkit_genai",
+      "platform" to "android",
+      "apiName" to "Google ML Kit GenAI (AICore)",
+      "supportsToolCalling" to false,
+      "supportsModelDownload" to true,
+      "supportsPlayStoreRedirect" to true,
+      "isConfigured" to true
+    )
   }
 
   private suspend fun checkAvailability(): Boolean = withContext(Dispatchers.IO) {
@@ -115,6 +152,87 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
     } catch (e: Exception) {
       Log.e("FlutterLocalAi", "checkAvailability generic error: ${e.message}", e)
       false
+    } finally {
+      model.close()
+    }
+  }
+
+  private suspend fun getModelStatus(): String = withContext(Dispatchers.IO) {
+    val model = Generation.getClient()
+    try {
+      return@withContext when (model.checkStatus()) {
+        FeatureStatus.AVAILABLE -> "available"
+        FeatureStatus.DOWNLOADABLE -> "downloadable"
+        FeatureStatus.DOWNLOADING -> "downloading"
+        FeatureStatus.UNAVAILABLE -> "unavailable"
+        else -> "unknown"
+      }
+    } catch (e: GenAiException) {
+      Log.e("FlutterLocalAi", "getModelStatus error: ${e.message}", e)
+
+      if (e.errorCode == GenAiException.ErrorCode.AICORE_INCOMPATIBLE) {
+        throw IllegalStateException(
+          "Google AICore or MLKit is not installed or version is too low. Error code: -101.", e
+        )
+      }
+      return@withContext "unknown"
+    } catch (e: Exception) {
+      Log.e("FlutterLocalAi", "getModelStatus generic error: ${e.message}", e)
+      return@withContext "unknown"
+    } finally {
+      model.close()
+    }
+  }
+
+  private fun emitDownloadStatus(payload: Map<String, Any?>) {
+    coroutineScope.launch(Dispatchers.Main) {
+      channel.invokeMethod("onDownloadStatus", payload)
+    }
+  }
+
+  private suspend fun downloadModel() = withContext(Dispatchers.IO) {
+    val model = Generation.getClient()
+    try {
+      model.download().collect { status ->
+        when (status) {
+          is DownloadStatus.DownloadStarted -> {
+            emitDownloadStatus(mapOf("status" to "started"))
+          }
+          is DownloadStatus.DownloadProgress -> {
+            emitDownloadStatus(
+              mapOf(
+                "status" to "progress",
+                "totalBytesDownloaded" to status.totalBytesDownloaded
+              )
+            )
+          }
+          is DownloadStatus.DownloadCompleted -> {
+            emitDownloadStatus(mapOf("status" to "completed"))
+          }
+          is DownloadStatus.DownloadFailed -> {
+            emitDownloadStatus(
+              mapOf(
+                "status" to "failed",
+                "errorMessage" to (status.e.message ?: "Unknown error")
+              )
+            )
+          }
+          else -> {
+            emitDownloadStatus(mapOf("status" to "unknown"))
+          }
+        }
+      }
+    } catch (e: GenAiException) {
+      Log.e("FlutterLocalAi", "downloadModel error: ${e.message}", e)
+      if (e.errorCode == GenAiException.ErrorCode.AICORE_INCOMPATIBLE) {
+        throw IllegalStateException(
+          "Google AICore or MLKit is not installed or version is too low. Error code: -101.", e
+        )
+      }
+      throw e
+    } catch (e: Exception) {
+      Log.e("FlutterLocalAi", "downloadModel generic error: ${e.message}", e)
+      throw e
     } finally {
       model.close()
     }
