@@ -82,6 +82,19 @@ class MethodChannelFlutterLocalAi extends FlutterLocalAiPlatform {
   }
 
   @override
+  Future<String> availabilityReason() async {
+    try {
+      final result =
+          await methodChannel.invokeMethod<String>('availabilityReason');
+      return result ?? 'unknown';
+    } on PlatformException catch (exception) {
+      return 'unavailable: ${exception.message}';
+    } catch (e) {
+      return 'unavailable: $e';
+    }
+  }
+
+  @override
   Future<bool> initialize({String? instructions}) async {
     try {
       final arguments = {

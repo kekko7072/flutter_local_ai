@@ -51,6 +51,21 @@ import FoundationModels
       }
     }
 
+    /// Human-readable reason for the current availability state, so callers can
+    /// tell the user exactly what to enable (Apple Intelligence, model download,
+    /// an eligible device, a supported language/region…).
+    func availabilityReasonString() async -> String {
+      let model = (try? await loadModel()) ?? SystemLanguageModel.default
+      switch model.availability {
+      case .available:
+        return "available"
+      case .unavailable(let reason):
+        return "unavailable: \(String(reflecting: reason))"
+      @unknown default:
+        return "unknown"
+      }
+    }
+
     func updateRegisteredTools(from payload: [[String: Any]], channel: FlutterMethodChannel) throws {
       let parsedTools = try payload.map { try FlutterTool(from: $0, channel: channel) }
       registeredTools = parsedTools
@@ -97,9 +112,30 @@ import FoundationModels
         )
       }
       
-      // Use the session to generate text
-      let response = try await session.respond(to: prompt, options: .init(sampling: .greedy, temperature: temperature ?? 0.7, maximumResponseTokens: maxTokens))
-      let generatedText = response.content
+      // Build generation options. NOTE: `.greedy` sampling must NOT be combined
+      // with a temperature (they are mutually exclusive and trigger a
+      // GenerationError on-device). Pick one based on the requested temp.
+      let options: GenerationOptions
+      if let temp = temperature, temp > 0 {
+        options = GenerationOptions(temperature: temp, maximumResponseTokens: maxTokens)
+      } else {
+        options = GenerationOptions(sampling: .greedy, maximumResponseTokens: maxTokens)
+      }
+
+      // Generate text. On any failure, surface a fully-reflected description so
+      // the concrete error case (guardrail, missing assets, etc.) is diagnosable.
+      let generatedText: String
+      do {
+        let response = try await session.respond(to: prompt, options: options)
+        generatedText = response.content
+      } catch {
+        throw NSError(
+          domain: "FlutterLocalAiPlugin",
+          code: 3,
+          userInfo: [NSLocalizedDescriptionKey:
+            "respond failed :: reflected=\(String(reflecting: error)) :: localized=\(error.localizedDescription)"]
+        )
+      }
       
       // Calculate generation time in milliseconds
       let generationTime = Int(Date().timeIntervalSince(startTime) * 1000)
@@ -143,6 +179,8 @@ import FoundationModels
       getPlatformInfo(result: result)
     case "isAvailable":
       checkAvailability(result: result)
+    case "availabilityReason":
+      availabilityReason(result: result)
     case "initialize":
       initialize(call: call, result: result)
     case "generateText":
@@ -203,6 +241,25 @@ import FoundationModels
     }
     #else
     result(false)
+    #endif
+  }
+
+  private func availabilityReason(result: @escaping FlutterResult) {
+    #if canImport(FoundationModels)
+    if #available(iOS 26.0, macOS 26.0, *) {
+      guard let manager = modelManager as? ModelManager else {
+        result("unavailable: no model manager")
+        return
+      }
+      Task {
+        let reason = await manager.availabilityReasonString()
+        result(reason)
+      }
+    } else {
+      result("unavailable: requires iOS 26.0 / macOS 26.0 or later")
+    }
+    #else
+    result("unavailable: FoundationModels framework not compiled in")
     #endif
   }
 

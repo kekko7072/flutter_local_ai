@@ -1,3 +1,17 @@
+## 0.0.7
+
+### genUI integration
+* Added a `genui` integration so the package can turn a natural-language goal
+  into a renderable module spec: `LocalAiUiGenerator` (on-device, via
+  FoundationModels) and `GenUiModuleSpec` (typed blocks → `genui` components).
+* Added `availabilityReason()` (Dart + Apple native) to report exactly why the
+  model is unavailable (e.g. `deviceNotEligible`, Apple Intelligence disabled).
+
+### Apple platforms - Generation fix
+* Fixed a FoundationModels `GenerationError` caused by combining `.greedy`
+  sampling with a temperature; options are now chosen exclusively. Generation
+  failures now surface a fully-reflected, diagnosable error description.
+
 ## 0.0.6
 
 ### Android - Availability & Dependencies

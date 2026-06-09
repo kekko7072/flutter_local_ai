@@ -7,3 +7,7 @@ export 'src/models/generation_config.dart';
 export 'src/models/model_status.dart';
 export 'src/models/platform_info.dart';
 export 'src/models/tool.dart';
+
+// genUI integration: turn a user goal into a genui-renderable module spec.
+export 'src/genui/genui_module_spec.dart';
+export 'src/genui/local_ai_ui_generator.dart';

@@ -21,6 +21,11 @@ abstract class FlutterLocalAiPlatform extends PlatformInterface {
 
   Future<bool> isAvailable();
 
+  /// Human-readable reason for the current availability state.
+  Future<String> availabilityReason() {
+    throw UnimplementedError('availabilityReason() has not been implemented.');
+  }
+
   Future<bool> initialize({String? instructions});
 
   Future<AiResponse> generateText({

@@ -10,6 +10,12 @@ class FlutterLocalAi {
   /// Check if local AI is available on the device
   Future<bool> isAvailable() => FlutterLocalAiPlatform.instance.isAvailable();
 
+  /// A human-readable reason for the current availability state — useful for
+  /// telling the user what to enable (Apple Intelligence, model download, an
+  /// eligible device, a supported language/region…).
+  Future<String> availabilityReason() =>
+      FlutterLocalAiPlatform.instance.availabilityReason();
+
   /// Returns platform-specific local AI backend information.
   Future<LocalAiPlatformInfo> getPlatformInfo() =>
       FlutterLocalAiPlatform.instance.getPlatformInfo();
