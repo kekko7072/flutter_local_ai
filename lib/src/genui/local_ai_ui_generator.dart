@@ -144,8 +144,6 @@ Keep copy warm, plain and encouraging. Never use emoji.
           temperature: isAndroid ? 0.2 : 0.5,
         ),
       );
-      // ignore: avoid_print
-      print('[genUI-DIAG] raw len=${res.text.length} text=>>>${res.text}<<<');
       final json = _extractJsonObject(res.text);
       if (json == null) {
         _lastError = 'model did not return JSON';

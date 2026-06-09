@@ -1,3 +1,29 @@
+## 0.0.10
+
+### genUI — reliable generation on Android (Gemini Nano)
+* Fixed the "model did not return JSON" failure on Android. Gemini Nano caps
+  output at 256 tokens, so a verbose module was being truncated mid-JSON. The
+  genUI prompt is now backend-aware: on Android it asks for compact, minified
+  JSON with at most 3 blocks and shorter strings, and runs at a lower
+  temperature (0.2) for more reliable structure — keeping output well within the
+  token budget.
+* Made `LocalAiUiGenerator`'s JSON extraction tolerant of small-model quirks: it
+  now repairs JSON truncated by the output cap (cutting at the last complete
+  block and closing the open brackets) and strips trailing commas, so a partial
+  response still renders instead of being discarded.
+* Verified end-to-end on a Google Pixel 10 (Android 16, Gemini Nano via AICore):
+  multiple goals now produce valid, rendered modules.
+
+### Generative UI in the example app
+* The example app now has a **Generative UI** tab (alongside Text) that turns a
+  goal into a rendered on-device module, with backend labelling and a JSON view.
+
+### Platform & docs
+* Raised the macOS deployment target (Podfile `10.15` → `12.0`) and refreshed
+  dependencies; pins the project to Flutter 3.41.9 via FVM.
+* Documented genUI in the README (Platform Support table, a Generative UI usage
+  guide, and `LocalAiUiGenerator` / `GenUiModuleSpec` API reference).
+
 ## 0.0.9
 
 ### genUI reuse

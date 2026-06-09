@@ -26,12 +26,14 @@ A Flutter package that provides a unified API for local AI inference on Android 
 - **Zero Model Downloads**: No need to bundle large model files with your app
 - **Native Performance**: Direct access to OS-optimized AI capabilities
 - **Smaller App Size**: Models are part of the operating system, not your app bundle
+- **Generative UI**: Turn a natural-language goal into a renderable [`genui`](https://pub.dev/packages/genui) module spec, on-device, identically on Apple FoundationModels and Android Gemini Nano (Pixel)
 
 ## Platform Support
 
 | Feature            | iOS / macOS (26+) | Android (API 26+) | Windows (11 22H2+) |
 |--------------------|-------------------|-------------------|-------------------|
 | Text generation    | ✅                | ✅                 | ⚠️ Testing         |
+| Generative UI (genUI) | ✅             | ✅                 | 🚧 Planned         |
 | Summarization*     | 🚧 Planned        | 🚧 Planned         | 🚧 Planned         |
 | Image generation   | 🚧 Planned        | ❌                 | 🚧 Planned         |
 | Tool call          | ✅                | 🚧 Planned         | 🚧 Planned         |
@@ -433,6 +435,69 @@ final response = await aiEngine.generateText(
 print(response.text);
 ```
 
+### Generative UI (genUI)
+
+`flutter_local_ai` can turn a natural-language goal into a small, renderable UI
+module entirely on-device. The local model decides which typed blocks best
+express the goal and emits a JSON spec, which you can render with the
+[`genui`](https://pub.dev/packages/genui) runtime or your own widgets.
+
+This works **identically on Apple FoundationModels (iOS 26 / macOS 26) and
+Android ML Kit GenAI / Gemini Nano (e.g. Google Pixel 8/9/10)**. The genUI
+schema is delivered through `initialize` instructions — prepended to the prompt
+natively on Android — and the output-token budget and prompt are tuned per
+backend (Gemini Nano caps output at 256 tokens, so the prompt asks the model for
+compact JSON and fewer blocks to stay within budget).
+
+```dart
+import 'package:flutter_local_ai/flutter_local_ai.dart';
+
+final aiEngine = FlutterLocalAi();
+final generator = LocalAiUiGenerator(aiEngine);
+
+// Generate a module from a goal. Returns null on any failure (model
+// unavailable, generation blocked, invalid output) so you can fall back to a
+// deterministic UI.
+final GenUiModuleSpec? module = await generator.generateModule(
+  'Save \$500 for a weekend trip',
+  principles: 'Keep it simple and low-pressure', // optional
+);
+
+if (module == null) {
+  // Inspect why and fall back.
+  debugPrint('genUI unavailable: ${generator.lastError}');
+} else {
+  print(module.title);                 // e.g. "Weekend trip fund"
+  print(module.blocks);                 // typed blocks: amount, progress, ...
+  final json = module.toModuleJson();   // shape for your renderer
+  // final components = module.toComponents(); // A2UI tree for genui's Surface
+}
+
+// The detected backend is available for labelling.
+print(generator.backend); // LocalAiBackend.androidMlKitGenAi / appleFoundationModels
+```
+
+A `GenUiModuleSpec` is a stack of typed blocks (`amount`, `progress`,
+`checklist`, `week`, `stat`, `list`, `lessons`, `reminder`, `calc`, `note`) that
+the model picks to fit the goal. The output is validated before it is returned,
+and on small on-device models a truncated response is repaired where possible so
+a partial module still renders.
+
+#### Reusing the genUI engine with other backends
+
+The schema and parser are exposed as statics so any on-device backend (for
+example a downloaded Gemma model via `flutter_gemma`) can drive the exact same
+genUI generation:
+
+```dart
+// The system instructions (module/block schema) to pass to your own model.
+final instructions = LocalAiUiGenerator.genUiInstructions;
+
+// Parse and validate raw model text into a GenUiModuleSpec (handles code
+// fences, leading/trailing prose, and truncated/closing-bracket repair).
+final GenUiModuleSpec? spec = LocalAiUiGenerator.parseModelOutput(rawModelText);
+```
+
 ### Streaming Text Generation (Coming Soon)
 
 Streaming support for real-time text generation is planned for a future release.
@@ -633,6 +698,28 @@ Response from AI generation.
 - `text` (String) - The generated text
 - `tokenCount` (int?) - Token count used
 - `generationTimeMs` (int?) - Generation time in milliseconds
+
+### `LocalAiUiGenerator`
+
+Turns a natural-language goal into a `GenUiModuleSpec` using the on-device model
+(Apple FoundationModels or Android ML Kit GenAI / Gemini Nano).
+
+- `LocalAiUiGenerator([FlutterLocalAi? ai])` - Create a generator (reuses or creates an engine)
+- `Future<GenUiModuleSpec?> generateModule(String goal, {String? principles})` - Generate a module; returns `null` on any failure
+- `LocalAiBackend get backend` - The detected on-device backend
+- `bool? get available` - Whether the model reported itself available (cached)
+- `String? get lastError` - The last platform error encountered, for diagnostics
+- `static String get genUiInstructions` - The module/block schema instructions, for reuse with other backends
+- `static GenUiModuleSpec? parseModelOutput(String text)` - Parse + validate raw model text (handles fences, prose, truncation)
+
+### `GenUiModuleSpec`
+
+A validated genUI module produced by the local model.
+
+- `title`, `icon`, `tone`, `blurb` (String) - Module header fields
+- `blocks` (List<Map<String, dynamic>>) - Ordered typed blocks
+- `Map<String, dynamic> toModuleJson()` - Shape for a typed-block renderer
+- `List<Component> toComponents()` - An A2UI component tree for the `genui` `Surface`
 
 ## Implementation Notes
 
