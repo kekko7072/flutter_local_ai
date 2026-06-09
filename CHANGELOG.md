@@ -1,3 +1,10 @@
+## 0.0.9
+
+### genUI reuse
+* Exposed `LocalAiUiGenerator.genUiInstructions` (the module/block schema) and
+  `LocalAiUiGenerator.parseModelOutput(text)` so any on-device backend (e.g. a
+  downloaded Gemma model via flutter_gemma) can drive the same genUI generation.
+
 ## 0.0.8
 
 ### genUI on Android (Pixel)

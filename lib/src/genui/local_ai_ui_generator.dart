@@ -41,6 +41,20 @@ class LocalAiUiGenerator {
   int get _maxTokens =>
       _backend == LocalAiBackend.androidMlKitGenAi ? 768 : 900;
 
+  /// The genUI system instructions (the module/block schema). Public so other
+  /// on-device backends (e.g. a downloaded Gemma model via `flutter_gemma`)
+  /// can drive the exact same genUI generation.
+  static String get genUiInstructions => _systemInstructions;
+
+  /// Parse a model's raw text output into a [GenUiModuleSpec] — extracts the
+  /// first balanced JSON object and validates it. Returns null if the output
+  /// is not a valid Fledge module. Reusable by any backend.
+  static GenUiModuleSpec? parseModelOutput(String text) {
+    final json = _extractJsonObject(text);
+    if (json == null) return null;
+    return GenUiModuleSpec.tryParse(json);
+  }
+
   static const _systemInstructions = '''
 You are Fledge's genUI engine. You design a small mobile "module" that helps a
 young adult accomplish a goal. You output ONLY a single JSON object — no prose,
