@@ -302,7 +302,10 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
         prompt
       }
 
+      // ML Kit's genai-prompt API hard-caps maxOutputTokens at [1, 256] and
+      // throws IllegalArgumentException outside that range; clamp defensively.
       val maxOutputTokensValue = (configMap?.get("maxTokens") as? Number)?.toInt()
+        ?.coerceIn(1, 256)
       val temperatureValue = (configMap?.get("temperature") as? Number)?.toFloat()
 
       val request = generateContentRequest(TextPart(fullPrompt)) {

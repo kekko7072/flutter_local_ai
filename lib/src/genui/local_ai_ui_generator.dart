@@ -36,10 +36,12 @@ class LocalAiUiGenerator {
   /// The detected on-device backend (Apple FoundationModels, Android ML Kit…).
   LocalAiBackend get backend => _backend;
 
-  /// Output-token budget tuned per backend. Gemini Nano on Android has a
-  /// tighter window than Apple's FoundationModels, so we keep it conservative.
+  /// Output-token budget tuned per backend. Android's ML Kit GenAI prompt API
+  /// (genai-prompt alpha, Gemini Nano) hard-caps maxOutputTokens at 256 and
+  /// throws IllegalArgumentException above it, so we pin to that ceiling.
+  /// Apple's FoundationModels has a much larger window.
   int get _maxTokens =>
-      _backend == LocalAiBackend.androidMlKitGenAi ? 768 : 900;
+      _backend == LocalAiBackend.androidMlKitGenAi ? 256 : 900;
 
   /// The genUI system instructions (the module/block schema). Public so other
   /// on-device backends (e.g. a downloaded Gemma model via `flutter_gemma`)
