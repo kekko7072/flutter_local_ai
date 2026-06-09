@@ -225,7 +225,11 @@ Keep copy warm, plain and encouraging. Never use emoji.
       return decoded is Map ? Map<String, dynamic>.from(decoded) : null;
     } catch (_) {/* fall through to lenient retry */}
     try {
-      final cleaned = candidate.replaceAll(RegExp(r',(\s*[}\]])'), r'$1');
+      // NB: String.replaceAll does not expand `$1`, so use replaceAllMapped.
+      final cleaned = candidate.replaceAllMapped(
+        RegExp(r',(\s*[}\]])'),
+        (m) => m.group(1)!,
+      );
       final decoded = jsonDecode(cleaned);
       return decoded is Map ? Map<String, dynamic>.from(decoded) : null;
     } catch (_) {

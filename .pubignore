@@ -1,1 +1,37 @@
+# NOTE: when this file exists, `dart pub publish` uses it INSTEAD of .gitignore,
+# so every build/tooling artifact we want to keep out of the package archive
+# must be listed here (patterns are git-ignore syntax, matched at any depth).
+
+# Local-only scripts
 publish.sh
+
+# Build & tooling artifacts
+build/
+.dart_tool/
+.fvm/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+*.symbols
+*.map.json
+
+# IDE / editor / OS
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# Test coverage
+coverage/
+
+# iOS / macOS ephemeral & dependencies
+**/Pods/
+**/.symlinks/
+**/Flutter/ephemeral/
+**/Flutter/Generated.xcconfig
+**/Flutter/flutter_export_environment.sh
+**/xcuserdata/
+**/DerivedData/
+.build/
+**/.build/

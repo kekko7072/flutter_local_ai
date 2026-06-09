@@ -43,6 +43,11 @@ class ImplementsFlutterLocalAiPlatform implements FlutterLocalAiPlatform {
   }
 
   @override
+  Future<String> availabilityReason() {
+    throw UnimplementedError();
+  }
+
+  @override
   Future<bool> openAICorePlayStore() {
     throw UnimplementedError();
   }

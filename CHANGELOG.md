@@ -9,10 +9,17 @@
   token budget.
 * Made `LocalAiUiGenerator`'s JSON extraction tolerant of small-model quirks: it
   now repairs JSON truncated by the output cap (cutting at the last complete
-  block and closing the open brackets) and strips trailing commas, so a partial
-  response still renders instead of being discarded.
+  block and closing the open brackets) and strips trailing commas (via
+  `replaceAllMapped` — `replaceAll` does not expand `$1`), so a partial response
+  still renders instead of being discarded.
 * Verified end-to-end on a Google Pixel 10 (Android 16, Gemini Nano via AICore):
   multiple goals now produce valid, rendered modules.
+
+### Tests
+* Fixed the test suite: updated the platform-interface fake to implement the new
+  `availabilityReason()` member, and added regression coverage for
+  `LocalAiUiGenerator.parseModelOutput` (clean / fenced / prose / trailing-comma
+  / truncated-and-repaired / invalid inputs).
 
 ### Generative UI in the example app
 * The example app now has a **Generative UI** tab (alongside Text) that turns a
