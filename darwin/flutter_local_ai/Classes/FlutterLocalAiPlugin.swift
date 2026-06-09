@@ -1,9 +1,9 @@
 import Foundation
 
 #if os(OSX)
-import FlutterMacOS
+@preconcurrency import FlutterMacOS
 #elseif os(iOS)
-import Flutter
+@preconcurrency import Flutter
 #endif
 
 #if canImport(FoundationModels)

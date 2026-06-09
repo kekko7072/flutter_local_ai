@@ -121,15 +121,31 @@ Keep copy warm, plain and encouraging. Never use emoji.
     final principleLine = (principles != null && principles.isNotEmpty)
         ? '\nThe user\'s guiding principles: $principles. Respect them.'
         : '';
+    // Gemini Nano (ML Kit GenAI) caps output at 256 tokens, so a verbose module
+    // gets truncated mid-JSON. Ask the small model for compact output and fewer
+    // blocks so the whole object fits inside the budget.
+    final isAndroid = _backend == LocalAiBackend.androidMlKitGenAi;
+    final sizeHint = isAndroid
+        ? ' Use at most 3 blocks. Keep every string under 8 words. '
+            'Output minified JSON on a single line with no spaces after colons '
+            'or commas, and no trailing commas.'
+        : '';
     final prompt =
         'Design the Fledge module for this goal: "$clean".$principleLine\n'
-        'Return ONLY the JSON object.';
+        'Return ONLY the JSON object.$sizeHint';
 
     try {
       final res = await _ai.generateText(
         prompt: prompt,
-        config: GenerationConfig(maxTokens: _maxTokens, temperature: 0.5),
+        config: GenerationConfig(
+          maxTokens: _maxTokens,
+          // Lower temperature on the small on-device model for more reliable
+          // structure / valid JSON.
+          temperature: isAndroid ? 0.2 : 0.5,
+        ),
       );
+      // ignore: avoid_print
+      print('[genUI-DIAG] raw len=${res.text.length} text=>>>${res.text}<<<');
       final json = _extractJsonObject(res.text);
       if (json == null) {
         _lastError = 'model did not return JSON';
@@ -146,15 +162,24 @@ Keep copy warm, plain and encouraging. Never use emoji.
 
   /// Extract the first balanced top-level JSON object from arbitrary text
   /// (handles code fences and leading/trailing prose defensively).
+  ///
+  /// On-device models with a small output budget (e.g. Gemini Nano's 256-token
+  /// cap) often get cut off mid-JSON. When the object never balances, we salvage
+  /// it: cut at the last completed sub-structure and append the brackets that
+  /// were still open there, so a partially-generated module still renders.
   static Map<String, dynamic>? _extractJsonObject(String text) {
     var s = text.trim();
     // Strip ``` / ```json fences if present.
     s = s.replaceAll(RegExp(r'```[a-zA-Z]*'), '').replaceAll('```', '');
     final start = s.indexOf('{');
     if (start < 0) return null;
-    var depth = 0;
+
+    final closeStack = <String>[]; // expected closers, outer-most first
+    List<String>? safeStack; // stack snapshot at the last safe cut point
+    var safeEnd = -1; // index (exclusive) just past the last complete structure
     var inString = false;
     var escape = false;
+
     for (var i = start; i < s.length; i++) {
       final c = s[i];
       if (inString) {
@@ -170,20 +195,43 @@ Keep copy warm, plain and encouraging. Never use emoji.
       if (c == '"') {
         inString = true;
       } else if (c == '{') {
-        depth++;
-      } else if (c == '}') {
-        depth--;
-        if (depth == 0) {
-          final candidate = s.substring(start, i + 1);
-          try {
-            final decoded = jsonDecode(candidate);
-            return decoded is Map ? Map<String, dynamic>.from(decoded) : null;
-          } catch (_) {
-            return null;
-          }
+        closeStack.add('}');
+      } else if (c == '[') {
+        closeStack.add(']');
+      } else if (c == '}' || c == ']') {
+        if (closeStack.isNotEmpty) closeStack.removeLast();
+        if (closeStack.isEmpty) {
+          // Balanced top-level object closed here.
+          return _tryDecodeObject(s.substring(start, i + 1));
         }
+        // A nested sub-structure completed: safe to truncate-and-close here.
+        safeEnd = i + 1;
+        safeStack = List<String>.from(closeStack);
       }
     }
+
+    // Reached end of input without balancing → likely truncated by the model's
+    // output cap. Salvage the last completed sub-structure.
+    if (safeEnd > 0 && safeStack != null && safeStack.isNotEmpty) {
+      final repaired = s.substring(start, safeEnd) + safeStack.reversed.join();
+      return _tryDecodeObject(repaired);
+    }
     return null;
+  }
+
+  /// Decode [candidate] as a JSON object, retrying once with trailing commas
+  /// stripped (a common small-model mistake) before giving up.
+  static Map<String, dynamic>? _tryDecodeObject(String candidate) {
+    try {
+      final decoded = jsonDecode(candidate);
+      return decoded is Map ? Map<String, dynamic>.from(decoded) : null;
+    } catch (_) {/* fall through to lenient retry */}
+    try {
+      final cleaned = candidate.replaceAll(RegExp(r',(\s*[}\]])'), r'$1');
+      final decoded = jsonDecode(cleaned);
+      return decoded is Map ? Map<String, dynamic>.from(decoded) : null;
+    } catch (_) {
+      return null;
+    }
   }
 }
