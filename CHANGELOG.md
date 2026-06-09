@@ -1,3 +1,13 @@
+## 0.0.8
+
+### genUI on Android (Pixel)
+* `LocalAiUiGenerator` is now backend-aware and works on Android ML Kit GenAI /
+  Gemini Nano (e.g. Google Pixel) as well as Apple FoundationModels — the genUI
+  schema is delivered via instructions (prepended to the prompt natively on
+  Android), and the output-token budget is tuned per backend.
+* Added `availabilityReason` on Android (maps `FeatureStatus` →
+  available/downloadable/downloading/unavailable) for accurate UI status.
+
 ## 0.0.7
 
 ### genUI integration

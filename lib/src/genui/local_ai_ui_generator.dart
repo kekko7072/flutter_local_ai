@@ -2,16 +2,22 @@ import 'dart:convert';
 
 import '../flutter_local_ai.dart';
 import '../models/generation_config.dart';
+import '../models/platform_info.dart';
 import 'genui_module_spec.dart';
 
 /// Turns a natural-language goal into a [GenUiModuleSpec] using the on-device
-/// model (Apple FoundationModels on iOS/macOS via [FlutterLocalAi]).
+/// model. Backends:
+///   * Apple FoundationModels (iOS 26 / macOS 26, Apple-silicon)
+///   * Android ML Kit GenAI / Gemini Nano (AICore — e.g. Google Pixel 8/9+)
 ///
 /// This is the genUI brain: the user types what they want, the local model
 /// decides which typed blocks best express it, and the result is rendered by
-/// `genui` / the host app. If the model is unavailable or its generation is
-/// blocked by the platform, [generateModule] returns null so the caller can
-/// fall back to a deterministic composer.
+/// `genui` / the host app. The schema/system instructions are passed via
+/// [FlutterLocalAi.initialize]; on Android they are prepended to every prompt
+/// natively, so genUI works identically on Pixel as on Apple devices. If the
+/// model is unavailable or its generation is blocked by the platform,
+/// [generateModule] returns null so the caller can fall back to a
+/// deterministic composer.
 class LocalAiUiGenerator {
   LocalAiUiGenerator([FlutterLocalAi? ai]) : _ai = ai ?? FlutterLocalAi();
 
@@ -19,12 +25,21 @@ class LocalAiUiGenerator {
   bool _ready = false;
   bool? _available;
   String? _lastError;
+  LocalAiBackend _backend = LocalAiBackend.unsupported;
 
   /// The last platform error encountered (for diagnostics / UI labelling).
   String? get lastError => _lastError;
 
   /// Whether the on-device model reported itself available (cached).
   bool? get available => _available;
+
+  /// The detected on-device backend (Apple FoundationModels, Android ML Kit…).
+  LocalAiBackend get backend => _backend;
+
+  /// Output-token budget tuned per backend. Gemini Nano on Android has a
+  /// tighter window than Apple's FoundationModels, so we keep it conservative.
+  int get _maxTokens =>
+      _backend == LocalAiBackend.androidMlKitGenAi ? 768 : 900;
 
   static const _systemInstructions = '''
 You are Fledge's genUI engine. You design a small mobile "module" that helps a
@@ -62,6 +77,10 @@ Keep copy warm, plain and encouraging. Never use emoji.
   Future<bool> ensureReady() async {
     if (_ready) return true;
     try {
+      // Detect the backend so we can tune the generation budget (best-effort).
+      try {
+        _backend = (await _ai.getPlatformInfo()).backend;
+      } catch (_) {/* keep unsupported */}
       _available = await _ai.isAvailable();
       if (_available != true) {
         _lastError = await _ai.availabilityReason();
@@ -93,7 +112,7 @@ Keep copy warm, plain and encouraging. Never use emoji.
     try {
       final res = await _ai.generateText(
         prompt: prompt,
-        config: const GenerationConfig(maxTokens: 900, temperature: 0.5),
+        config: GenerationConfig(maxTokens: _maxTokens, temperature: 0.5),
       );
       final json = _extractJsonObject(res.text);
       if (json == null) {

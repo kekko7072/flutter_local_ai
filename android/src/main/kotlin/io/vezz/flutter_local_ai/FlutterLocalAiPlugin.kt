@@ -102,6 +102,23 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
           }
         }
       }
+      "availabilityReason" -> {
+        coroutineScope.launch {
+          try {
+            val status = getModelStatus()
+            val reason = when (status) {
+              "available" -> "available"
+              "downloadable" -> "unavailable: model downloadable (call downloadModel)"
+              "downloading" -> "unavailable: model downloading"
+              "unavailable" -> "unavailable: not supported on this device"
+              else -> "unavailable: $status"
+            }
+            result.success(reason)
+          } catch (e: Exception) {
+            result.success("unavailable: ${e.message}")
+          }
+        }
+      }
       "downloadModel" -> {
         coroutineScope.launch {
           try {
