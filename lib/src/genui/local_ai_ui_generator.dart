@@ -118,8 +118,15 @@ Keep copy warm, plain and encouraging. Never use emoji.
   /// "German") — forces all generated user-facing copy (title, blurb, every
   /// block label/item/note) into that language. Null/empty leaves the model to
   /// answer in the goal's own language.
+  ///
+  /// [onText] — when provided, the generation streams and the callback
+  /// receives the cumulative raw model output as it decodes (for live
+  /// progress/preview UI). Falls back silently to the blocking call on
+  /// platforms without a streaming implementation.
   Future<GenUiModuleSpec?> generateModule(String goal,
-      {String? principles, String? language}) async {
+      {String? principles,
+      String? language,
+      void Function(String text)? onText}) async {
     final clean = goal.trim();
     if (clean.isEmpty) return null;
     if (!await ensureReady()) return null;
@@ -146,16 +153,14 @@ Keep copy warm, plain and encouraging. Never use emoji.
         'Return ONLY the JSON object.$sizeHint';
 
     try {
-      final res = await _ai.generateText(
-        prompt: prompt,
-        config: GenerationConfig(
-          maxTokens: _maxTokens,
-          // Lower temperature on the small on-device model for more reliable
-          // structure / valid JSON.
-          temperature: isAndroid ? 0.2 : 0.5,
-        ),
+      final config = GenerationConfig(
+        maxTokens: _maxTokens,
+        // Lower temperature on the small on-device model for more reliable
+        // structure / valid JSON.
+        temperature: isAndroid ? 0.2 : 0.5,
       );
-      final json = _extractJsonObject(res.text);
+      final raw = await _readText(prompt, config, onText);
+      final json = _extractJsonObject(raw);
       if (json == null) {
         _lastError = 'model did not return JSON';
         return null;
@@ -167,6 +172,28 @@ Keep copy warm, plain and encouraging. Never use emoji.
       _lastError = e.toString();
       return null;
     }
+  }
+
+  /// Run [prompt], streaming through [onText] when the caller wants live
+  /// output. An error before any chunk arrived means the platform has no
+  /// streaming implementation — degrade to the blocking call; an error after
+  /// chunks arrived is a real generation failure and propagates.
+  Future<String> _readText(String prompt, GenerationConfig config,
+      void Function(String text)? onText) async {
+    if (onText != null) {
+      final buf = StringBuffer();
+      try {
+        await for (final chunk
+            in _ai.generateTextStream(prompt: prompt, config: config)) {
+          buf.write(chunk);
+          onText(buf.toString());
+        }
+        return buf.toString();
+      } catch (_) {
+        if (buf.isNotEmpty) rethrow;
+      }
+    }
+    return (await _ai.generateText(prompt: prompt, config: config)).text;
   }
 
   /// Extract the first balanced top-level JSON object from arbitrary text

@@ -17,6 +17,11 @@ class MethodChannelFlutterLocalAi extends FlutterLocalAiPlatform {
   final StreamController<ModelDownloadStatus> _downloadStatusController =
       StreamController.broadcast();
 
+  /// Live text-generation streams keyed by request id, so concurrent
+  /// generations don't cross their chunks.
+  final Map<int, StreamController<String>> _textStreams = {};
+  int _nextTextStreamId = 0;
+
   void _registerToolHandlerIfNeeded() {
     if (_toolHandlerRegistered) return;
     methodChannel.setMethodCallHandler(_handlePlatformMethod);
@@ -29,6 +34,29 @@ class MethodChannelFlutterLocalAi extends FlutterLocalAiPlatform {
       final status =
           ModelDownloadStatus.fromMap(Map<String, dynamic>.from(args));
       _downloadStatusController.add(status);
+      return null;
+    }
+
+    if (call.method == 'onGenerateTextChunk' ||
+        call.method == 'onGenerateTextDone' ||
+        call.method == 'onGenerateTextError') {
+      final args = (call.arguments as Map?) ?? {};
+      final id = (args['id'] as num?)?.toInt();
+      switch (call.method) {
+        case 'onGenerateTextChunk':
+          final text = args['text']?.toString() ?? '';
+          if (text.isNotEmpty) _textStreams[id]?.add(text);
+        case 'onGenerateTextDone':
+          _textStreams.remove(id)?.close();
+        case 'onGenerateTextError':
+          final controller = _textStreams.remove(id);
+          if (controller != null && !controller.isClosed) {
+            controller
+              ..addError(
+                  Exception('Failed to generate text: ${args['message']}'))
+              ..close();
+          }
+      }
       return null;
     }
 
@@ -132,6 +160,38 @@ class MethodChannelFlutterLocalAi extends FlutterLocalAiPlatform {
     } on PlatformException catch (exception) {
       throw Exception('Failed to generate text: ${exception.message}');
     }
+  }
+
+  @override
+  Stream<String> generateTextStream({
+    required String prompt,
+    GenerationConfig? config,
+  }) {
+    _registerToolHandlerIfNeeded();
+    final id = _nextTextStreamId++;
+    final controller = StreamController<String>();
+    _textStreams[id] = controller;
+    controller
+      ..onListen = () {
+        methodChannel.invokeMethod<void>('generateTextStream', {
+          'id': id,
+          'prompt': prompt,
+          if (config != null) 'config': config.toMap(),
+        }).catchError((Object error) {
+          // The launch itself failed (no native streaming implementation, bad
+          // arguments…) — surface it on the stream so callers can fall back.
+          final live = _textStreams.remove(id);
+          if (live != null && !live.isClosed) {
+            live
+              ..addError(Exception('Failed to generate text: $error'))
+              ..close();
+          }
+        });
+      }
+      // A cancelled listener just stops caring — the native generation runs to
+      // completion and its remaining callbacks land on a forgotten id.
+      ..onCancel = () => _textStreams.remove(id);
+    return controller.stream;
   }
 
   @override

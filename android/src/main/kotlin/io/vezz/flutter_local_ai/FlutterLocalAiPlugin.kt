@@ -14,6 +14,7 @@ import com.google.mlkit.genai.prompt.generateContentRequest
 import com.google.mlkit.genai.common.DownloadStatus
 import com.google.mlkit.genai.common.FeatureStatus
 import com.google.mlkit.genai.common.GenAiException
+import com.google.mlkit.genai.common.StreamingCallback
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -81,6 +82,30 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
             result.success(response)
           } catch (e: Exception) {
             result.error("GENERATION_ERROR", "Error generating text: ${e.message}", null)
+          }
+        }
+      }
+      "generateTextStream" -> {
+        val prompt = call.argument<String>("prompt")
+        val requestId = call.argument<Int>("id")
+        val configMap = call.argument<Map<String, Any>>("config")
+        if (prompt == null || requestId == null) {
+          result.error("INVALID_ARGUMENT", "Prompt and request id are required", null)
+          return
+        }
+
+        // The method call returns immediately; output is delivered through the
+        // onGenerateTextChunk / Done / Error callbacks tagged with the id.
+        result.success(null)
+        coroutineScope.launch {
+          try {
+            generateTextStreamAsync(requestId, prompt, configMap)
+            emitStreamEvent("onGenerateTextDone", mapOf("id" to requestId))
+          } catch (e: Exception) {
+            emitStreamEvent(
+              "onGenerateTextError",
+              mapOf("id" to requestId, "message" to (e.message ?: "Unknown error"))
+            )
           }
         }
       }
@@ -327,6 +352,55 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
       )
     } catch (e: Exception) {
       Log.e("FlutterLocalAi", "generateText error: ${e.javaClass.simpleName} - ${e.message}", e)
+
+      if (e is GenAiException && e.errorCode == GenAiException.ErrorCode.AICORE_INCOMPATIBLE) {
+        throw Exception("AICore is not installed or version is too low (Error -101).")
+      }
+
+      throw Exception("Error generating text: ${e.message}")
+    }
+  }
+
+  private fun emitStreamEvent(method: String, payload: Map<String, Any?>) {
+    coroutineScope.launch(Dispatchers.Main) {
+      channel.invokeMethod(method, payload)
+    }
+  }
+
+  private suspend fun generateTextStreamAsync(
+    requestId: Int,
+    prompt: String,
+    configMap: Map<String, Any>?
+  ) = withContext(Dispatchers.IO) {
+    try {
+      if (generativeModel == null) {
+        generativeModel = Generation.getClient()
+      }
+
+      val fullPrompt = if (instructions != null) {
+        "${instructions}\n\n$prompt"
+      } else {
+        prompt
+      }
+
+      // Same [1, 256] clamp as generateTextAsync — see the note there.
+      val maxOutputTokensValue = (configMap?.get("maxTokens") as? Number)?.toInt()
+        ?.coerceIn(1, 256)
+      val temperatureValue = (configMap?.get("temperature") as? Number)?.toFloat()
+
+      val request = generateContentRequest(TextPart(fullPrompt)) {
+        if (maxOutputTokensValue != null) maxOutputTokens = maxOutputTokensValue
+        if (temperatureValue != null) temperature = temperatureValue
+      }
+
+      // ML Kit's StreamingCallback delivers newly generated text only, which
+      // is exactly the delta contract of onGenerateTextChunk.
+      generativeModel!!.generateContent(request, StreamingCallback { newText ->
+        emitStreamEvent("onGenerateTextChunk", mapOf("id" to requestId, "text" to newText))
+      })
+      Unit
+    } catch (e: Exception) {
+      Log.e("FlutterLocalAi", "generateTextStream error: ${e.javaClass.simpleName} - ${e.message}", e)
 
       if (e is GenAiException && e.errorCode == GenAiException.ErrorCode.AICORE_INCOMPATIBLE) {
         throw Exception("AICore is not installed or version is too low (Error -101).")

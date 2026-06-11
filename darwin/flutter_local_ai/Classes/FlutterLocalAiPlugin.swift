@@ -150,6 +150,58 @@ import FoundationModels
         "tokenCount": tokenCount
       ]
     }
+
+    /// Streaming counterpart of `generateText`: forwards each newly decoded
+    /// text fragment to `onDelta` as the model produces it, returning once the
+    /// generation completes.
+    func generateTextStream(
+      prompt: String,
+      maxTokens: Int,
+      temperature: Double?,
+      onDelta: @Sendable @escaping (String) -> Void
+    ) async throws {
+      // Ensure session is initialized
+      if session == nil {
+        try await initializeSession(instructions: instructions)
+      }
+
+      guard let session = session else {
+        throw NSError(
+          domain: "FlutterLocalAiPlugin",
+          code: 2,
+          userInfo: [NSLocalizedDescriptionKey: "Session not initialized. Call initialize first."]
+        )
+      }
+
+      // Same mutual exclusion as generateText: `.greedy` sampling must not be
+      // combined with a temperature.
+      let options: GenerationOptions
+      if let temp = temperature, temp > 0 {
+        options = GenerationOptions(temperature: temp, maximumResponseTokens: maxTokens)
+      } else {
+        options = GenerationOptions(sampling: .greedy, maximumResponseTokens: maxTokens)
+      }
+
+      do {
+        let stream = session.streamResponse(to: prompt, options: options)
+        // Each snapshot carries the cumulative text so far; forward only the
+        // newly appended suffix so the channel speaks in deltas.
+        var emitted = ""
+        for try await partial in stream {
+          let full = partial.content
+          guard full.count > emitted.count, full.hasPrefix(emitted) else { continue }
+          onDelta(String(full.dropFirst(emitted.count)))
+          emitted = full
+        }
+      } catch {
+        throw NSError(
+          domain: "FlutterLocalAiPlugin",
+          code: 3,
+          userInfo: [NSLocalizedDescriptionKey:
+            "streamResponse failed :: reflected=\(String(reflecting: error)) :: localized=\(error.localizedDescription)"]
+        )
+      }
+    }
   }
 
   private var modelManager: Any?
@@ -185,6 +237,8 @@ import FoundationModels
       initialize(call: call, result: result)
     case "generateText":
       generateText(call: call, result: result)
+    case "generateTextStream":
+      generateTextStream(call: call, result: result)
     case "registerTools":
       registerTools(call: call, result: result)
     default:
@@ -404,6 +458,79 @@ import FoundationModels
             message: "Error generating text: \(error.localizedDescription)",
             details: nil
           ))
+        }
+      }
+    } else {
+      result(FlutterError(
+        code: "UNSUPPORTED_VERSION",
+        message: "FoundationModels requires iOS 26.0 or macOS 26.0 or later",
+        details: nil
+      ))
+    }
+    #else
+    result(FlutterError(
+      code: "NOT_AVAILABLE",
+      message: "FoundationModels framework is not available",
+      details: nil
+    ))
+    #endif
+  }
+
+  private func generateTextStream(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    #if canImport(FoundationModels)
+    if #available(iOS 26.0, macOS 26.0, *) {
+      guard let args = call.arguments as? [String: Any],
+            let prompt = args["prompt"] as? String,
+            let requestId = args["id"] as? Int else {
+        result(FlutterError(
+          code: "INVALID_ARGUMENT",
+          message: "Prompt and request id are required",
+          details: nil
+        ))
+        return
+      }
+
+      guard let manager = modelManager as? ModelManager, let channel = channel else {
+         result(FlutterError(
+          code: "PluginError",
+          message: "Internal model manager or channel missing",
+          details: nil
+        ))
+        return
+      }
+
+      let configMap = args["config"] as? [String: Any]
+      let maxTokens = configMap?["maxTokens"] as? Int ?? 100
+      let temperature = configMap?["temperature"] as? Double
+
+      // The method call returns immediately; output is delivered through the
+      // onGenerateTextChunk / Done / Error callbacks tagged with the id.
+      result(nil)
+
+      Task {
+        do {
+          try await manager.generateTextStream(
+            prompt: prompt,
+            maxTokens: maxTokens,
+            temperature: temperature
+          ) { delta in
+            DispatchQueue.main.async {
+              channel.invokeMethod(
+                "onGenerateTextChunk",
+                arguments: ["id": requestId, "text": delta]
+              )
+            }
+          }
+          DispatchQueue.main.async {
+            channel.invokeMethod("onGenerateTextDone", arguments: ["id": requestId])
+          }
+        } catch {
+          DispatchQueue.main.async {
+            channel.invokeMethod(
+              "onGenerateTextError",
+              arguments: ["id": requestId, "message": error.localizedDescription]
+            )
+          }
         }
       }
     } else {

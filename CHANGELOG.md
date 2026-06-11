@@ -1,3 +1,18 @@
+## 0.0.12
+
+### Streaming text generation
+* New `FlutterLocalAi.generateTextStream(prompt:, config:)` returns a
+  `Stream<String>` of delta chunks as the on-device model decodes, closing when
+  the generation completes. Implemented on Apple FoundationModels
+  (`LanguageModelSession.streamResponse`, cumulative snapshots converted to
+  deltas) and Android ML Kit GenAI (`generateContent` with a
+  `StreamingCallback`). Backends without a streaming implementation surface an
+  error on the stream so callers can fall back to `generateText`.
+* `LocalAiUiGenerator.generateModule` gains an optional `onText` callback that
+  receives the cumulative raw model output while the module is being generated
+  (for live progress/preview UI). When the platform cannot stream, generation
+  silently degrades to the previous blocking call.
+
 ## 0.0.11
 
 ### genUI — localized generation

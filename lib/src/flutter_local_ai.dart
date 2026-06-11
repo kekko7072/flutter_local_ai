@@ -43,6 +43,23 @@ class FlutterLocalAi {
         config: config,
       );
 
+  /// Generate text from a prompt, streaming the output as the model decodes.
+  ///
+  /// [prompt] - The input text prompt
+  /// [config] - Optional generation configuration
+  ///
+  /// Emits delta chunks (only the newly generated text) and closes when the
+  /// generation completes. Backends without a streaming implementation surface
+  /// an error on the stream instead — callers can fall back to [generateText].
+  Stream<String> generateTextStream({
+    required String prompt,
+    GenerationConfig? config,
+  }) =>
+      FlutterLocalAiPlatform.instance.generateTextStream(
+        prompt: prompt,
+        config: config,
+      );
+
   /// Generate text with a simple prompt (convenience method)
   ///
   /// [prompt] - The input text prompt

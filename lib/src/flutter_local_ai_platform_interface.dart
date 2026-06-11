@@ -33,6 +33,18 @@ abstract class FlutterLocalAiPlatform extends PlatformInterface {
     GenerationConfig? config,
   });
 
+  /// Generate text from a prompt, streaming the output as the model decodes.
+  ///
+  /// Emits delta chunks (only the newly generated text) and closes when the
+  /// generation completes. Backends without a streaming implementation surface
+  /// an error on the stream instead — callers can fall back to [generateText].
+  Stream<String> generateTextStream({
+    required String prompt,
+    GenerationConfig? config,
+  }) {
+    throw UnimplementedError('generateTextStream() has not been implemented.');
+  }
+
   Future<bool> openAICorePlayStore();
 
   Future<void> registerTools(List<LocalAiTool> tools);

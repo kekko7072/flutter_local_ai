@@ -70,6 +70,19 @@ void main() {
       expect(fakePlatform.lastConfig, same(config));
     });
 
+    test('#generateTextStream', () async {
+      fakePlatform.generateTextStreamChunks = const ['hel', 'lo'];
+
+      final config = GenerationConfig(maxTokens: 32);
+      final chunks = await subject
+          .generateTextStream(prompt: 'Hi', config: config)
+          .toList();
+
+      expect(chunks, ['hel', 'lo']);
+      expect(fakePlatform.lastPrompt, contains('Hi'));
+      expect(fakePlatform.lastConfig, same(config));
+    });
+
     test('#generateTextSimple', () async {
       fakePlatform.generateTextResult =
           const AiResponse(text: 'simple response');
@@ -108,6 +121,7 @@ class FakeFlutterLocalAiPlatform extends FlutterLocalAiPlatform
   String? lastPrompt;
   GenerationConfig? lastConfig;
   AiResponse generateTextResult = const AiResponse(text: 'default');
+  List<String> generateTextStreamChunks = const [];
 
   bool openAICorePlayStoreResult = false;
   int openAICorePlayStoreCallCount = 0;
@@ -137,6 +151,16 @@ class FakeFlutterLocalAiPlatform extends FlutterLocalAiPlatform
     lastPrompt = prompt;
     lastConfig = config;
     return generateTextResult;
+  }
+
+  @override
+  Stream<String> generateTextStream({
+    required String prompt,
+    GenerationConfig? config,
+  }) {
+    lastPrompt = prompt;
+    lastConfig = config;
+    return Stream.fromIterable(generateTextStreamChunks);
   }
 
   @override

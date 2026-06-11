@@ -1,6 +1,6 @@
 name: flutter_local_ai
 description: A Flutter package that wraps Android ML Kit GenAI, Apple Foundation Models APIs (iOS and macOS), and Windows AI APIs for local AI inference.
-version: 0.0.11
+version: 0.0.12
 homepage: https://github.com/kekko7072/flutter_local_ai
 
 environment:

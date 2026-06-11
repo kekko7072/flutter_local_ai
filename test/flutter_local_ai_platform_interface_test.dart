@@ -48,6 +48,12 @@ class ImplementsFlutterLocalAiPlatform implements FlutterLocalAiPlatform {
   }
 
   @override
+  Stream<String> generateTextStream(
+      {required String prompt, GenerationConfig? config}) {
+    throw UnimplementedError();
+  }
+
+  @override
   Future<bool> openAICorePlayStore() {
     throw UnimplementedError();
   }
