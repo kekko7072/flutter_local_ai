@@ -9,7 +9,7 @@ import 'package:genui/genui.dart';
 ///
 /// A module is a stack of typed blocks:
 ///   note | field | amount | progress | checklist | week | stat | list |
-///   lessons | reminder | calc
+///   lessons | reminder | calc | docs
 class GenUiModuleSpec {
   final String title;
   final String icon; // lucide icon name
@@ -27,7 +27,7 @@ class GenUiModuleSpec {
 
   static const _allowedBlocks = {
     'note', 'field', 'amount', 'progress', 'checklist', 'week', 'stat', 'list',
-    'lessons', 'reminder', 'calc',
+    'lessons', 'reminder', 'calc', 'docs',
   };
   static const _allowedTones = {'fern', 'apricot', 'sky', 'lilac'};
 
@@ -112,6 +112,8 @@ class GenUiModuleSpec {
         return 'Calculator · $label';
       case 'checklist':
         return 'Checklist · ${(b['items'] as List?)?.length ?? 0} steps';
+      case 'docs':
+        return 'Documents · ${(b['items'] as List?)?.length ?? 0} tracked';
       case 'note':
         return label;
       default:

@@ -67,6 +67,20 @@ void main() {
       expect(spec.blocks.single['type'], 'lessons');
     });
 
+    test('keeps a docs block', () {
+      const raw = '{"title":"My documents","icon":"folder-open","tone":"sky",'
+          '"blurb":"Stay on top of renewals.","blocks":['
+          '{"type":"docs","label":"Tracked","items":['
+          '{"name":"Passport","meta":"Expires 2027","status":"ok"},'
+          '{"name":"Driving licence","meta":"Renew by March","status":"soon"}]}]}';
+
+      final spec = LocalAiUiGenerator.parseModelOutput(raw);
+
+      expect(spec, isNotNull);
+      expect(spec!.blocks.single['type'], 'docs');
+      expect(spec.blocks.single['items'], hasLength(2));
+    });
+
     test('returns null when there is no JSON object at all', () {
       expect(
         LocalAiUiGenerator.parseModelOutput('I cannot help with that.'),

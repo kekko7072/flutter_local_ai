@@ -81,11 +81,15 @@ Each block is an object with a "type" and type-specific fields:
 - {"type":"lessons","label":string,"items":[{"title":string,"mins":number,"read":false}]}
 - {"type":"reminder","title":string,"date":"YYYY-MM-DD","time":"HH:MM","location":string,"remind":true}
 - {"type":"calc","label":string,"inputs":[{"key":string,"label":string,"value":number,"prefix":"\$"}],"formula":"savingsTimeline"|"tip"|"rentAffordable"|"splitBill"|"takeHome","resultLabel":string}
+- {"type":"docs","label":string,"items":[{"name":string,"meta":string,"status":"ok"|"soon"|"late"}]}
 - {"type":"note","text":string}
 
 Pick blocks that genuinely fit: savings -> amount + progress + calc; an
 appointment -> reminder + checklist; a budget -> amount + list + stat(remaining);
-a habit -> week + checklist; learning -> lessons. Money is in US dollars (\$).
+a habit -> week + checklist; learning -> lessons; tracking documents or IDs
+(passport, licence, lease, insurance policy) -> docs, where "meta" is a short
+expiry/renewal note and "status" is ok (valid), soon (renew soon) or late
+(expired). Money is in US dollars (\$).
 Keep copy warm, plain and encouraging. Never use emoji.
 ''';
 
