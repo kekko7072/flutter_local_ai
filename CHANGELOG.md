@@ -1,3 +1,19 @@
+## 0.0.13
+
+### Stateless one-shot generation
+* `generateText` and `generateTextStream` gain an optional `instructions`
+  parameter. When given, the call runs in a throwaway session with exactly
+  those instructions: nothing accumulates in the shared session created by
+  `initialize`, and its instructions stay untouched. Apple's
+  `LanguageModelSession` keeps every prompt + response of its transcript
+  counting toward the 4096-token context window, so stateless callers that
+  carry their own context in the prompt would otherwise hit
+  `exceededContextWindowSize` after a few calls. On Android ML Kit (already
+  stateless per call) the one-shot instructions simply replace the
+  session-level ones for that prompt.
+* `LocalAiUiGenerator` now generates every module one-shot, so repeated
+  generations no longer fill the shared session's context window.
+
 ## 0.0.12
 
 ### Streaming text generation

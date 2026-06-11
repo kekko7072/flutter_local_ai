@@ -83,6 +83,22 @@ void main() {
       expect(fakePlatform.lastConfig, same(config));
     });
 
+    test('one-shot instructions pass through to the platform', () async {
+      await subject.generateText(prompt: 'Hi', instructions: 'be terse');
+      expect(fakePlatform.lastOneShotInstructions, 'be terse');
+
+      fakePlatform.lastOneShotInstructions = null;
+      await subject
+          .generateTextStream(prompt: 'Hi', instructions: 'be terse')
+          .toList();
+      expect(fakePlatform.lastOneShotInstructions, 'be terse');
+
+      // Omitted → null: the platform keeps using its shared session.
+      fakePlatform.lastOneShotInstructions = 'stale';
+      await subject.generateText(prompt: 'Hi');
+      expect(fakePlatform.lastOneShotInstructions, isNull);
+    });
+
     test('#generateTextSimple', () async {
       fakePlatform.generateTextResult =
           const AiResponse(text: 'simple response');
@@ -120,6 +136,7 @@ class FakeFlutterLocalAiPlatform extends FlutterLocalAiPlatform
 
   String? lastPrompt;
   GenerationConfig? lastConfig;
+  String? lastOneShotInstructions;
   AiResponse generateTextResult = const AiResponse(text: 'default');
   List<String> generateTextStreamChunks = const [];
 
@@ -147,9 +164,11 @@ class FakeFlutterLocalAiPlatform extends FlutterLocalAiPlatform
   Future<AiResponse> generateText({
     required String prompt,
     GenerationConfig? config,
+    String? instructions,
   }) async {
     lastPrompt = prompt;
     lastConfig = config;
+    lastOneShotInstructions = instructions;
     return generateTextResult;
   }
 
@@ -157,9 +176,11 @@ class FakeFlutterLocalAiPlatform extends FlutterLocalAiPlatform
   Stream<String> generateTextStream({
     required String prompt,
     GenerationConfig? config,
+    String? instructions,
   }) {
     lastPrompt = prompt;
     lastConfig = config;
+    lastOneShotInstructions = instructions;
     return Stream.fromIterable(generateTextStreamChunks);
   }
 

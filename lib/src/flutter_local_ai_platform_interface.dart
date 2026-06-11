@@ -28,9 +28,13 @@ abstract class FlutterLocalAiPlatform extends PlatformInterface {
 
   Future<bool> initialize({String? instructions});
 
+  /// [instructions] (when given) runs this call statelessly: a throwaway
+  /// session with exactly these instructions, leaving no transcript behind
+  /// and never touching the shared session created by [initialize].
   Future<AiResponse> generateText({
     required String prompt,
     GenerationConfig? config,
+    String? instructions,
   });
 
   /// Generate text from a prompt, streaming the output as the model decodes.
@@ -38,9 +42,11 @@ abstract class FlutterLocalAiPlatform extends PlatformInterface {
   /// Emits delta chunks (only the newly generated text) and closes when the
   /// generation completes. Backends without a streaming implementation surface
   /// an error on the stream instead — callers can fall back to [generateText].
+  /// [instructions] mirrors [generateText]'s stateless one-shot mode.
   Stream<String> generateTextStream({
     required String prompt,
     GenerationConfig? config,
+    String? instructions,
   }) {
     throw UnimplementedError('generateTextStream() has not been implemented.');
   }

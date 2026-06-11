@@ -28,7 +28,7 @@ void main() {
 class ImplementsFlutterLocalAiPlatform implements FlutterLocalAiPlatform {
   @override
   Future<AiResponse> generateText(
-      {required String prompt, GenerationConfig? config}) {
+      {required String prompt, GenerationConfig? config, String? instructions}) {
     throw UnimplementedError();
   }
 
@@ -49,7 +49,7 @@ class ImplementsFlutterLocalAiPlatform implements FlutterLocalAiPlatform {
 
   @override
   Stream<String> generateTextStream(
-      {required String prompt, GenerationConfig? config}) {
+      {required String prompt, GenerationConfig? config, String? instructions}) {
     throw UnimplementedError();
   }
 

@@ -140,11 +140,13 @@ class MethodChannelFlutterLocalAi extends FlutterLocalAiPlatform {
   Future<AiResponse> generateText({
     required String prompt,
     GenerationConfig? config,
+    String? instructions,
   }) async {
     try {
       final arguments = {
         'prompt': prompt,
-        if (config != null) 'config': config.toMap()
+        if (config != null) 'config': config.toMap(),
+        if (instructions != null) 'instructions': instructions,
       };
 
       final result = await methodChannel.invokeMethod<Map<Object?, Object?>>(
@@ -166,6 +168,7 @@ class MethodChannelFlutterLocalAi extends FlutterLocalAiPlatform {
   Stream<String> generateTextStream({
     required String prompt,
     GenerationConfig? config,
+    String? instructions,
   }) {
     _registerToolHandlerIfNeeded();
     final id = _nextTextStreamId++;
@@ -177,6 +180,7 @@ class MethodChannelFlutterLocalAi extends FlutterLocalAiPlatform {
           'id': id,
           'prompt': prompt,
           if (config != null) 'config': config.toMap(),
+          if (instructions != null) 'instructions': instructions,
         }).catchError((Object error) {
           // The launch itself failed (no native streaming implementation, bad
           // arguments…) — surface it on the stream so callers can fall back.

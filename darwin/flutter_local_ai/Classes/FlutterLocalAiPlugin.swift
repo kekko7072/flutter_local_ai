@@ -92,18 +92,23 @@ import FoundationModels
       session = newSession
     }
 
-    func generateText(
-      prompt: String,
-      maxTokens: Int,
-      temperature: Double?
-    ) async throws -> [String: Any] {
-      let startTime = Date()
-      
-      // Ensure session is initialized
+    /// The session one generation call runs on. With one-shot [instructions]
+    /// a throwaway session is built just for this call: LanguageModelSession
+    /// accumulates every prompt + response of its transcript toward the
+    /// 4096-token window, so stateless callers (which carry their own context
+    /// in the prompt) must not ride — or pollute — the cached session.
+    func sessionFor(oneShot: String?) async throws -> LanguageModelSession {
+      if let oneShot = oneShot {
+        let model = try await loadModel()
+        return LanguageModelSession(
+          model: model,
+          tools: registeredTools,
+          instructions: oneShot
+        )
+      }
       if session == nil {
         try await initializeSession(instructions: instructions)
       }
-      
       guard let session = session else {
         throw NSError(
           domain: "FlutterLocalAiPlugin",
@@ -111,7 +116,18 @@ import FoundationModels
           userInfo: [NSLocalizedDescriptionKey: "Session not initialized. Call initialize first."]
         )
       }
-      
+      return session
+    }
+
+    func generateText(
+      prompt: String,
+      maxTokens: Int,
+      temperature: Double?,
+      instructions oneShot: String? = nil
+    ) async throws -> [String: Any] {
+      let startTime = Date()
+      let session = try await sessionFor(oneShot: oneShot)
+
       // Build generation options. NOTE: `.greedy` sampling must NOT be combined
       // with a temperature (they are mutually exclusive and trigger a
       // GenerationError on-device). Pick one based on the requested temp.
@@ -158,20 +174,10 @@ import FoundationModels
       prompt: String,
       maxTokens: Int,
       temperature: Double?,
+      instructions oneShot: String? = nil,
       onDelta: @Sendable @escaping (String) -> Void
     ) async throws {
-      // Ensure session is initialized
-      if session == nil {
-        try await initializeSession(instructions: instructions)
-      }
-
-      guard let session = session else {
-        throw NSError(
-          domain: "FlutterLocalAiPlugin",
-          code: 2,
-          userInfo: [NSLocalizedDescriptionKey: "Session not initialized. Call initialize first."]
-        )
-      }
+      let session = try await sessionFor(oneShot: oneShot)
 
       // Same mutual exclusion as generateText: `.greedy` sampling must not be
       // combined with a temperature.
@@ -443,13 +449,15 @@ import FoundationModels
       let configMap = args["config"] as? [String: Any]
       let maxTokens = configMap?["maxTokens"] as? Int ?? 100
       let temperature = configMap?["temperature"] as? Double
+      let oneShot = args["instructions"] as? String
 
       Task {
         do {
           let response = try await manager.generateText(
             prompt: prompt,
             maxTokens: maxTokens,
-            temperature: temperature
+            temperature: temperature,
+            instructions: oneShot
           )
           result(response)
         } catch {
@@ -502,6 +510,7 @@ import FoundationModels
       let configMap = args["config"] as? [String: Any]
       let maxTokens = configMap?["maxTokens"] as? Int ?? 100
       let temperature = configMap?["temperature"] as? Double
+      let oneShot = args["instructions"] as? String
 
       // The method call returns immediately; output is delivered through the
       // onGenerateTextChunk / Done / Error callbacks tagged with the id.
@@ -512,7 +521,8 @@ import FoundationModels
           try await manager.generateTextStream(
             prompt: prompt,
             maxTokens: maxTokens,
-            temperature: temperature
+            temperature: temperature,
+            instructions: oneShot
           ) { delta in
             DispatchQueue.main.async {
               channel.invokeMethod(

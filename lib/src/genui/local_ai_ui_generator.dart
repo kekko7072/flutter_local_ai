@@ -182,13 +182,19 @@ Keep copy warm, plain and encouraging. Never use emoji.
   /// output. An error before any chunk arrived means the platform has no
   /// streaming implementation — degrade to the blocking call; an error after
   /// chunks arrived is a real generation failure and propagates.
+  ///
+  /// Every call passes the genUI instructions one-shot: each generation runs
+  /// in its own throwaway session, because Apple's LanguageModelSession keeps
+  /// every prompt + response of its transcript counting toward the 4096-token
+  /// context window — riding one cached session kills generation after a
+  /// handful of modules.
   Future<String> _readText(String prompt, GenerationConfig config,
       void Function(String text)? onText) async {
     if (onText != null) {
       final buf = StringBuffer();
       try {
-        await for (final chunk
-            in _ai.generateTextStream(prompt: prompt, config: config)) {
+        await for (final chunk in _ai.generateTextStream(
+            prompt: prompt, config: config, instructions: _systemInstructions)) {
           buf.write(chunk);
           onText(buf.toString());
         }
@@ -197,7 +203,9 @@ Keep copy warm, plain and encouraging. Never use emoji.
         if (buf.isNotEmpty) rethrow;
       }
     }
-    return (await _ai.generateText(prompt: prompt, config: config)).text;
+    return (await _ai.generateText(
+            prompt: prompt, config: config, instructions: _systemInstructions))
+        .text;
   }
 
   /// Extract the first balanced top-level JSON object from arbitrary text

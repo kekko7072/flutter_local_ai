@@ -32,21 +32,30 @@ class FlutterLocalAi {
   ///
   /// [prompt] - The input text prompt
   /// [config] - Optional generation configuration
+  /// [instructions] - When given, runs this call statelessly in a throwaway
+  /// session with exactly these instructions: nothing accumulates in the
+  /// shared session's transcript (Apple's LanguageModelSession otherwise
+  /// keeps every prompt + response toward its context window), and the
+  /// session created by [initialize] keeps its own instructions untouched.
+  /// Callers that manage conversation context themselves should prefer this.
   ///
   /// Returns an [AiResponse] with the generated text
   Future<AiResponse> generateText({
     required String prompt,
     GenerationConfig? config,
+    String? instructions,
   }) =>
       FlutterLocalAiPlatform.instance.generateText(
         prompt: prompt,
         config: config,
+        instructions: instructions,
       );
 
   /// Generate text from a prompt, streaming the output as the model decodes.
   ///
   /// [prompt] - The input text prompt
   /// [config] - Optional generation configuration
+  /// [instructions] - Stateless one-shot mode, see [generateText]
   ///
   /// Emits delta chunks (only the newly generated text) and closes when the
   /// generation completes. Backends without a streaming implementation surface
@@ -54,10 +63,12 @@ class FlutterLocalAi {
   Stream<String> generateTextStream({
     required String prompt,
     GenerationConfig? config,
+    String? instructions,
   }) =>
       FlutterLocalAiPlatform.instance.generateTextStream(
         prompt: prompt,
         config: config,
+        instructions: instructions,
       );
 
   /// Generate text with a simple prompt (convenience method)

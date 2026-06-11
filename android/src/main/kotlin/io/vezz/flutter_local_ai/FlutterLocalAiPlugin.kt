@@ -71,6 +71,7 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
       "generateText" -> {
         val prompt = call.argument<String>("prompt")
         val configMap = call.argument<Map<String, Any>>("config")
+        val oneShot = call.argument<String>("instructions")
         if (prompt == null) {
           result.error("INVALID_ARGUMENT", "Prompt is required", null)
           return
@@ -78,7 +79,7 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
 
         coroutineScope.launch {
           try {
-            val response = generateTextAsync(prompt, configMap)
+            val response = generateTextAsync(prompt, configMap, oneShot)
             result.success(response)
           } catch (e: Exception) {
             result.error("GENERATION_ERROR", "Error generating text: ${e.message}", null)
@@ -89,6 +90,7 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
         val prompt = call.argument<String>("prompt")
         val requestId = call.argument<Int>("id")
         val configMap = call.argument<Map<String, Any>>("config")
+        val oneShot = call.argument<String>("instructions")
         if (prompt == null || requestId == null) {
           result.error("INVALID_ARGUMENT", "Prompt and request id are required", null)
           return
@@ -99,7 +101,7 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
         result.success(null)
         coroutineScope.launch {
           try {
-            generateTextStreamAsync(requestId, prompt, configMap)
+            generateTextStreamAsync(requestId, prompt, configMap, oneShot)
             emitStreamEvent("onGenerateTextDone", mapOf("id" to requestId))
           } catch (e: Exception) {
             emitStreamEvent(
@@ -314,15 +316,20 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
 
   private suspend fun generateTextAsync(
     prompt: String,
-    configMap: Map<String, Any>?
+    configMap: Map<String, Any>?,
+    oneShotInstructions: String? = null
   ): Map<String, Any> = withContext(Dispatchers.IO) {
     try {
       if (generativeModel == null) {
         generativeModel = Generation.getClient()
       }
 
-      val fullPrompt = if (instructions != null) {
-        "${instructions}\n\n$prompt"
+      // ML Kit generations are already stateless; per-call instructions just
+      // replace the session-level ones for this prompt (one-shot parity with
+      // the Apple backend).
+      val effectiveInstructions = oneShotInstructions ?: instructions
+      val fullPrompt = if (effectiveInstructions != null) {
+        "${effectiveInstructions}\n\n$prompt"
       } else {
         prompt
       }
@@ -370,15 +377,18 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
   private suspend fun generateTextStreamAsync(
     requestId: Int,
     prompt: String,
-    configMap: Map<String, Any>?
+    configMap: Map<String, Any>?,
+    oneShotInstructions: String? = null
   ) = withContext(Dispatchers.IO) {
     try {
       if (generativeModel == null) {
         generativeModel = Generation.getClient()
       }
 
-      val fullPrompt = if (instructions != null) {
-        "${instructions}\n\n$prompt"
+      // Same one-shot semantics as generateTextAsync.
+      val effectiveInstructions = oneShotInstructions ?: instructions
+      val fullPrompt = if (effectiveInstructions != null) {
+        "${effectiveInstructions}\n\n$prompt"
       } else {
         prompt
       }
