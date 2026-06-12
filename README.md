@@ -8,6 +8,10 @@
 
 A Flutter package that provides a unified API for local AI inference on Android with [*ML Kit GenAI*](https://developers.google.com/ml-kit/genai), on Apple Platforms using [*Foundation Models*](https://developer.apple.com/documentation/FoundationModels), and on Windows using [*Windows AI APIs*](https://learn.microsoft.com/en-us/windows/ai/) (Windows AI Foundry).
 
+Text generation (blocking or streamed), tool calling, and **generative UI**: the on-device model can design small typed-block UI modules that render with the [`genui`](https://pub.dev/packages/genui) runtime — and, with tool calls, operate them afterwards.
+
+`#ai` `#genui` `#on-device-ai` `#gemini-nano` `#foundation-models`
+
 </div>
 
 <div align="center">
@@ -84,8 +88,9 @@ android {
 }
 
 dependencies {
-    implementation("com.google.mlkit:genai-prompt:1.0.0-beta1")
-    implementation("com.google.android.gms:play-services-tasks:18.0.2")
+    implementation("com.google.mlkit:genai-prompt:1.0.0-beta2")
+    implementation("com.google.mlkit:genai-common:1.0.0-beta3")
+    implementation("com.google.android.gms:play-services-tasks:18.2.0")
 }
 ```
 
@@ -107,8 +112,9 @@ android {
 }
 
 dependencies {
-    implementation 'com.google.mlkit:genai-prompt:1.0.0-beta1'
-    implementation 'com.google.android.gms:play-services-tasks:18.0.2'
+    implementation 'com.google.mlkit:genai-prompt:1.0.0-beta2'
+    implementation 'com.google.mlkit:genai-common:1.0.0-beta3'
+    implementation 'com.google.android.gms:play-services-tasks:18.2.0'
 }
 ```
 
@@ -485,7 +491,9 @@ final generator = LocalAiUiGenerator(aiEngine);
 // deterministic UI.
 final GenUiModuleSpec? module = await generator.generateModule(
   'Save \$500 for a weekend trip',
-  principles: 'Keep it simple and low-pressure', // optional
+  principles: 'Keep it simple and low-pressure', // optional design steering
+  language: 'Italian',          // optional: force all user-facing copy
+  onText: (raw) => print(raw),  // optional: live decode for progress UI
 );
 
 if (module == null) {
@@ -503,10 +511,60 @@ print(generator.backend); // LocalAiBackend.androidMlKitGenAi / appleFoundationM
 ```
 
 A `GenUiModuleSpec` is a stack of typed blocks (`amount`, `progress`,
-`checklist`, `week`, `stat`, `list`, `lessons`, `reminder`, `calc`, `note`) that
-the model picks to fit the goal. The output is validated before it is returned,
-and on small on-device models a truncated response is repaired where possible so
-a partial module still renders.
+`checklist`, `week`, `stat`, `list`, `lessons`, `reminder`, `calc`, `docs`,
+`note`) that the model picks to fit the goal. The output is validated before it
+is returned, and on small on-device models a truncated response is repaired
+where possible so a partial module still renders.
+
+#### genUI + tool calls: generated UI the model can operate
+
+The two features compose: generate a module with `LocalAiUiGenerator`, then
+register the module's mutations as tools — the same on-device model that
+designed the UI can now act on it from natural language ("add 50 to the trip
+fund"), with your `onCall` handlers applying the state changes:
+
+```dart
+// 1. The generated module's state lives in your app (here: a progress block).
+var value = 300.0;
+
+// 2. Expose its mutations as tools for one chat turn.
+await aiEngine.registerTools([
+  LocalAiTool(
+    name: 'add_to_progress',
+    description: 'Add an amount to the savings progress.',
+    parameters: const [
+      ToolParameter(
+        name: 'amount',
+        type: ToolArgumentType.number,
+        description: 'Amount to add',
+      ),
+    ],
+    onCall: (args) {
+      value += (args['amount'] as num).toDouble();
+      return {'ok': true, 'value': value}; // grounds the model's confirmation
+    },
+  ),
+]);
+
+// 3. One generation = the whole turn: the model calls the tool, reads the
+//    result, and answers in plain text. Scope the registration to the turn —
+//    clear it afterwards so later generations (e.g. genUI) stay tool-free.
+try {
+  final res = await aiEngine.generateText(
+    prompt: 'CURRENT STATE: {"value": $value, "target": 600}\n\n'
+        'USER MESSAGE: "add 50 to my trip fund"',
+    instructions: 'You operate a savings tracker. Use the tools to apply '
+        'changes, then confirm in one short sentence.',
+  );
+  print(res.text); // "Done — your trip fund is at $350 of $600."
+} finally {
+  await aiEngine.registerTools(const []);
+}
+```
+
+This is the pattern behind a genUI chat: hand the model the module state (the
+`toModuleJson()` shape) plus per-block tools, and every dashboard edit the UI
+can do becomes something the model can do too.
 
 #### Reusing the genUI engine with other backends
 
@@ -523,9 +581,34 @@ final instructions = LocalAiUiGenerator.genUiInstructions;
 final GenUiModuleSpec? spec = LocalAiUiGenerator.parseModelOutput(rawModelText);
 ```
 
-### Streaming Text Generation (Coming Soon)
+### Streaming Text Generation
 
-Streaming support for real-time text generation is planned for a future release.
+`generateTextStream` yields delta chunks as the model decodes — ideal for
+typing the answer into the UI live, or for the genUI generator's `onText`
+preview. On Apple it maps to FoundationModels' streamed snapshots, on Android
+to ML Kit's `StreamingCallback`.
+
+```dart
+final buffer = StringBuffer();
+await for (final chunk in aiEngine.generateTextStream(
+  prompt: 'Write a two-line poem about autumn',
+  config: const GenerationConfig(maxTokens: 120, temperature: 0.7),
+  instructions: 'You are a poet.', // optional one-shot session, see below
+)) {
+  buffer.write(chunk);
+  print(buffer); // cumulative text so far
+}
+```
+
+Notes:
+- The optional `instructions:` parameter (also on `generateText`) runs the call
+  in a **one-shot throwaway session** with exactly those instructions — nothing
+  accumulates in the session created by `initialize`. Use it for stateless
+  callers that carry their own context in the prompt (on Apple, a shared
+  session's transcript counts toward the 4096-token context window).
+- While tools are registered, the Android stream degrades to a single buffered
+  chunk with the final answer (a round can only be classified as tool call vs.
+  final answer once it is complete).
 
 ### Complete Example
 
@@ -702,10 +785,23 @@ Main class for interacting with local AI.
 #### Methods
 
 - `Future<bool> isAvailable()` - Check if local AI is available on the device
+- `Future<String> availabilityReason()` - A human-readable reason when it is not (eligibility, model downloadable/downloading, OS version…)
 - `Future<bool> initialize({String? instructions})` - Initialize the model and create a session with instruction text (required for iOS, recommended for Android)
-- `Future<AiResponse> generateText({required String prompt, GenerationConfig? config})` - Generate text from a prompt with optional configuration
+- `Future<AiResponse> generateText({required String prompt, GenerationConfig? config, String? instructions})` - Generate text; per-call `instructions` run a one-shot throwaway session
+- `Stream<String> generateTextStream({required String prompt, GenerationConfig? config, String? instructions})` - Generate text as a stream of delta chunks
 - `Future<String> generateTextSimple({required String prompt, int maxTokens = 100})` - Convenience method to generate text and return just the string
+- `Future<void> registerTools(List<LocalAiTool> tools)` - Register Dart tools the model may call during generation (pass `const []` to clear)
+- `Future<LocalAiPlatformInfo> getPlatformInfo()` - The detected backend and its capabilities (`supportsToolCalling`, `supportsModelDownload`, …)
+- `Future<ModelFeatureStatus> getModelStatus()` - `available` / `downloadable` / `downloading` / `unavailable` (Android Gemini Nano)
+- `Stream<ModelDownloadStatus> downloadModel()` - Request the one-time on-device model download and observe its progress; failures always surface on the stream
 - `Future<bool> openAICorePlayStore()` - Open Google AICore in the Play Store (Android only, useful when error -101 occurs)
+
+### `LocalAiTool` / `ToolParameter`
+
+A Dart-defined tool the on-device model can invoke (see Tool Calls above).
+
+- `LocalAiTool({required name, required description, required parameters, required onCall})` - `onCall` receives the model's arguments as a `Map<String, dynamic>` and returns JSON-serializable data fed back to the model
+- `ToolParameter({required name, type, description, optional})` - typed parameter (`ToolArgumentType.string/integer/number/boolean`)
 
 ### `GenerationConfig`
 
@@ -730,7 +826,7 @@ Turns a natural-language goal into a `GenUiModuleSpec` using the on-device model
 (Apple FoundationModels or Android ML Kit GenAI / Gemini Nano).
 
 - `LocalAiUiGenerator([FlutterLocalAi? ai])` - Create a generator (reuses or creates an engine)
-- `Future<GenUiModuleSpec?> generateModule(String goal, {String? principles})` - Generate a module; returns `null` on any failure
+- `Future<GenUiModuleSpec?> generateModule(String goal, {String? principles, String? language, void Function(String)? onText})` - Generate a module; `language` forces all user-facing copy into that language, `onText` streams the raw decode for live progress UI; returns `null` on any failure
 - `LocalAiBackend get backend` - The detected on-device backend
 - `bool? get available` - Whether the model reported itself available (cached)
 - `String? get lastError` - The last platform error encountered, for diagnostics
