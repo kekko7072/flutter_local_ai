@@ -221,7 +221,7 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Future<void> _configureTools(bool enable) async {
-    if (!Platform.isIOS && !Platform.isMacOS) return;
+    if (!Platform.isIOS && !Platform.isMacOS && !Platform.isAndroid) return;
     try {
       final tools = enable ? _buildSampleTools() : <LocalAiTool>[];
       await _aiEngine.registerTools(tools);
@@ -394,7 +394,7 @@ class _MyHomePageState extends State<MyHomePage> {
     if (ok) {
       _sessionMode = _SessionMode.text;
       // Re-register tools: re-initializing the session drops them.
-      if ((Platform.isIOS || Platform.isMacOS) && _toolsEnabled) {
+      if (_toolsEnabled) {
         await _aiEngine.registerTools(_buildSampleTools());
       }
     }
@@ -687,7 +687,8 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Widget _buildTextTab(BuildContext context) {
-    final isDarwin = !kIsWeb && (Platform.isIOS || Platform.isMacOS);
+    final supportsTools =
+        !kIsWeb && (Platform.isIOS || Platform.isMacOS || Platform.isAndroid);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
@@ -890,12 +891,13 @@ class _MyHomePageState extends State<MyHomePage> {
           ),
           const SizedBox(height: 8),
 
-          if (isDarwin) ...[
+          if (supportsTools) ...[
             Card(
               child: SwitchListTile(
-                title: const Text('Enable tool calls (iOS/macOS only)'),
+                title: const Text('Enable tool calls'),
                 subtitle: const Text(
-                  'Expose sample tools: searchBreadDatabase and quickMath.',
+                  'Expose sample tools: searchBreadDatabase and quickMath. '
+                  'Native on iOS/macOS, prompt-emulated on Android.',
                 ),
                 value: _toolsEnabled,
                 onChanged: (value) async {

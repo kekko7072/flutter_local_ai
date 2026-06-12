@@ -36,7 +36,7 @@ A Flutter package that provides a unified API for local AI inference on Android 
 | Generative UI (genUI) | ✅             | ✅                 | 🚧 Planned         |
 | Summarization*     | 🚧 Planned        | 🚧 Planned         | 🚧 Planned         |
 | Image generation   | 🚧 Planned        | ❌                 | 🚧 Planned         |
-| Tool call          | ✅                | 🚧 Planned         | 🚧 Planned         |
+| Tool call          | ✅                | ✅ Emulated        | 🚧 Planned         |
 
 *Summarization is achieved through text-generation prompts and shares the same API surface.
 
@@ -407,9 +407,14 @@ print('Token count: ${response.tokenCount}');
 print('Generation time: ${response.generationTimeMs}ms');
 ```
 
-### Tool Calls on Apple Platforms (Darwin)
+### Tool Calls (Apple + Android)
 
-Tool calling is supported on iOS 26.0+ and macOS 26.0+ through Apple FoundationModels. Define tools in Dart, register them, and return JSON-serializable data from the handler.
+Tool calling lets the on-device model invoke Dart functions you define. Define tools in Dart, register them, and return JSON-serializable data from the handler — the same code works on both platforms:
+
+- **iOS 26.0+ / macOS 26.0+**: native — tools are passed to Apple FoundationModels as `Tool` objects with a generation schema, so the model is constrained to produce valid calls.
+- **Android**: emulated — ML Kit GenAI has no native function calling, so the plugin describes your tools in the prompt and asks the model to reply with a one-line JSON call (`{"tool": ..., "args": {...}}`). Matched calls run your Dart handler and the result is fed back for the next round, up to 3 tool round-trips per generation. Because this relies on prompting rather than constrained decoding, a small model may occasionally answer without calling a tool — keep tool descriptions short and explicit. While tools are registered, `generateTextStream` on Android delivers its result as a single buffered chunk (a round can only be classified as tool call vs. final answer once complete).
+
+Register an empty list to disable tool use again.
 
 ```dart
 import 'package:flutter_local_ai/flutter_local_ai.dart';

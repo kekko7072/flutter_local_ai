@@ -1,5 +1,21 @@
 ## 0.0.14
 
+### Android: tool calling (emulated)
+* `registerTools()` now works on Android. ML Kit GenAI has no native function
+  calling, so the plugin emulates it: registered tools are described in the
+  prompt with a one-line JSON call protocol, matched calls are dispatched to
+  the registered Dart `onCall` handler through the same `onToolCall` channel
+  round-trip the Apple backend uses, and the result is fed back to the model
+  for the next round (up to 3 tool round-trips per generation, then a forced
+  plain-text answer). A JSON reply only counts as a tool call when its tool
+  name matches a registered tool, so JSON-shaped answers such as genUI module
+  specs cannot be hijacked.
+* While tools are registered, `generateTextStream` on Android delivers its
+  result as a single buffered chunk — a round can only be classified as tool
+  call vs. final answer once it is complete.
+* Android `getPlatformInfo()` now reports `supportsToolCalling: true`.
+* The example app's tool-calls toggle is enabled on Android.
+
 ### Android: widest available device support + robust model download
 * Bumped `com.google.mlkit:genai-prompt` from `1.0.0-alpha1` to `1.0.0-beta2`.
   alpha1 only resolved the Prompt API feature on Pixel 9 devices, so

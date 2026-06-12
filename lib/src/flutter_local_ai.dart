@@ -97,7 +97,14 @@ class FlutterLocalAi {
   Future<bool> openAICorePlayStore() =>
       FlutterLocalAiPlatform.instance.openAICorePlayStore();
 
-  /// Register Dart tools to be exposed to the native model (Darwin only).
+  /// Register Dart tools to be exposed to the native model.
+  ///
+  /// On Apple platforms tools are passed natively to FoundationModels. On
+  /// Android (ML Kit GenAI has no native function calling) tool use is
+  /// emulated through a prompted JSON protocol with up to three tool
+  /// round-trips per generation; while tools are registered,
+  /// [generateTextStream] delivers its result as a single buffered chunk.
+  /// Register an empty list to disable tool use again.
   Future<void> registerTools(List<LocalAiTool> tools) =>
       FlutterLocalAiPlatform.instance.registerTools(tools);
 
