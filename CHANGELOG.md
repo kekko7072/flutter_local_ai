@@ -1,11 +1,20 @@
 ## 0.0.14
 
-### Android: Samsung device support + robust model download
+### Android: widest available device support + robust model download
 * Bumped `com.google.mlkit:genai-prompt` from `1.0.0-alpha1` to `1.0.0-beta2`.
   alpha1 only resolved the Prompt API feature on Pixel 9 devices, so
-  `checkStatus()` never reported `DOWNLOADABLE` on Samsung hardware; beta2 adds
-  the current supported-device list (Galaxy Z Fold7 / Z TriFold on nano-v2,
-  Galaxy S26 series on nano-v3, newer Pixels).
+  `checkStatus()` never reported `DOWNLOADABLE` on anything else; beta2 carries
+  the full current supported-device list — Pixel 9/10 series plus Samsung
+  (Galaxy Z Fold7 / Z TriFold, S26 series), Honor, iQOO, Lenovo, Motorola,
+  OnePlus, OPPO, POCO, realme, vivo and Xiaomi flagships (nano-v2 / nano-v3).
+* Aligned `com.google.mlkit:genai-common` with the `1.0.0-beta3` version that
+  `genai-prompt:1.0.0-beta2` declares in its POM (it's the artifact resolving
+  per-device feature configs; the previous explicit `beta2` pin understated the
+  actually-resolved version) and `play-services-tasks` with the POM's `18.2.0`
+  floor.
+* Documented the supported-device matrix in the README, including that any
+  API 26+ device can install the app and gracefully degrades via
+  `isAvailable()` / `getModelStatus()` on unsupported hardware.
 * `downloadModel()` failures now always surface on the download status stream:
   the Android implementation emits a `failed` status (with the error message)
   before propagating the exception, and the Dart layer converts a failed
