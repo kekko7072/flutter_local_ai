@@ -99,11 +99,9 @@ class FlutterLocalAi {
 
   /// Register Dart tools to be exposed to the native model.
   ///
-  /// On Apple platforms tools are passed natively to FoundationModels. On
-  /// Android (ML Kit GenAI has no native function calling) tool use is
-  /// emulated through a prompted JSON protocol with up to three tool
-  /// round-trips per generation; while tools are registered,
-  /// [generateTextStream] delivers its result as a single buffered chunk.
+  /// Apple platforms only: tools are passed natively to FoundationModels.
+  /// On Android the ML Kit GenAI Prompt API has no function calling, so this
+  /// throws — check `getPlatformInfo().supportsToolCalling` before calling.
   /// Register an empty list to disable tool use again.
   Future<void> registerTools(List<LocalAiTool> tools) =>
       FlutterLocalAiPlatform.instance.registerTools(tools);

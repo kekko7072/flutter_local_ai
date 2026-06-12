@@ -40,7 +40,7 @@ Text generation (blocking or streamed), tool calling, and **generative UI**: the
 | Generative UI (genUI) | ✅             | ✅                 | 🚧 Planned         |
 | Summarization*     | 🚧 Planned        | 🚧 Planned         | 🚧 Planned         |
 | Image generation   | 🚧 Planned        | ❌                 | 🚧 Planned         |
-| Tool call          | ✅                | ✅ Emulated        | 🚧 Planned         |
+| Tool call          | ✅                | ❌                 | 🚧 Planned         |
 
 *Summarization is achieved through text-generation prompts and shares the same API surface.
 
@@ -413,12 +413,12 @@ print('Token count: ${response.tokenCount}');
 print('Generation time: ${response.generationTimeMs}ms');
 ```
 
-### Tool Calls (Apple + Android)
+### Tool Calls (Apple platforms)
 
-Tool calling lets the on-device model invoke Dart functions you define. Define tools in Dart, register them, and return JSON-serializable data from the handler — the same code works on both platforms:
+Tool calling lets the on-device model invoke Dart functions you define. Define tools in Dart, register them, and return JSON-serializable data from the handler:
 
 - **iOS 26.0+ / macOS 26.0+**: native — tools are passed to Apple FoundationModels as `Tool` objects with a generation schema, so the model is constrained to produce valid calls.
-- **Android**: emulated — ML Kit GenAI has no native function calling, so the plugin describes your tools in the prompt and asks the model to reply with a one-line JSON call (`{"tool": ..., "args": {...}}`). Matched calls run your Dart handler and the result is fed back for the next round, up to 3 tool round-trips per generation. Because this relies on prompting rather than constrained decoding, a small model may occasionally answer without calling a tool — keep tool descriptions short and explicit. While tools are registered, `generateTextStream` on Android delivers its result as a single buffered chunk (a round can only be classified as tool call vs. final answer once complete).
+- **Android**: not supported — the ML Kit GenAI Prompt API has no function calling (text/image in, text out only), and prompt-emulating a JSON call protocol proved too unreliable on Gemini Nano. `registerTools` throws an `UNSUPPORTED` error on Android; gate on `getPlatformInfo().supportsToolCalling` in cross-platform code. Google's Gemma 4 announcement points at agentic/tool-calling models reaching the Prompt API via AICore, so this is worth revisiting as the API surface evolves.
 
 Register an empty list to disable tool use again.
 
@@ -516,7 +516,7 @@ A `GenUiModuleSpec` is a stack of typed blocks (`amount`, `progress`,
 is returned, and on small on-device models a truncated response is repaired
 where possible so a partial module still renders.
 
-#### genUI + tool calls: generated UI the model can operate
+#### genUI + tool calls: generated UI the model can operate (Apple platforms)
 
 The two features compose: generate a module with `LocalAiUiGenerator`, then
 register the module's mutations as tools — the same on-device model that
@@ -606,9 +606,6 @@ Notes:
   accumulates in the session created by `initialize`. Use it for stateless
   callers that carry their own context in the prompt (on Apple, a shared
   session's transcript counts toward the 4096-token context window).
-- While tools are registered, the Android stream degrades to a single buffered
-  chunk with the final answer (a round can only be classified as tool call vs.
-  final answer once it is complete).
 
 ### Complete Example
 
@@ -790,7 +787,7 @@ Main class for interacting with local AI.
 - `Future<AiResponse> generateText({required String prompt, GenerationConfig? config, String? instructions})` - Generate text; per-call `instructions` run a one-shot throwaway session
 - `Stream<String> generateTextStream({required String prompt, GenerationConfig? config, String? instructions})` - Generate text as a stream of delta chunks
 - `Future<String> generateTextSimple({required String prompt, int maxTokens = 100})` - Convenience method to generate text and return just the string
-- `Future<void> registerTools(List<LocalAiTool> tools)` - Register Dart tools the model may call during generation (pass `const []` to clear)
+- `Future<void> registerTools(List<LocalAiTool> tools)` - Register Dart tools the model may call during generation (Apple platforms only; pass `const []` to clear)
 - `Future<LocalAiPlatformInfo> getPlatformInfo()` - The detected backend and its capabilities (`supportsToolCalling`, `supportsModelDownload`, …)
 - `Future<ModelFeatureStatus> getModelStatus()` - `available` / `downloadable` / `downloading` / `unavailable` (Android Gemini Nano)
 - `Stream<ModelDownloadStatus> downloadModel()` - Request the one-time on-device model download and observe its progress; failures always surface on the stream

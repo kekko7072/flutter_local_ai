@@ -221,7 +221,9 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Future<void> _configureTools(bool enable) async {
-    if (!Platform.isIOS && !Platform.isMacOS && !Platform.isAndroid) return;
+    // Tool calling is Apple-only: ML Kit GenAI's Prompt API has no function
+    // calling, so the Android backend rejects registerTools.
+    if (!Platform.isIOS && !Platform.isMacOS) return;
     try {
       final tools = enable ? _buildSampleTools() : <LocalAiTool>[];
       await _aiEngine.registerTools(tools);
@@ -439,16 +441,24 @@ class _MyHomePageState extends State<MyHomePage> {
         return;
       }
 
+      debugPrint('[LocalAI] request: "${_promptController.text}" '
+          '(instructions: "${_instructionsController.text}", '
+          'tools: ${_toolsEnabled ? "on" : "off"}, maxTokens: 200)');
+
       final response = await _aiEngine.generateText(
         prompt: _promptController.text,
         config: const GenerationConfig(maxTokens: 200),
       );
+
+      debugPrint('[LocalAI] response (${response.generationTimeMs} ms, '
+          '~${response.tokenCount} tokens): ${response.text}');
 
       setState(() {
         _response = response.text;
         _isLoading = false;
       });
     } catch (e) {
+      debugPrint('[LocalAI] generation error: $e');
       setState(() {
         _response = 'Error: $e';
         _isLoading = false;
@@ -500,10 +510,21 @@ class _MyHomePageState extends State<MyHomePage> {
     final generator = _uiGenerator!;
 
     final principles = _principlesController.text.trim();
+    debugPrint('[LocalAI][genUI] request goal: "$goal"'
+        '${principles.isEmpty ? '' : ' principles: "$principles"'}');
+
+    // onText receives the cumulative raw model output, so the last value is
+    // the complete response — printable even when module parsing fails.
+    String? rawOutput;
     final spec = await generator.generateModule(
       goal,
       principles: principles.isEmpty ? null : principles,
+      onText: (text) => rawOutput = text,
     );
+    debugPrint('[LocalAI][genUI] raw response: ${rawOutput ?? '(no output)'}');
+    if (spec == null) {
+      debugPrint('[LocalAI][genUI] module parse failed: ${generator.lastError}');
+    }
 
     setState(() {
       _genUiLoading = false;
@@ -687,8 +708,7 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Widget _buildTextTab(BuildContext context) {
-    final supportsTools =
-        !kIsWeb && (Platform.isIOS || Platform.isMacOS || Platform.isAndroid);
+    final supportsTools = !kIsWeb && (Platform.isIOS || Platform.isMacOS);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
@@ -896,8 +916,7 @@ class _MyHomePageState extends State<MyHomePage> {
               child: SwitchListTile(
                 title: const Text('Enable tool calls'),
                 subtitle: const Text(
-                  'Expose sample tools: searchBreadDatabase and quickMath. '
-                  'Native on iOS/macOS, prompt-emulated on Android.',
+                  'Expose sample tools: searchBreadDatabase and quickMath.',
                 ),
                 value: _toolsEnabled,
                 onChanged: (value) async {

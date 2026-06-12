@@ -25,13 +25,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.collect
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
-import org.json.JSONArray
-import org.json.JSONObject
 
 /** FlutterLocalAiPlugin */
 class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
@@ -40,10 +35,6 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
   private var instructions: String? = null
   private val coroutineScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
   private lateinit var context: Context
-
-  // Written on the platform thread (registerTools), read from IO coroutines.
-  @Volatile
-  private var registeredTools: List<RegisteredTool> = emptyList()
 
   override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
     context = flutterPluginBinding.applicationContext
@@ -121,12 +112,15 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
         }
       }
       "registerTools" -> {
-        try {
-          registeredTools = parseToolPayload(call.arguments)
-          result.success(true)
-        } catch (e: Exception) {
-          result.error("TOOL_REGISTRATION_FAILED", "Failed to register tools: ${e.message}", null)
-        }
+        // The ML Kit GenAI Prompt API has no function calling (text/image in,
+        // text out only). Prompt-emulated tool use was tried and dropped —
+        // Gemini Nano doesn't follow a JSON call protocol reliably enough —
+        // so fail loudly instead of letting callers expect tool execution.
+        result.error(
+          "UNSUPPORTED",
+          "Tool calling is not supported on Android: the ML Kit GenAI Prompt API has no function calling.",
+          null
+        )
       }
       "openAICorePlayStore" -> {
         try {
@@ -184,9 +178,9 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
       "backend" to "android_mlkit_genai",
       "platform" to "android",
       "apiName" to "Google ML Kit GenAI (AICore)",
-      // Emulated: the Prompt API has no native function calling, so tool use is
-      // driven through a prompted JSON protocol — see runToolLoop().
-      "supportsToolCalling" to true,
+      // The Prompt API has no function calling (text/image in, text out only).
+      // Re-check when Gemma 4 / Agent Mode reaches the Prompt API surface.
+      "supportsToolCalling" to false,
       "supportsModelDownload" to true,
       "supportsPlayStoreRedirect" to true,
       "isConfigured" to true
@@ -370,11 +364,7 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
       val temperatureValue = (configMap?.get("temperature") as? Number)?.toFloat()
 
       val startTime = System.currentTimeMillis()
-      val generatedText = if (registeredTools.isEmpty()) {
-        runGeneration(fullPrompt, maxOutputTokensValue, temperatureValue)
-      } else {
-        runToolLoop(fullPrompt, maxOutputTokensValue, temperatureValue)
-      }
+      val generatedText = runGeneration(fullPrompt, maxOutputTokensValue, temperatureValue)
       val generationTime = System.currentTimeMillis() - startTime
       val tokenCount = generatedText.split(" ").filter { it.isNotEmpty() }.size
 
@@ -419,26 +409,16 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
         ?.coerceIn(1, 256)
       val temperatureValue = (configMap?.get("temperature") as? Number)?.toFloat()
 
-      if (registeredTools.isEmpty()) {
-        val request = generateContentRequest(TextPart(fullPrompt)) {
-          if (maxOutputTokensValue != null) maxOutputTokens = maxOutputTokensValue
-          if (temperatureValue != null) temperature = temperatureValue
-        }
-
-        // ML Kit's StreamingCallback delivers newly generated text only, which
-        // is exactly the delta contract of onGenerateTextChunk.
-        generativeModel!!.generateContent(request, StreamingCallback { newText ->
-          emitStreamEvent("onGenerateTextChunk", mapOf("id" to requestId, "text" to newText))
-        })
-      } else {
-        // A round's output is only known to be a tool call (vs. the final
-        // answer) once it's complete, so with tools registered the stream
-        // degrades to buffered delivery: one chunk with the final text.
-        val finalText = runToolLoop(fullPrompt, maxOutputTokensValue, temperatureValue)
-        if (finalText.isNotEmpty()) {
-          emitStreamEvent("onGenerateTextChunk", mapOf("id" to requestId, "text" to finalText))
-        }
+      val request = generateContentRequest(TextPart(fullPrompt)) {
+        if (maxOutputTokensValue != null) maxOutputTokens = maxOutputTokensValue
+        if (temperatureValue != null) temperature = temperatureValue
       }
+
+      // ML Kit's StreamingCallback delivers newly generated text only, which
+      // is exactly the delta contract of onGenerateTextChunk.
+      generativeModel!!.generateContent(request, StreamingCallback { newText ->
+        emitStreamEvent("onGenerateTextChunk", mapOf("id" to requestId, "text" to newText))
+      })
       Unit
     } catch (e: Exception) {
       Log.e("FlutterLocalAi", "generateTextStream error: ${e.javaClass.simpleName} - ${e.message}", e)
@@ -453,8 +433,7 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
 
   private fun buildFullPrompt(prompt: String, oneShotInstructions: String?): String {
     val effectiveInstructions = oneShotInstructions ?: instructions
-    val toolInstructions = if (registeredTools.isNotEmpty()) buildToolInstructions() else null
-    return listOfNotNull(effectiveInstructions, toolInstructions, prompt).joinToString("\n\n")
+    return listOfNotNull(effectiveInstructions, prompt).joinToString("\n\n")
   }
 
   private suspend fun runGeneration(
@@ -468,144 +447,6 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
     }
     val response: GenerateContentResponse = generativeModel!!.generateContent(request)
     return response.candidates.firstOrNull()?.text ?: ""
-  }
-
-  // --- Tool calling (emulated) ---------------------------------------------
-  //
-  // The Prompt API has no native function calling, so tools work through a
-  // prompted protocol: the model is told it may reply with a one-line JSON
-  // tool call, that call is executed by the registered Dart handler through
-  // the same onToolCall channel round-trip the Apple backend uses, and the
-  // result is appended to the transcript for the next round.
-
-  private fun parseToolPayload(arguments: Any?): List<RegisteredTool> {
-    val payload = arguments as? List<*> ?: return emptyList()
-    return payload.mapNotNull { raw ->
-      val map = raw as? Map<*, *> ?: return@mapNotNull null
-      val name = map["name"] as? String ?: return@mapNotNull null
-      val parameters = (map["parameters"] as? List<*>)?.mapNotNull { entry ->
-        (entry as? Map<*, *>)?.entries?.associate { it.key.toString() to it.value }
-      } ?: emptyList()
-      RegisteredTool(
-        name = name,
-        description = map["description"] as? String ?: "",
-        parameters = parameters
-      )
-    }
-  }
-
-  private fun buildToolInstructions(): String {
-    val toolLines = registeredTools.joinToString("\n") { tool ->
-      val signature = tool.parameters.joinToString(", ") { parameter ->
-        val optionalMark = if (parameter["optional"] == true) "?" else ""
-        "${parameter["name"]}$optionalMark: ${parameter["type"] ?: "string"}"
-      }
-      val parameterDocs = tool.parameters.mapNotNull { parameter ->
-        val description = parameter["description"] as? String ?: return@mapNotNull null
-        "${parameter["name"]}: $description"
-      }
-      val docs = if (parameterDocs.isEmpty()) "" else " (${parameterDocs.joinToString("; ")})"
-      "- ${tool.name}($signature): ${tool.description}$docs"
-    }
-    return "You can call tools.\nAvailable tools:\n$toolLines\n" +
-      "To call a tool reply with ONLY this JSON on one line and nothing else:\n" +
-      "{\"tool\": \"<tool name>\", \"args\": {\"<parameter>\": <value>}}\n" +
-      "When the conversation contains \"Tool result:\", use it to answer in " +
-      "plain text instead of repeating that call."
-  }
-
-  /** Returns the registered tool + arguments when [output] is a tool call. */
-  private fun parseToolCall(output: String): Pair<RegisteredTool, JSONObject>? {
-    if (registeredTools.isEmpty()) return null
-    var text = output.trim()
-    if (text.startsWith("```")) {
-      text = text.removePrefix("```json").removePrefix("```").trim()
-        .removeSuffix("```").trim()
-    }
-    val start = text.indexOf('{')
-    val end = text.lastIndexOf('}')
-    if (start == -1 || end <= start) return null
-    val json = try {
-      JSONObject(text.substring(start, end + 1))
-    } catch (e: Exception) {
-      return null
-    }
-    // Small models drift on the envelope; accept a {"tool_call": {...}}
-    // wrapper and "name"/"arguments" key aliases.
-    val callObject = json.optJSONObject("tool_call") ?: json
-    val toolName = callObject.optString("tool").ifEmpty { callObject.optString("name") }
-    // Only a name matching a registered tool counts as a call — that keeps
-    // legitimate JSON answers (e.g. genUI module specs) from being hijacked.
-    val tool = registeredTools.find { it.name == toolName } ?: return null
-    val args = callObject.optJSONObject("args")
-      ?: callObject.optJSONObject("arguments")
-      ?: JSONObject()
-    return tool to args
-  }
-
-  private suspend fun runToolLoop(
-    initialPrompt: String,
-    maxOutputTokensValue: Int?,
-    temperatureValue: Float?
-  ): String {
-    val transcript = StringBuilder(initialPrompt)
-    repeat(MAX_TOOL_ROUNDS) {
-      val output = runGeneration(transcript.toString(), maxOutputTokensValue, temperatureValue)
-      val (tool, args) = parseToolCall(output) ?: return output
-      val toolResult = try {
-        invokeDartTool(tool, args)
-      } catch (e: Exception) {
-        Log.e("FlutterLocalAi", "Tool ${tool.name} failed: ${e.message}", e)
-        // The model still gets something to answer with instead of the
-        // whole generation dying on a tool failure.
-        "Error: ${e.message}"
-      }
-      transcript
-        .append("\n").append(output.trim())
-        .append("\nTool result: ").append(toolResultToPromptText(toolResult))
-        .append("\nUse the tool result to answer in plain text, or call another tool if needed.")
-    }
-    // Tool budget exhausted — force a plain-text answer.
-    transcript.append("\nAnswer now in plain text. Do not call any more tools.")
-    return runGeneration(transcript.toString(), maxOutputTokensValue, temperatureValue)
-  }
-
-  private suspend fun invokeDartTool(tool: RegisteredTool, args: JSONObject): Any? =
-    // Platform channels must be invoked from the main thread.
-    withContext(Dispatchers.Main) {
-      suspendCancellableCoroutine { continuation ->
-        val payload = mapOf(
-          "toolName" to tool.name,
-          "arguments" to jsonToChannelValue(args)
-        )
-        channel.invokeMethod("onToolCall", payload, object : Result {
-          override fun success(result: Any?) {
-            continuation.resume(result)
-          }
-
-          override fun error(errorCode: String, errorMessage: String?, errorDetails: Any?) {
-            continuation.resumeWithException(Exception(errorMessage ?: errorCode))
-          }
-
-          override fun notImplemented() {
-            continuation.resumeWithException(Exception("No Dart handler for onToolCall"))
-          }
-        })
-      }
-    }
-
-  private fun jsonToChannelValue(value: Any?): Any? = when (value) {
-    null, JSONObject.NULL -> null
-    is JSONObject -> value.keys().asSequence()
-      .associateWith { key -> jsonToChannelValue(value.get(key)) }
-    is JSONArray -> (0 until value.length()).map { jsonToChannelValue(value.get(it)) }
-    else -> value
-  }
-
-  private fun toolResultToPromptText(result: Any?): String = when (result) {
-    null -> "null"
-    is String -> result
-    else -> JSONObject.wrap(result)?.toString() ?: result.toString()
   }
 
   private fun openAICoreInPlayStore() {
@@ -643,19 +484,5 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
     generativeModel?.close()
     generativeModel = null
     instructions = null
-    registeredTools = emptyList()
-  }
-
-  private companion object {
-    // Hard ceiling on tool round-trips per generation — keeps a model that
-    // loops on tool JSON from spinning forever inside Nano's small context.
-    const val MAX_TOOL_ROUNDS = 3
   }
 }
-
-/** Tool definition mirrored from the Dart-side LocalAiTool. */
-private data class RegisteredTool(
-  val name: String,
-  val description: String,
-  val parameters: List<Map<String, Any?>>
-)

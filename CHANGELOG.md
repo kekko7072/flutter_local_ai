@@ -1,20 +1,17 @@
 ## 0.0.14
 
-### Android: tool calling (emulated)
-* `registerTools()` now works on Android. ML Kit GenAI has no native function
-  calling, so the plugin emulates it: registered tools are described in the
-  prompt with a one-line JSON call protocol, matched calls are dispatched to
-  the registered Dart `onCall` handler through the same `onToolCall` channel
-  round-trip the Apple backend uses, and the result is fed back to the model
-  for the next round (up to 3 tool round-trips per generation, then a forced
-  plain-text answer). A JSON reply only counts as a tool call when its tool
-  name matches a registered tool, so JSON-shaped answers such as genUI module
-  specs cannot be hijacked.
-* While tools are registered, `generateTextStream` on Android delivers its
-  result as a single buffered chunk — a round can only be classified as tool
-  call vs. final answer once it is complete.
-* Android `getPlatformInfo()` now reports `supportsToolCalling: true`.
-* The example app's tool-calls toggle is enabled on Android.
+### Android: tool calling is explicitly unsupported
+* `registerTools()` on Android now fails with a clear `UNSUPPORTED` error
+  instead of pretending to work. The ML Kit GenAI Prompt API has no function
+  calling — text/image in, text out only (verified against the
+  `genai-prompt:1.0.0-beta2` API surface) — and a prompt-emulated JSON call
+  protocol proved too unreliable on Gemini Nano to ship: the model answers in
+  prose instead of performing the call. Gate on
+  `getPlatformInfo().supportsToolCalling` (false on Android); revisit when
+  Gemma 4 / Agent Mode reaches the Prompt API surface.
+* The example app shows the tool-calls toggle only on iOS/macOS, and
+  `debugPrint`s every request and response — including the genUI tab's raw
+  model output, so generation issues are inspectable from the console.
 
 ### Android: widest available device support + robust model download
 * Bumped `com.google.mlkit:genai-prompt` from `1.0.0-alpha1` to `1.0.0-beta2`.
