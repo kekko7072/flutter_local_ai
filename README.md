@@ -26,7 +26,7 @@ A Flutter package that provides a unified API for local AI inference on Android 
 - **Zero Model Downloads**: No need to bundle large model files with your app
 - **Native Performance**: Direct access to OS-optimized AI capabilities
 - **Smaller App Size**: Models are part of the operating system, not your app bundle
-- **Generative UI**: Turn a natural-language goal into a renderable [`genui`](https://pub.dev/packages/genui) module spec, on-device, identically on Apple FoundationModels and Android Gemini Nano (Pixel)
+- **Generative UI**: Turn a natural-language goal into a renderable [`genui`](https://pub.dev/packages/genui) module spec, on-device, identically on Apple FoundationModels and Android Gemini Nano (Pixel, Samsung, Xiaomi, OnePlus and [more](https://developers.google.com/ml-kit/genai))
 
 ## Platform Support
 
@@ -218,6 +218,25 @@ Users can manually install AICore from:
 - Always check `isAvailable()` before using AI features
 - Provide fallback options in your app when AICore is not available
 - The `android:required="false"` in AndroidManifest allows your app to run even without AICore
+
+#### Supported Android Devices
+
+Any Android device on API 26+ can **install** an app using this plugin — on
+unsupported hardware the feature simply reports unavailable (`isAvailable()`
+returns `false`, `getModelStatus()` returns `unavailable`), so always gate your
+UI on those checks instead of a device allowlist.
+
+On-device **inference** via the Prompt API currently runs on (June 2026):
+
+| Gemini Nano | Devices |
+|---|---|
+| nano-v2 | Pixel 9 / 9 Pro / 9 Pro XL / 9 Pro Fold; Samsung Galaxy Z Fold7, Z TriFold; Honor Magic V5, Magic 7 / 7 Pro; iQOO 13; Motorola Razr 60 Ultra / Razr Ultra 2025; OnePlus 13 / 13s; OPPO Find N5; POCO F7 Ultra, F8 Pro/Ultra, X7 Pro, X8 Pro; realme GT 7 Pro; vivo X200 FE, T4 Ultra; Xiaomi 14T Pro, 15 / 15T / 15T Pro / 15 Ultra, 17 / 17 Ultra, Pad Mini |
+| nano-v3 | Pixel 10 / 10 Pro / 10 Pro XL / 10 Pro Fold; Samsung Galaxy S26 / S26+ / S26 Ultra; Honor Magic 8 Pro; iQOO 15; Lenovo Idea Tab Pro Gen 2, Legion Tab Gen 5; OnePlus 15 / 15R; OPPO Find X8 / X8 Pro / X9 / X9 Pro, Reno 14/15 Pro variants; realme GT 7T; vivo X200 / X200T / X200 Pro, X300 / X300 Pro |
+
+Google expands this list with library and AICore updates — the canonical,
+always-current list is on the
+[ML Kit GenAI overview](https://developers.google.com/ml-kit/genai). Note that
+AICore does not run on devices with an unlocked bootloader.
 
 #### Debugging AICore Issues
 
@@ -443,7 +462,8 @@ express the goal and emits a JSON spec, which you can render with the
 [`genui`](https://pub.dev/packages/genui) runtime or your own widgets.
 
 This works **identically on Apple FoundationModels (iOS 26 / macOS 26) and
-Android ML Kit GenAI / Gemini Nano (e.g. Google Pixel 8/9/10)**. The genUI
+Android ML Kit GenAI / Gemini Nano (Pixel 9/10, Galaxy S26 / Z Fold7, and other
+[supported devices](https://developers.google.com/ml-kit/genai))**. The genUI
 schema is delivered through `initialize` instructions — prepended to the prompt
 natively on Android — and the output-token budget and prompt are tuned per
 backend (Gemini Nano caps output at 256 tokens, so the prompt asks the model for

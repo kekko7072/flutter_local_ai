@@ -47,11 +47,15 @@ android {
 }
 
 dependencies {
-    // beta2 (Apr 2026) is the first release with Samsung device support for the
-    // Prompt API (Galaxy Z Fold7/Z TriFold on nano-v2, Galaxy S26 on nano-v3) —
-    // alpha1 only ever resolved the feature on Pixel 9, so checkStatus() never
-    // reported DOWNLOADABLE on Samsung hardware.
+    // beta2 (Apr 2026) is the latest published release and carries the widest
+    // Prompt API device list: Pixel 9/10 series plus Samsung, Honor, iQOO,
+    // Lenovo, Motorola, OnePlus, OPPO, POCO, realme, vivo and Xiaomi flagships
+    // (nano-v2 / nano-v3). alpha1 only ever resolved the feature on Pixel 9,
+    // so checkStatus() never reported DOWNLOADABLE on anything else.
+    // genai-common must stay at beta3 — it's what genai-prompt:beta2 declares
+    // in its POM and is the artifact that resolves per-device feature configs;
+    // pinning it lower silently shrinks the supported-device set.
     implementation 'com.google.mlkit:genai-prompt:1.0.0-beta2'
-    implementation 'com.google.mlkit:genai-common:1.0.0-beta2'
-    implementation 'com.google.android.gms:play-services-tasks:18.0.2'
+    implementation 'com.google.mlkit:genai-common:1.0.0-beta3'
+    implementation 'com.google.android.gms:play-services-tasks:18.2.0'
 }
