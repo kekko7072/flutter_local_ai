@@ -256,7 +256,16 @@ class MethodChannelFlutterLocalAi extends FlutterLocalAiPlatform {
     // Ensure the platform call handler is active so 'onDownloadStatus'
     // callbacks are delivered even if registerTools() was never called.
     _registerToolHandlerIfNeeded();
-    methodChannel.invokeMethod<void>('downloadModel');
+    methodChannel.invokeMethod<void>('downloadModel').catchError((Object e) {
+      // A native failure that never produced an onDownloadStatus event (older
+      // platform code, unimplemented platform, channel error) must still end
+      // the download on the stream — otherwise watchers spin forever.
+      final message = e is PlatformException ? (e.message ?? e.code) : '$e';
+      _downloadStatusController.add(ModelDownloadStatus(
+        type: ModelDownloadStatusType.failed,
+        errorMessage: message,
+      ));
+    });
     return _downloadStatusController.stream;
   }
 

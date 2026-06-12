@@ -1,3 +1,19 @@
+## 0.0.14
+
+### Android: Samsung device support + robust model download
+* Bumped `com.google.mlkit:genai-prompt` from `1.0.0-alpha1` to `1.0.0-beta2`.
+  alpha1 only resolved the Prompt API feature on Pixel 9 devices, so
+  `checkStatus()` never reported `DOWNLOADABLE` on Samsung hardware; beta2 adds
+  the current supported-device list (Galaxy Z Fold7 / Z TriFold on nano-v2,
+  Galaxy S26 series on nano-v3, newer Pixels).
+* `downloadModel()` failures now always surface on the download status stream:
+  the Android implementation emits a `failed` status (with the error message)
+  before propagating the exception, and the Dart layer converts a failed
+  `downloadModel` method call into a `failed` status as a last resort. UIs
+  watching the stream can no longer hang on a silent native error.
+* `downloadModel()` is idempotent: when the model is already downloaded it
+  emits `completed` immediately instead of erroring.
+
 ## 0.0.13
 
 ### Stateless one-shot generation

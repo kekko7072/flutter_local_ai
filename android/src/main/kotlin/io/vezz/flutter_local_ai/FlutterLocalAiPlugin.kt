@@ -237,6 +237,12 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
   private suspend fun downloadModel() = withContext(Dispatchers.IO) {
     val model = Generation.getClient()
     try {
+      // Idempotent: a model that's already on the device just reports done, so
+      // callers can re-invoke after relaunch/retry without special-casing.
+      if (model.checkStatus() == FeatureStatus.AVAILABLE) {
+        emitDownloadStatus(mapOf("status" to "completed"))
+        return@withContext
+      }
       model.download().collect { status ->
         when (status) {
           is DownloadStatus.DownloadStarted -> {
@@ -268,14 +274,23 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
       }
     } catch (e: GenAiException) {
       Log.e("FlutterLocalAi", "downloadModel error: ${e.message}", e)
+      // The status stream is what UIs watch — a failure that only surfaced on
+      // the method-call result would leave them spinning forever.
+      val message = if (e.errorCode == GenAiException.ErrorCode.AICORE_INCOMPATIBLE) {
+        "Google AICore or MLKit is not installed or version is too low. Error code: -101."
+      } else {
+        e.message ?: "Unknown error"
+      }
+      emitDownloadStatus(mapOf("status" to "failed", "errorMessage" to message))
       if (e.errorCode == GenAiException.ErrorCode.AICORE_INCOMPATIBLE) {
-        throw IllegalStateException(
-          "Google AICore or MLKit is not installed or version is too low. Error code: -101.", e
-        )
+        throw IllegalStateException(message, e)
       }
       throw e
     } catch (e: Exception) {
       Log.e("FlutterLocalAi", "downloadModel generic error: ${e.message}", e)
+      emitDownloadStatus(
+        mapOf("status" to "failed", "errorMessage" to (e.message ?: "Unknown error"))
+      )
       throw e
     } finally {
       model.close()
