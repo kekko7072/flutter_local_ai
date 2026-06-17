@@ -51,7 +51,8 @@ class ModelDownloadStatus {
           totalBytesDownloaded: (map['totalBytesDownloaded'] as num?)?.toInt(),
         );
       case 'completed':
-        return const ModelDownloadStatus(type: ModelDownloadStatusType.completed);
+        return const ModelDownloadStatus(
+            type: ModelDownloadStatusType.completed);
       case 'failed':
         return ModelDownloadStatus(
           type: ModelDownloadStatusType.failed,

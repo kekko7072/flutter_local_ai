@@ -465,6 +465,55 @@ final response = await aiEngine.generateText(
 print(response.text);
 ```
 
+### Structured Outputs (Apple platforms)
+
+Pass a JSON Schema through `GenerationConfig` to *constrain* generation to valid
+JSON instead of free-form text. On Apple FoundationModels this uses the same
+schema-constrained generation that powers tool calling, so the model is forced to
+emit a value matching your schema.
+
+- **iOS 26.0+ / macOS 26.0+**: native. The schema is translated into a
+  FoundationModels `GenerationSchema` and the JSON is returned in
+  `AiResponse.text`; use `AiResponse.json` to get it decoded as a `Map`.
+- **Android / Windows**: not supported — these backends are text-out only.
+  Supplying a `schema` (or `responseFormat: ResponseFormat.json`) throws a
+  `STRUCTURED_OUTPUT_UNSUPPORTED` error. Gate on
+  `getPlatformInfo().supportsStructuredOutput` in cross-platform code.
+
+Supported schema constructs: objects (with `required`), arrays, string enums, and
+the scalar types (`string`, `integer`, `number`, `boolean`). `description` is
+honored on properties.
+
+```dart
+final response = await aiEngine.generateText(
+  prompt: 'Summarize this support ticket: "App crashes on launch after update."',
+  config: const GenerationConfig(
+    maxTokens: 300,
+    responseFormat: ResponseFormat.json, // default is ResponseFormat.text
+    schema: {
+      'type': 'object',
+      'properties': {
+        'title': {'type': 'string', 'description': 'Short headline'},
+        'priority': {
+          'enum': ['low', 'med', 'high'],
+        },
+        'tags': {
+          'type': 'array',
+          'items': {'type': 'string'},
+        },
+      },
+      'required': ['title'],
+    },
+  ),
+);
+
+final data = response.json; // Map<String, dynamic>? — decoded JSON
+print(data?['title']);
+```
+
+> Note: `ResponseFormat.json` requires a non-null `schema` — Apple can only
+> constrain output when given a schema to constrain it to.
+
 ### Generative UI (genUI)
 
 `flutter_local_ai` can turn a natural-language goal into a small, renderable UI
@@ -788,7 +837,7 @@ Main class for interacting with local AI.
 - `Stream<String> generateTextStream({required String prompt, GenerationConfig? config, String? instructions})` - Generate text as a stream of delta chunks
 - `Future<String> generateTextSimple({required String prompt, int maxTokens = 100})` - Convenience method to generate text and return just the string
 - `Future<void> registerTools(List<LocalAiTool> tools)` - Register Dart tools the model may call during generation (Apple platforms only; pass `const []` to clear)
-- `Future<LocalAiPlatformInfo> getPlatformInfo()` - The detected backend and its capabilities (`supportsToolCalling`, `supportsModelDownload`, …)
+- `Future<LocalAiPlatformInfo> getPlatformInfo()` - The detected backend and its capabilities (`supportsToolCalling`, `supportsStructuredOutput`, `supportsModelDownload`, …)
 - `Future<ModelFeatureStatus> getModelStatus()` - `available` / `downloadable` / `downloading` / `unavailable` (Android Gemini Nano)
 - `Stream<ModelDownloadStatus> downloadModel()` - Request the one-time on-device model download and observe its progress; failures always surface on the stream
 - `Future<bool> openAICorePlayStore()` - Open Google AICore in the Play Store (Android only, useful when error -101 occurs)
@@ -806,14 +855,20 @@ Configuration for text generation.
 
 - `maxTokens` (int, default: 100) - Maximum number of tokens to generate
 - `temperature` (double?, optional) - Temperature for generation (0.0 to 1.0)
-- `topP` (double?, optional) - Top-p sampling parameter
-- `topK` (int?, optional) - Top-k sampling parameter
+- `topP` (double?, optional) - Top-p (nucleus) sampling. On Apple maps to `.random(probabilityThreshold:)`
+- `topK` (int?, optional) - Top-k sampling. On Apple maps to `.random(top:)` and takes precedence over `topP`
+- `responseFormat` (`ResponseFormat`, default: `text`) - `text` for free-form output, or `json` for schema-constrained JSON (Apple only). `json` requires a non-null `schema`
+- `schema` (`Map<String, dynamic>?`, optional) - JSON Schema the output is constrained to (Apple only; see Structured Outputs above)
+
+> Sampling precedence on Apple: topK > topP > temperature > greedy. `.greedy` is
+> never combined with a temperature (that pairing throws on-device).
 
 ### `AiResponse`
 
 Response from AI generation.
 
-- `text` (String) - The generated text
+- `text` (String) - The generated text (or the JSON string when structured output was requested)
+- `json` (`Map<String, dynamic>?`) - `text` decoded as a JSON object, or `null` if it isn't one
 - `tokenCount` (int?) - Token count used
 - `generationTimeMs` (int?) - Generation time in milliseconds
 

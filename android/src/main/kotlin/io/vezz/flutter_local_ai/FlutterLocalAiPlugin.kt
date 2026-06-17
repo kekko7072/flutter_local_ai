@@ -76,6 +76,15 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
           result.error("INVALID_ARGUMENT", "Prompt is required", null)
           return
         }
+        if (requestsStructuredOutput(configMap)) {
+          result.error(
+            "STRUCTURED_OUTPUT_UNSUPPORTED",
+            "Schema-constrained (JSON) output is not supported on Android: the " +
+              "ML Kit GenAI Prompt API is text-in/text-out only.",
+            null
+          )
+          return
+        }
 
         coroutineScope.launch {
           try {
@@ -93,6 +102,15 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
         val oneShot = call.argument<String>("instructions")
         if (prompt == null || requestId == null) {
           result.error("INVALID_ARGUMENT", "Prompt and request id are required", null)
+          return
+        }
+        if (requestsStructuredOutput(configMap)) {
+          result.error(
+            "STRUCTURED_OUTPUT_UNSUPPORTED",
+            "Schema-constrained (JSON) output is not supported on Android: the " +
+              "ML Kit GenAI Prompt API is text-in/text-out only.",
+            null
+          )
           return
         }
 
@@ -183,8 +201,17 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
       "supportsToolCalling" to false,
       "supportsModelDownload" to true,
       "supportsPlayStoreRedirect" to true,
+      // The Prompt API can't constrain output to a schema (text-in/text-out).
+      "supportsStructuredOutput" to false,
       "isConfigured" to true
     )
+  }
+
+  /// Whether the supplied generation config asks for schema-constrained JSON
+  /// output, which Android's text-only Prompt API can't honor.
+  private fun requestsStructuredOutput(configMap: Map<String, Any>?): Boolean {
+    if (configMap == null) return false
+    return configMap["schema"] != null || configMap["responseFormat"] == "json"
   }
 
   private suspend fun checkAvailability(): Boolean = withContext(Dispatchers.IO) {

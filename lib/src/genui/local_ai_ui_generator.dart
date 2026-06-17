@@ -194,7 +194,9 @@ Keep copy warm, plain and encouraging. Never use emoji.
       final buf = StringBuffer();
       try {
         await for (final chunk in _ai.generateTextStream(
-            prompt: prompt, config: config, instructions: _systemInstructions)) {
+            prompt: prompt,
+            config: config,
+            instructions: _systemInstructions)) {
           buf.write(chunk);
           onText(buf.toString());
         }

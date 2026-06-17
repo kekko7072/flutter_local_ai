@@ -26,8 +26,18 @@ class GenUiModuleSpec {
   });
 
   static const _allowedBlocks = {
-    'note', 'field', 'amount', 'progress', 'checklist', 'week', 'stat', 'list',
-    'lessons', 'reminder', 'calc', 'docs',
+    'note',
+    'field',
+    'amount',
+    'progress',
+    'checklist',
+    'week',
+    'stat',
+    'list',
+    'lessons',
+    'reminder',
+    'calc',
+    'docs',
   };
   static const _allowedTones = {'fern', 'apricot', 'sky', 'lilac'};
 
@@ -80,7 +90,9 @@ class GenUiModuleSpec {
   List<Component> toComponents() {
     final children = <String>['gen_header'];
     final components = <Component>[
-      Component(id: 'gen_header', type: 'Text',
+      Component(
+          id: 'gen_header',
+          type: 'Text',
           properties: {'text': title, 'variant': 'h4'}),
     ];
 
@@ -88,12 +100,14 @@ class GenUiModuleSpec {
       final b = blocks[i];
       final id = 'gen_block_$i';
       children.add(id);
-      components.add(Component(id: id, type: 'Text',
-          properties: {'text': _describeBlock(b)}));
+      components.add(Component(
+          id: id, type: 'Text', properties: {'text': _describeBlock(b)}));
     }
 
     components.insert(
-        0, Component(id: 'root', type: 'Column', properties: {'children': children}));
+        0,
+        Component(
+            id: 'root', type: 'Column', properties: {'children': children}));
     return components;
   }
 
