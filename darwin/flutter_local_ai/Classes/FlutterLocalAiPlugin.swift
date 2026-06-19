@@ -119,31 +119,74 @@ import FoundationModels
       return session
     }
 
+    /// Builds `GenerationOptions` from the requested sampling knobs.
+    ///
+    /// Sampling modes are mutually exclusive, and `.greedy` must NOT be combined
+    /// with a temperature (that pairing throws a GenerationError on-device).
+    /// Precedence: topK > topP > temperature > greedy. When a top-k/top-p mode
+    /// is chosen, a positive temperature is allowed to ride alongside it.
+    static func makeOptions(
+      maxTokens: Int,
+      temperature: Double?,
+      topP: Double?,
+      topK: Int?
+    ) -> GenerationOptions {
+      let positiveTemp = (temperature ?? 0) > 0 ? temperature : nil
+      if let topK = topK {
+        return GenerationOptions(
+          sampling: .random(top: topK),
+          temperature: positiveTemp,
+          maximumResponseTokens: maxTokens
+        )
+      }
+      if let topP = topP {
+        return GenerationOptions(
+          sampling: .random(probabilityThreshold: topP),
+          temperature: positiveTemp,
+          maximumResponseTokens: maxTokens
+        )
+      }
+      if let temp = positiveTemp {
+        return GenerationOptions(temperature: temp, maximumResponseTokens: maxTokens)
+      }
+      return GenerationOptions(sampling: .greedy, maximumResponseTokens: maxTokens)
+    }
+
     func generateText(
       prompt: String,
       maxTokens: Int,
       temperature: Double?,
+      topP: Double? = nil,
+      topK: Int? = nil,
+      schema: [String: Any]? = nil,
       instructions oneShot: String? = nil
     ) async throws -> [String: Any] {
       let startTime = Date()
       let session = try await sessionFor(oneShot: oneShot)
 
-      // Build generation options. NOTE: `.greedy` sampling must NOT be combined
-      // with a temperature (they are mutually exclusive and trigger a
-      // GenerationError on-device). Pick one based on the requested temp.
-      let options: GenerationOptions
-      if let temp = temperature, temp > 0 {
-        options = GenerationOptions(temperature: temp, maximumResponseTokens: maxTokens)
-      } else {
-        options = GenerationOptions(sampling: .greedy, maximumResponseTokens: maxTokens)
-      }
+      let options = ModelManager.makeOptions(
+        maxTokens: maxTokens,
+        temperature: temperature,
+        topP: topP,
+        topK: topK
+      )
 
       // Generate text. On any failure, surface a fully-reflected description so
       // the concrete error case (guardrail, missing assets, etc.) is diagnosable.
+      // When a schema is supplied, generation is constrained to it and the
+      // resulting JSON is returned as the text payload.
       let generatedText: String
       do {
-        let response = try await session.respond(to: prompt, options: options)
-        generatedText = response.content
+        if let schema = schema {
+          let generationSchema = try SchemaBuilder.generationSchema(
+            from: schema, rootName: "Output")
+          let response = try await session.respond(
+            to: prompt, schema: generationSchema, options: options)
+          generatedText = response.content.jsonString
+        } else {
+          let response = try await session.respond(to: prompt, options: options)
+          generatedText = response.content
+        }
       } catch {
         throw NSError(
           domain: "FlutterLocalAiPlugin",
@@ -174,19 +217,19 @@ import FoundationModels
       prompt: String,
       maxTokens: Int,
       temperature: Double?,
+      topP: Double? = nil,
+      topK: Int? = nil,
       instructions oneShot: String? = nil,
       onDelta: @Sendable @escaping (String) -> Void
     ) async throws {
       let session = try await sessionFor(oneShot: oneShot)
 
-      // Same mutual exclusion as generateText: `.greedy` sampling must not be
-      // combined with a temperature.
-      let options: GenerationOptions
-      if let temp = temperature, temp > 0 {
-        options = GenerationOptions(temperature: temp, maximumResponseTokens: maxTokens)
-      } else {
-        options = GenerationOptions(sampling: .greedy, maximumResponseTokens: maxTokens)
-      }
+      let options = ModelManager.makeOptions(
+        maxTokens: maxTokens,
+        temperature: temperature,
+        topP: topP,
+        topK: topK
+      )
 
       do {
         let stream = session.streamResponse(to: prompt, options: options)
@@ -281,6 +324,7 @@ import FoundationModels
       "supportsToolCalling": supportsFoundationModels,
       "supportsModelDownload": false,
       "supportsPlayStoreRedirect": false,
+      "supportsStructuredOutput": supportsFoundationModels,
       "isConfigured": configured
     ])
   }
@@ -449,6 +493,9 @@ import FoundationModels
       let configMap = args["config"] as? [String: Any]
       let maxTokens = configMap?["maxTokens"] as? Int ?? 100
       let temperature = configMap?["temperature"] as? Double
+      let topP = configMap?["topP"] as? Double
+      let topK = configMap?["topK"] as? Int
+      let schema = configMap?["schema"] as? [String: Any]
       let oneShot = args["instructions"] as? String
 
       Task {
@@ -457,6 +504,9 @@ import FoundationModels
             prompt: prompt,
             maxTokens: maxTokens,
             temperature: temperature,
+            topP: topP,
+            topK: topK,
+            schema: schema,
             instructions: oneShot
           )
           result(response)
@@ -510,6 +560,8 @@ import FoundationModels
       let configMap = args["config"] as? [String: Any]
       let maxTokens = configMap?["maxTokens"] as? Int ?? 100
       let temperature = configMap?["temperature"] as? Double
+      let topP = configMap?["topP"] as? Double
+      let topK = configMap?["topK"] as? Int
       let oneShot = args["instructions"] as? String
 
       // The method call returns immediately; output is delivered through the
@@ -522,6 +574,8 @@ import FoundationModels
             prompt: prompt,
             maxTokens: maxTokens,
             temperature: temperature,
+            topP: topP,
+            topK: topK,
             instructions: oneShot
           ) { delta in
             DispatchQueue.main.async {
@@ -783,6 +837,95 @@ private enum FlutterToolParsingError: Error, LocalizedError {
       return "Unsupported parameter type '\(type)'."
     case .serializationFailed(let message):
       return message
+    }
+  }
+}
+
+/// Translates a raw JSON Schema map (as supplied through `GenerationConfig`) into
+/// a FoundationModels `GenerationSchema`, so generation can be constrained to it.
+///
+/// This is the structured-output counterpart of `FlutterTool.buildSchema`, but
+/// recursive: it supports nested objects, arrays, and string enums in addition to
+/// the scalar types tool parameters allow. Tree-shaped schemas nest inline via
+/// `Property.schema`, so the root needs no separate `dependencies`.
+@available(iOS 26.0, macOS 26.0, *)
+private enum SchemaBuilder {
+  static func generationSchema(
+    from json: [String: Any],
+    rootName: String
+  ) throws -> GenerationSchema {
+    let root = try node(from: json, name: rootName)
+    return try GenerationSchema(root: root, dependencies: [])
+  }
+
+  private static func node(
+    from json: [String: Any],
+    name: String
+  ) throws -> DynamicGenerationSchema {
+    let description = json["description"] as? String
+
+    // `enum` may appear with or without an explicit `type` in JSON Schema; treat
+    // it as a string-choice constraint regardless.
+    if let choices = json["enum"] as? [Any] {
+      let strings = choices.compactMap { $0 as? String }
+      guard strings.count == choices.count, !strings.isEmpty else {
+        throw SchemaError.unsupported(
+          "Only non-empty string enum values are supported (at `\(name)`).")
+      }
+      return DynamicGenerationSchema(name: name, description: description, anyOf: strings)
+    }
+
+    let type = (json["type"] as? String)?.lowercased() ?? "object"
+    switch type {
+    case "object":
+      let properties = json["properties"] as? [String: Any] ?? [:]
+      let required = Set(
+        (json["required"] as? [Any])?.compactMap { $0 as? String } ?? [])
+      let props: [DynamicGenerationSchema.Property] = try properties.map { key, value in
+        guard let child = value as? [String: Any] else {
+          throw SchemaError.unsupported("Property `\(key)` must be an object schema.")
+        }
+        return DynamicGenerationSchema.Property(
+          name: key,
+          description: child["description"] as? String,
+          schema: try node(from: child, name: "\(name)_\(key)"),
+          isOptional: !required.contains(key)
+        )
+      }
+      return DynamicGenerationSchema(
+        name: name, description: description, properties: props)
+
+    case "array":
+      guard let items = json["items"] as? [String: Any] else {
+        throw SchemaError.unsupported("Array `\(name)` requires an `items` schema.")
+      }
+      return DynamicGenerationSchema(
+        arrayOf: try node(from: items, name: "\(name)_item"),
+        minimumElements: json["minItems"] as? Int,
+        maximumElements: json["maxItems"] as? Int
+      )
+
+    case "string":
+      return DynamicGenerationSchema(type: String.self)
+    case "integer":
+      return DynamicGenerationSchema(type: Int.self)
+    case "number":
+      return DynamicGenerationSchema(type: Double.self)
+    case "boolean":
+      return DynamicGenerationSchema(type: Bool.self)
+    default:
+      throw SchemaError.unsupported("Unsupported schema type `\(type)` at `\(name)`.")
+    }
+  }
+
+  enum SchemaError: Error, LocalizedError {
+    case unsupported(String)
+
+    var errorDescription: String? {
+      switch self {
+      case .unsupported(let message):
+        return message
+      }
     }
   }
 }

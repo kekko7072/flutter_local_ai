@@ -121,6 +121,106 @@ void main() {
       expect(result, isTrue);
       expect(fakePlatform.openAICorePlayStoreCallCount, 1);
     });
+
+    test('structured-output config carries the schema to the platform',
+        () async {
+      fakePlatform.generateTextResult =
+          const AiResponse(text: '{"title":"Hello","priority":"high"}');
+
+      final config = GenerationConfig(
+        maxTokens: 128,
+        responseFormat: ResponseFormat.json,
+        schema: const {
+          'type': 'object',
+          'properties': {
+            'title': {'type': 'string'},
+            'priority': {
+              'enum': ['low', 'med', 'high'],
+            },
+          },
+          'required': ['title'],
+        },
+      );
+
+      final result = await subject.generateText(prompt: 'Hi', config: config);
+
+      expect(fakePlatform.lastConfig?.schema, isNotNull);
+      expect(fakePlatform.lastConfig?.responseFormat, ResponseFormat.json);
+      // The JSON arrives in `text`; `.json` is the decoded convenience view.
+      expect(result.json, {'title': 'Hello', 'priority': 'high'});
+    });
+  });
+
+  group('GenerationConfig', () {
+    test('toMap includes sampling knobs, response format, and schema', () {
+      const config = GenerationConfig(
+        maxTokens: 300,
+        temperature: 0.7,
+        topP: 0.9,
+        topK: 40,
+        responseFormat: ResponseFormat.json,
+        schema: {'type': 'object'},
+      );
+
+      expect(config.toMap(), {
+        'maxTokens': 300,
+        'temperature': 0.7,
+        'topP': 0.9,
+        'topK': 40,
+        'responseFormat': 'json',
+        'schema': {'type': 'object'},
+      });
+    });
+
+    test('toMap omits null knobs and defaults to text format', () {
+      const config = GenerationConfig(maxTokens: 100);
+
+      expect(config.toMap(), {
+        'maxTokens': 100,
+        'responseFormat': 'text',
+      });
+    });
+
+    test('JSON response format requires a schema', () {
+      expect(
+        () => GenerationConfig(responseFormat: ResponseFormat.json),
+        throwsA(isA<AssertionError>()),
+      );
+    });
+  });
+
+  group('AiResponse.json', () {
+    test('decodes a JSON object payload', () {
+      const response = AiResponse(text: '{"a":1,"b":"two"}');
+      expect(response.json, {'a': 1, 'b': 'two'});
+    });
+
+    test('returns null for free-form text', () {
+      const response = AiResponse(text: 'just words');
+      expect(response.json, isNull);
+    });
+
+    test('returns null for non-object JSON (e.g. an array)', () {
+      const response = AiResponse(text: '[1, 2, 3]');
+      expect(response.json, isNull);
+    });
+  });
+
+  group('LocalAiPlatformInfo', () {
+    test('fromMap round-trips supportsStructuredOutput', () {
+      final info = LocalAiPlatformInfo.fromMap(const {
+        'backend': 'apple_foundation_models',
+        'supportsStructuredOutput': true,
+      });
+      expect(info.supportsStructuredOutput, isTrue);
+    });
+
+    test('supportsStructuredOutput defaults to false when absent', () {
+      final info = LocalAiPlatformInfo.fromMap(const {
+        'backend': 'android_mlkit_genai',
+      });
+      expect(info.supportsStructuredOutput, isFalse);
+    });
   });
 }
 

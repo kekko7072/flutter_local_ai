@@ -139,6 +139,8 @@ void FlutterLocalAiPlugin::GetPlatformInfo(
   response[EncodableValue("supportsToolCalling")] = EncodableValue(false);
   response[EncodableValue("supportsModelDownload")] = EncodableValue(false);
   response[EncodableValue("supportsPlayStoreRedirect")] = EncodableValue(false);
+  // Windows AI generation is text-out; it can't constrain output to a schema.
+  response[EncodableValue("supportsStructuredOutput")] = EncodableValue(false);
 #if WINDOWS_AI_AVAILABLE
   response[EncodableValue("backend")] = EncodableValue("windows_ai_foundry");
   response[EncodableValue("apiName")] = EncodableValue("Windows AI Foundry");
@@ -251,7 +253,28 @@ void FlutterLocalAiPlugin::GenerateText(
       return;
     }
     std::string prompt = *prompt_ptr;
-    
+
+    // Schema-constrained (JSON) output is not supported on Windows AI, which is
+    // text-out only. Fail loudly so callers don't expect a constrained result.
+    auto config_it = args.find(EncodableValue("config"));
+    if (config_it != args.end()) {
+      if (const auto* config = std::get_if<EncodableMap>(&config_it->second)) {
+        bool wants_schema =
+            config->find(EncodableValue("schema")) != config->end();
+        auto format_it = config->find(EncodableValue("responseFormat"));
+        const auto* format_ptr = format_it != config->end()
+            ? std::get_if<std::string>(&format_it->second)
+            : nullptr;
+        bool wants_json = format_ptr != nullptr && *format_ptr == "json";
+        if (wants_schema || wants_json) {
+          result->Error(
+              "STRUCTURED_OUTPUT_UNSUPPORTED",
+              "Schema-constrained (JSON) output is not supported on Windows AI.");
+          return;
+        }
+      }
+    }
+
     // Build full prompt with instructions if provided
     std::string fullPrompt = prompt;
     if (!instructions_.empty()) {

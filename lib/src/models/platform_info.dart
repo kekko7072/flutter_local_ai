@@ -30,6 +30,11 @@ class LocalAiPlatformInfo {
   final bool supportsPlayStoreRedirect;
   final bool isConfigured;
 
+  /// Whether the backend can constrain generation to a JSON schema
+  /// (`GenerationConfig.schema`). True only on Apple FoundationModels; other
+  /// backends throw when a schema is supplied.
+  final bool supportsStructuredOutput;
+
   const LocalAiPlatformInfo({
     required this.backend,
     required this.platform,
@@ -38,6 +43,7 @@ class LocalAiPlatformInfo {
     required this.supportsModelDownload,
     required this.supportsPlayStoreRedirect,
     required this.isConfigured,
+    this.supportsStructuredOutput = false,
   });
 
   factory LocalAiPlatformInfo.fromMap(Map<String, dynamic> map) {
@@ -50,6 +56,8 @@ class LocalAiPlatformInfo {
       supportsPlayStoreRedirect:
           map['supportsPlayStoreRedirect'] as bool? ?? false,
       isConfigured: map['isConfigured'] as bool? ?? false,
+      supportsStructuredOutput:
+          map['supportsStructuredOutput'] as bool? ?? false,
     );
   }
 }
