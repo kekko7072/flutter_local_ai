@@ -8,9 +8,9 @@
 
 A Flutter package that provides a unified API for local AI inference on Android with [*ML Kit GenAI*](https://developers.google.com/ml-kit/genai), on Apple Platforms using [*Foundation Models*](https://developer.apple.com/documentation/FoundationModels), and on Windows using [*Windows AI APIs*](https://learn.microsoft.com/en-us/windows/ai/) (Windows AI Foundry).
 
-Text generation (blocking or streamed), tool calling, and **generative UI**: the on-device model can design small typed-block UI modules that render with the [`genui`](https://pub.dev/packages/genui) runtime — and, with tool calls, operate them afterwards.
+Text generation (blocking or streamed), structured JSON outputs, tool calling, and **generative UI**: the on-device model can design small typed-block UI modules that render with the [`genui`](https://pub.dev/packages/genui) runtime — and, with tool calls, operate them afterwards.
 
-`#ai` `#genui` `#on-device-ai` `#gemini-nano` `#foundation-models`
+`#ai` `#genui` `#structured-outputs` `#on-device-ai` `#gemini-nano` `#foundation-models`
 
 </div>
 
@@ -30,6 +30,7 @@ Text generation (blocking or streamed), tool calling, and **generative UI**: the
 - **Zero Model Downloads**: No need to bundle large model files with your app
 - **Native Performance**: Direct access to OS-optimized AI capabilities
 - **Smaller App Size**: Models are part of the operating system, not your app bundle
+- **Structured Outputs**: On Apple platforms, constrain generation to a JSON Schema and read the decoded object with `AiResponse.json`
 - **Generative UI**: Turn a natural-language goal into a renderable [`genui`](https://pub.dev/packages/genui) module spec, on-device, identically on Apple FoundationModels and Android Gemini Nano (Pixel, Samsung, Xiaomi, OnePlus and [more](https://developers.google.com/ml-kit/genai))
 
 ## Platform Support
@@ -37,10 +38,11 @@ Text generation (blocking or streamed), tool calling, and **generative UI**: the
 | Feature            | iOS / macOS (26+) | Android (API 26+) | Windows (11 22H2+) |
 |--------------------|-------------------|-------------------|-------------------|
 | Text generation    | ✅                | ✅                 | ⚠️ Testing         |
+| Structured outputs | ✅                | ❌                 | ❌                 |
 | Generative UI (genUI) | ✅             | ✅                 | 🚧 Planned         |
 | Summarization*     | 🚧 Planned        | 🚧 Planned         | 🚧 Planned         |
 | Image generation   | 🚧 Planned        | ❌                 | 🚧 Planned         |
-| Tool call          | ✅                | ❌                 | 🚧 Planned         |
+| Tool calls         | ✅                | ❌                 | 🚧 Planned         |
 
 *Summarization is achieved through text-generation prompts and shares the same API surface.
 
@@ -480,11 +482,17 @@ emit a value matching your schema.
   `STRUCTURED_OUTPUT_UNSUPPORTED` error. Gate on
   `getPlatformInfo().supportsStructuredOutput` in cross-platform code.
 
-Supported schema constructs: objects (with `required`), arrays, string enums, and
-the scalar types (`string`, `integer`, `number`, `boolean`). `description` is
-honored on properties.
+Supported schema constructs: nested objects (with `required`), arrays (including
+`minItems` / `maxItems`), string enums, and the scalar types (`string`,
+`integer`, `number`, `boolean`). `description` is honored on properties.
 
 ```dart
+final platform = await aiEngine.getPlatformInfo();
+if (!platform.supportsStructuredOutput) {
+  // Fall back to text generation or a backend-specific parser.
+  return;
+}
+
 final response = await aiEngine.generateText(
   prompt: 'Summarize this support ticket: "App crashes on launch after update."',
   config: const GenerationConfig(
@@ -772,6 +780,7 @@ class _LocalAiExampleState extends State<LocalAiExample> {
 - **Session reuse**: The session is cached and reused for subsequent generation calls until you call `initialize()` again with new instructions.
 - **Automatic fallback**: If you don't call `initialize()` explicitly, it will be called automatically with default instructions when you first generate text. However, it's recommended to call it explicitly to set your custom instructions.
 - **Model availability**: The FoundationModels framework is automatically available on devices running iOS 26.0+ or macOS 26.0+.
+- **Structured outputs and tool calls**: Both are native FoundationModels features. Check `getPlatformInfo().supportsStructuredOutput` before passing a schema in cross-platform code.
 
 #### Android
 
@@ -780,6 +789,7 @@ class _LocalAiExampleState extends State<LocalAiExample> {
 - **Error Handling**: Handle error code -101 (AICore not installed) gracefully
 - **Initialization**: `initialize()` is optional on Android but recommended for consistency
 - **Model Access**: Uses Gemini Nano via ML Kit GenAI - no model downloads required
+- **Structured outputs and tool calls**: Not supported by the ML Kit GenAI Prompt API. Passing `schema` or `ResponseFormat.json` throws `STRUCTURED_OUTPUT_UNSUPPORTED`; `registerTools` throws `UNSUPPORTED`.
 
 #### Windows
 
@@ -788,6 +798,7 @@ class _LocalAiExampleState extends State<LocalAiExample> {
 - **Availability Check**: Always call `isAvailable()` before using AI features
 - **Initialization**: `initialize()` is required before generating text
 - **Status**: Windows AI API integration is currently in progress. The plugin structure is in place and ready for full implementation as Windows AI Foundry APIs become available
+- **Structured outputs**: Not supported by the current text-out Windows backend. Passing `schema` or `ResponseFormat.json` throws `STRUCTURED_OUTPUT_UNSUPPORTED`.
 
 **Example with AICore Error Handling:**
 ```dart
@@ -872,6 +883,17 @@ Response from AI generation.
 - `tokenCount` (int?) - Token count used
 - `generationTimeMs` (int?) - Generation time in milliseconds
 
+### `LocalAiPlatformInfo`
+
+Detected backend metadata and capability flags returned by `getPlatformInfo()`.
+
+- `backend` (`LocalAiBackend`) - The active backend (`appleFoundationModels`, `androidMlKitGenAi`, `windowsAiFoundry`, `windowsAiFoundryUnconfigured`, or `unsupported`)
+- `supportsToolCalling` (bool) - Whether `registerTools` can expose Dart tools to the native model
+- `supportsStructuredOutput` (bool) - Whether `GenerationConfig.schema` / `ResponseFormat.json` can constrain the model to JSON output
+- `supportsModelDownload` (bool) - Whether `downloadModel()` can request an on-device model download
+- `supportsPlayStoreRedirect` (bool) - Whether `openAICorePlayStore()` can redirect to Google AICore
+- `isConfigured` (bool) - Whether the native backend is compiled/configured for the current platform
+
 ### `LocalAiUiGenerator`
 
 Turns a natural-language goal into a `GenUiModuleSpec` using the on-device model
@@ -913,6 +935,7 @@ The Android implementation uses ML Kit GenAI (Gemini Nano) via Google AICore.
 - Includes Play Store integration for AICore installation
 - Uses coroutines with SupervisorJob for async operations
 - Properly manages GenerativeModel lifecycle
+- Reports `supportsStructuredOutput: false` and rejects schema-constrained generation requests because the Prompt API is text-in/text-out
 
 **Android Error Handling:**
 - Error code -101: AICore not installed or version too low
@@ -929,6 +952,7 @@ The iOS implementation uses Apple's FoundationModels framework (iOS 26.0+). The 
 - Creates a `LanguageModelSession` with custom instructions
 - Handles model availability checking
 - Provides on-device text generation with configurable parameters
+- Translates supported JSON Schema maps into FoundationModels `GenerationSchema` values for structured outputs
 
 **Key iOS Requirements:**
 - iOS 26.0 or later
@@ -947,6 +971,7 @@ await aiEngine.initialize(
 
 ### Windows
 The Windows implementation uses Windows AI APIs (Microsoft Foundry on Windows) for local AI inference on Copilot+ PCs.
+The current Windows backend reports `supportsStructuredOutput: false` and rejects schema-constrained generation requests.
 
 **What are Copilot+ PCs?**
 Copilot+ PCs are a new class of Windows 11 hardware powered by a high-performance Neural Processing Unit (NPU) that can perform more than 40 trillion operations per second (40+ TOPS). These devices provide all-day battery life and access to advanced AI features and models. The NPU is a specialized chip for AI-intensive processes like real-time translations and image generation, working in alignment with the CPU and GPU to deliver fast and efficient performance.
