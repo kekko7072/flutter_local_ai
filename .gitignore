@@ -90,3 +90,6 @@ coverage/
 
 darwin/.build
 **/.build
+
+#Marketing
+marketing/
