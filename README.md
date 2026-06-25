@@ -484,7 +484,20 @@ emit a value matching your schema.
 
 Supported schema constructs: nested objects (with `required`), arrays (including
 `minItems` / `maxItems`), string enums, and the scalar types (`string`,
-`integer`, `number`, `boolean`). `description` is honored on properties.
+`integer`, `number`, `boolean`). `description` is honored on properties. A schema
+using any construct outside this subset is rejected with an `ArgumentError` in
+Dart — before the platform channel — so you get a clear, path-qualified message
+instead of an opaque native failure.
+
+Supplying a `schema` implies JSON mode: you don't need to also set
+`responseFormat: ResponseFormat.json` (though you can), and the value sent to the
+backend is always self-consistent.
+
+> **Streaming:** schema-constrained output is **not** available through
+> `generateTextStream` on any backend yet (Apple's streaming path can't constrain
+> to a schema, and Android is text-out only). Passing a `schema` to
+> `generateTextStream` returns a stream that errors immediately — use
+> `generateText` for structured output, or stream without a schema.
 
 ```dart
 final platform = await aiEngine.getPlatformInfo();
@@ -515,8 +528,12 @@ final response = await aiEngine.generateText(
   ),
 );
 
-final data = response.json; // Map<String, dynamic>? — decoded JSON
+final data = response.json; // Map<String, dynamic>? — decoded JSON object
 print(data?['title']);
+
+// For a schema whose root is an array or scalar, use decodedJson instead —
+// .json only returns object roots.
+final value = response.decodedJson; // Object? — any decoded JSON value
 ```
 
 > Note: `ResponseFormat.json` requires a non-null `schema` — Apple can only
@@ -869,7 +886,7 @@ Configuration for text generation.
 - `topP` (double?, optional) - Top-p (nucleus) sampling. On Apple maps to `.random(probabilityThreshold:)`
 - `topK` (int?, optional) - Top-k sampling. On Apple maps to `.random(top:)` and takes precedence over `topP`
 - `responseFormat` (`ResponseFormat`, default: `text`) - `text` for free-form output, or `json` for schema-constrained JSON (Apple only). `json` requires a non-null `schema`
-- `schema` (`Map<String, dynamic>?`, optional) - JSON Schema the output is constrained to (Apple only; see Structured Outputs above)
+- `schema` (`Map<String, dynamic>?`, optional) - JSON Schema the output is constrained to (Apple only; see Structured Outputs above). Supplying a schema implies JSON mode and is validated in Dart before the platform channel
 
 > Sampling precedence on Apple: topK > topP > temperature > greedy. `.greedy` is
 > never combined with a temperature (that pairing throws on-device).
@@ -880,6 +897,7 @@ Response from AI generation.
 
 - `text` (String) - The generated text (or the JSON string when structured output was requested)
 - `json` (`Map<String, dynamic>?`) - `text` decoded as a JSON object, or `null` if it isn't one
+- `decodedJson` (`Object?`) - `text` decoded as any JSON value (object, array, scalar), or `null` if it isn't valid JSON — use for schemas whose root is an array or scalar
 - `tokenCount` (int?) - Token count used
 - `generationTimeMs` (int?) - Generation time in milliseconds
 

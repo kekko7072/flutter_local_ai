@@ -142,6 +142,10 @@ class MethodChannelFlutterLocalAi extends FlutterLocalAiPlatform {
     GenerationConfig? config,
     String? instructions,
   }) async {
+    // Catch unsupported schema constructs in Dart so callers get a clear
+    // ArgumentError here rather than an opaque native failure after the round
+    // trip.
+    config?.validateSchema();
     try {
       final arguments = {
         'prompt': prompt,

@@ -1,3 +1,5 @@
+import 'schema_validation.dart';
+
 /// Desired shape of the generated output.
 enum ResponseFormat {
   /// Free-form text (the default).
@@ -26,7 +28,8 @@ class GenerationConfig {
   final int? topK;
 
   /// Desired output format. Defaults to [ResponseFormat.text]. Selecting
-  /// [ResponseFormat.json] requires a non-null [schema].
+  /// [ResponseFormat.json] requires a non-null [schema]. Supplying a [schema]
+  /// implies JSON mode regardless of this field — see [effectiveResponseFormat].
   final ResponseFormat responseFormat;
 
   /// JSON Schema describing the structured output. When provided (with
@@ -47,13 +50,35 @@ class GenerationConfig {
           'ResponseFormat.json requires a non-null schema.',
         );
 
+  /// Whether this config asks for schema-constrained JSON output. True when a
+  /// [schema] is supplied (which implies JSON mode) or [responseFormat] is
+  /// [ResponseFormat.json]. Backends that report `supportsStructuredOutput:
+  /// false` reject such requests.
+  bool get requestsStructuredOutput =>
+      schema != null || responseFormat == ResponseFormat.json;
+
+  /// The format actually sent to the backend: supplying a [schema] implies
+  /// [ResponseFormat.json], so the wire format never disagrees with the
+  /// presence of a schema (Apple keys structured output off the schema alone).
+  ResponseFormat get effectiveResponseFormat =>
+      schema != null ? ResponseFormat.json : responseFormat;
+
+  /// Validates [schema] against the JSON Schema subset the native backends can
+  /// translate, throwing an [ArgumentError] if it uses unsupported constructs.
+  /// A no-op when no schema is set. Call ahead of generation to fail fast in
+  /// Dart instead of with an opaque native error.
+  void validateSchema() {
+    final schema = this.schema;
+    if (schema != null) validateGenerationSchema(schema);
+  }
+
   Map<String, dynamic> toMap() {
     return {
       'maxTokens': maxTokens,
       if (temperature != null) 'temperature': temperature,
       if (topP != null) 'topP': topP,
       if (topK != null) 'topK': topK,
-      'responseFormat': responseFormat.name,
+      'responseFormat': effectiveResponseFormat.name,
       if (schema != null) 'schema': schema,
     };
   }
