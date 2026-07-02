@@ -93,3 +93,5 @@ darwin/.build
 
 #Marketing
 marketing/
+
+.claude/
