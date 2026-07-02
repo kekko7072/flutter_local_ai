@@ -18,13 +18,26 @@ class AiResponse {
   });
 
   /// The generated text decoded as a JSON object, or `null` if [text] is not a
-  /// JSON object (e.g. free-form text, or malformed/truncated JSON). Use this
-  /// when generation was constrained by a schema via
-  /// `GenerationConfig(responseFormat: ResponseFormat.json, schema: ...)`.
+  /// JSON object (e.g. free-form text, a root array/scalar, or malformed JSON).
+  /// Use this when generation was constrained by an object schema via
+  /// `GenerationConfig(responseFormat: ResponseFormat.json, schema: ...)`. For
+  /// schemas whose root is an array or scalar, use [decodedJson].
   Map<String, dynamic>? get json {
+    final decoded = decodedJson;
+    return decoded is Map<String, dynamic> ? decoded : null;
+  }
+
+  /// The generated [text] decoded as any JSON value — object, array, string,
+  /// number, boolean, or `null` — or `null` if [text] isn't valid JSON. Use
+  /// this when a schema's root is an array or scalar; for object roots, [json]
+  /// is the typed `Map` convenience view.
+  ///
+  /// Note: a `null` result is ambiguous between "not valid JSON" and the JSON
+  /// literal `null`. Schema-constrained output is rarely a bare null, but check
+  /// [text] directly if you must distinguish the two.
+  Object? get decodedJson {
     try {
-      final decoded = jsonDecode(text);
-      return decoded is Map<String, dynamic> ? decoded : null;
+      return jsonDecode(text);
     } on FormatException {
       return null;
     }

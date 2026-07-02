@@ -60,16 +60,35 @@ class FlutterLocalAi {
   /// Emits delta chunks (only the newly generated text) and closes when the
   /// generation completes. Backends without a streaming implementation surface
   /// an error on the stream instead — callers can fall back to [generateText].
+  ///
+  /// Streaming with a [GenerationConfig.schema] (or [ResponseFormat.json]) is
+  /// not supported on any backend yet — Apple's streaming path can't constrain
+  /// output to a schema and Android is text-out only — so such a request yields
+  /// a stream that errors immediately. Use [generateText] for schema-constrained
+  /// output, or stream without a schema.
   Stream<String> generateTextStream({
     required String prompt,
     GenerationConfig? config,
     String? instructions,
-  }) =>
-      FlutterLocalAiPlatform.instance.generateTextStream(
-        prompt: prompt,
-        config: config,
-        instructions: instructions,
+  }) {
+    if (config?.requestsStructuredOutput ?? false) {
+      return Stream<String>.error(
+        ArgumentError.value(
+          config,
+          'config',
+          'Streaming structured (JSON/schema) output is not supported on any '
+              'backend yet. Use generateText() for schema-constrained output, '
+              'or call generateTextStream() without a schema / '
+              'ResponseFormat.json.',
+        ),
       );
+    }
+    return FlutterLocalAiPlatform.instance.generateTextStream(
+      prompt: prompt,
+      config: config,
+      instructions: instructions,
+    );
+  }
 
   /// Generate text with a simple prompt (convenience method)
   ///

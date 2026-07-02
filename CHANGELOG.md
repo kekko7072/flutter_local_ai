@@ -1,3 +1,35 @@
+## 0.0.15
+
+### Structured (JSON-schema) outputs
+
+* **Apple (iOS 26 / macOS 26):** native schema-constrained generation. A JSON
+  Schema passed through `GenerationConfig.schema` is translated into a
+  FoundationModels `GenerationSchema`, so the model is forced to emit matching
+  JSON. Supported constructs: nested objects (with `required`), arrays (with
+  `minItems` / `maxItems`), string enums, and the scalar types. Read the result
+  with `AiResponse.json` (object roots) or `AiResponse.decodedJson` (any root).
+* **Android / Windows:** unchanged — these backends are text-out only and report
+  `supportsStructuredOutput: false`. Passing a `schema` (or
+  `ResponseFormat.json`) throws `STRUCTURED_OUTPUT_UNSUPPORTED`. The ML Kit GenAI
+  on-device Prompt API does not currently expose a `responseSchema` /
+  `responseMimeType`; gate on `getPlatformInfo().supportsStructuredOutput`.
+
+### Hardening of the structured-output API
+
+* A `schema` now implies JSON mode consistently: you no longer have to also set
+  `responseFormat: ResponseFormat.json`, and `GenerationConfig.toMap()` never
+  sends a schema paired with a `text` format (`effectiveResponseFormat` /
+  `requestsStructuredOutput` expose this).
+* Schemas are validated in Dart **before** the platform channel
+  (`GenerationConfig.validateSchema()`), so unsupported constructs fail fast with
+  a path-qualified `ArgumentError` instead of an opaque native error.
+* `AiResponse.decodedJson` decodes a root array or scalar; `AiResponse.json`
+  stays object-only for backwards compatibility.
+* `generateTextStream` now rejects schema-constrained requests up front (no
+  backend can constrain streamed output yet) instead of silently returning
+  free-form text — the returned stream errors immediately. Use `generateText`
+  for structured output.
+
 ## 0.0.14
 
 ### Android: tool calling is explicitly unsupported

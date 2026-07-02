@@ -149,6 +149,20 @@ void main() {
       // The JSON arrives in `text`; `.json` is the decoded convenience view.
       expect(result.json, {'title': 'Hello', 'priority': 'high'});
     });
+
+    test('generateTextStream rejects structured-output requests', () async {
+      final config = GenerationConfig(
+        responseFormat: ResponseFormat.json,
+        schema: const {'type': 'object'},
+      );
+
+      await expectLater(
+        subject.generateTextStream(prompt: 'Hi', config: config),
+        emitsError(isA<ArgumentError>()),
+      );
+      // The request never reached the platform.
+      expect(fakePlatform.lastPrompt, isNull);
+    });
   });
 
   group('GenerationConfig', () {
@@ -181,11 +195,49 @@ void main() {
       });
     });
 
+    test('a schema implies JSON mode even when responseFormat is left text', () {
+      const config = GenerationConfig(
+        maxTokens: 100,
+        schema: {'type': 'object'},
+      );
+
+      // The field still reflects what the caller passed...
+      expect(config.responseFormat, ResponseFormat.text);
+      // ...but the effective/wire format is promoted to json so the backend
+      // never sees a schema paired with a 'text' format.
+      expect(config.effectiveResponseFormat, ResponseFormat.json);
+      expect(config.requestsStructuredOutput, isTrue);
+      expect(config.toMap()['responseFormat'], 'json');
+    });
+
+    test('requestsStructuredOutput is false for plain text generation', () {
+      const config = GenerationConfig(maxTokens: 100);
+      expect(config.requestsStructuredOutput, isFalse);
+      expect(config.effectiveResponseFormat, ResponseFormat.text);
+    });
+
     test('JSON response format requires a schema', () {
       expect(
         () => GenerationConfig(responseFormat: ResponseFormat.json),
         throwsA(isA<AssertionError>()),
       );
+    });
+
+    test('validateSchema is a no-op without a schema', () {
+      const config = GenerationConfig(maxTokens: 100);
+      expect(config.validateSchema, returnsNormally);
+    });
+
+    test('validateSchema rejects an unsupported schema construct', () {
+      const config = GenerationConfig(
+        schema: {
+          'type': 'object',
+          'properties': {
+            'when': {'type': 'date'}, // unsupported scalar
+          },
+        },
+      );
+      expect(config.validateSchema, throwsArgumentError);
     });
   });
 
@@ -203,6 +255,29 @@ void main() {
     test('returns null for non-object JSON (e.g. an array)', () {
       const response = AiResponse(text: '[1, 2, 3]');
       expect(response.json, isNull);
+    });
+  });
+
+  group('AiResponse.decodedJson', () {
+    test('decodes a root object', () {
+      const response = AiResponse(text: '{"a":1}');
+      expect(response.decodedJson, {'a': 1});
+    });
+
+    test('decodes a root array (where .json returns null)', () {
+      const response = AiResponse(text: '[1, 2, 3]');
+      expect(response.json, isNull);
+      expect(response.decodedJson, [1, 2, 3]);
+    });
+
+    test('decodes a root scalar', () {
+      const response = AiResponse(text: '42');
+      expect(response.decodedJson, 42);
+    });
+
+    test('returns null for free-form text', () {
+      const response = AiResponse(text: 'just words');
+      expect(response.decodedJson, isNull);
     });
   });
 
