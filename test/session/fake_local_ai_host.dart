@@ -30,6 +30,10 @@ class FakeLocalAiHost implements LocalAiHost {
   final List<Map<String, Object?>> createdSessions = [];
 
   String response = 'ok';
+
+  /// Sampling the last generate call carried, so tests can assert that a
+  /// GenerationConfig reached the host instead of being dropped.
+  LocalAiGenerationOverrides? lastOverrides;
   Object? countTokensError;
   int countTokensResult = 7;
 
@@ -110,21 +114,32 @@ class FakeLocalAiHost implements LocalAiHost {
   }
 
   @override
-  Future<String> generateResponse(int sessionId) async {
+  Future<String> generateResponse(
+    int sessionId, {
+    LocalAiGenerationOverrides? overrides,
+  }) async {
     calls.add('generateResponse($sessionId)');
+    lastOverrides = overrides;
     return response;
   }
 
   @override
-  Future<void> generateResponseAsync(int sessionId) async =>
-      calls.add('generateResponseAsync($sessionId)');
+  Future<void> generateResponseAsync(
+    int sessionId, {
+    LocalAiGenerationOverrides? overrides,
+  }) async {
+    calls.add('generateResponseAsync($sessionId)');
+    lastOverrides = overrides;
+  }
 
   @override
   Future<String> generateStructuredResponse({
     required int sessionId,
     required String schemaJson,
+    LocalAiGenerationOverrides? overrides,
   }) async {
     calls.add('generateStructuredResponse($sessionId, $schemaJson)');
+    lastOverrides = overrides;
     return response;
   }
 

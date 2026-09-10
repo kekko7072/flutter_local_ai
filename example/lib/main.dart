@@ -51,7 +51,6 @@ class _MyHomePageState extends State<MyHomePage> {
   bool _isAvailable = false;
   bool _isInitialized = false;
   bool _isInitializing = false;
-  bool _toolsRegistered = false;
   bool _toolsEnabled = false;
   ModelFeatureStatus _modelStatus = ModelFeatureStatus.unknown;
   bool _isDownloading = false;
@@ -228,7 +227,6 @@ class _MyHomePageState extends State<MyHomePage> {
       final tools = enable ? _buildSampleTools() : <LocalAiTool>[];
       await _aiEngine.registerTools(tools);
       setState(() {
-        _toolsRegistered = enable;
         _toolsEnabled = enable;
       });
     } catch (e) {
@@ -570,18 +568,20 @@ class _MyHomePageState extends State<MyHomePage> {
             ),
             ElevatedButton.icon(
               onPressed: () async {
+                // Resolved before the await: this `context` is the dialog's
+                // and is gone by the time the future completes, so looking
+                // the messenger up afterwards would read a dead element.
+                final messenger = ScaffoldMessenger.of(context);
                 Navigator.of(context).pop();
                 try {
                   await _aiEngine.openAICorePlayStore();
                 } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Could not open Play Store: $e'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                  }
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text('Could not open Play Store: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
                 }
               },
               icon: const Icon(Icons.store),
@@ -641,7 +641,7 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   String _formatBytes(int bytes) {
-    if (bytes < 1024) return '${bytes} B';
+    if (bytes < 1024) return '$bytes B';
     final kb = bytes / 1024;
     if (kb < 1024) return '${kb.toStringAsFixed(1)} KB';
     final mb = kb / 1024;
@@ -661,7 +661,6 @@ class _MyHomePageState extends State<MyHomePage> {
       case ModelFeatureStatus.unavailable:
         return 'Model unavailable';
       case ModelFeatureStatus.unknown:
-      default:
         return 'Unknown status';
     }
   }
@@ -676,8 +675,9 @@ class _MyHomePageState extends State<MyHomePage> {
         return 'Windows AI Foundry';
       case LocalAiBackend.windowsAiFoundryUnconfigured:
         return 'Windows AI (unconfigured)';
+      case LocalAiBackend.chromePromptApi:
+        return 'Chrome Prompt API (Gemini Nano)';
       case LocalAiBackend.unsupported:
-      default:
         return 'Unsupported';
     }
   }

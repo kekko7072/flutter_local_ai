@@ -297,9 +297,11 @@ void LocalAiSessionService::AddImage(
 
 // === Generation ===
 
-bool LocalAiSessionService::Generate(SessionState* state,
-                                     std::string* out,
-                                     std::string* error) {
+bool LocalAiSessionService::Generate(
+    SessionState* state,
+    const flutter_local_ai_pigeon::GenerationOverrides* overrides,
+    std::string* out,
+    std::string* error) {
 #if WINDOWS_AI_AVAILABLE
   try {
     auto model =
@@ -309,6 +311,11 @@ bool LocalAiSessionService::Generate(SessionState* state,
       return false;
     }
     winrt::Microsoft::Windows::AI::LanguageModelOptions options;
+    // Windows AI's LanguageModelOptions exposes no sampling knobs in the
+    // surface this plugin targets, so per-call overrides have nowhere to go.
+    // Accepted for cross-platform parity and dropped, rather than mapped
+    // onto something that means something else.
+    (void)overrides;
     // The generation call is awaited synchronously so the reply and every
     // event stay on the platform thread — see the class comment.
     auto response = model
@@ -329,6 +336,7 @@ bool LocalAiSessionService::Generate(SessionState* state,
   }
 #else
   (void)state;
+  (void)overrides;
   (void)out;
   *error =
       "This build has no Windows AI SDK headers, so no inference can run.";
@@ -338,6 +346,7 @@ bool LocalAiSessionService::Generate(SessionState* state,
 
 void LocalAiSessionService::GenerateResponse(
     int64_t session_id,
+    const flutter_local_ai_pigeon::GenerationOverrides* overrides,
     std::function<void(ErrorOr<std::string> reply)> result) {
   SessionState* state = Find(session_id);
   if (state == nullptr) {
@@ -346,7 +355,7 @@ void LocalAiSessionService::GenerateResponse(
   }
   std::string text;
   std::string error;
-  if (!Generate(state, &text, &error)) {
+  if (!Generate(state, overrides, &text, &error)) {
     result(ErrorOr<std::string>(FlutterError("GENERATION_ERROR", error)));
     return;
   }
@@ -358,6 +367,7 @@ void LocalAiSessionService::GenerateResponse(
 
 void LocalAiSessionService::GenerateResponseAsync(
     int64_t session_id,
+    const flutter_local_ai_pigeon::GenerationOverrides* overrides,
     std::function<void(std::optional<FlutterError> reply)> result) {
   SessionState* state = Find(session_id);
   if (state == nullptr) {
@@ -370,7 +380,7 @@ void LocalAiSessionService::GenerateResponseAsync(
 
   std::string text;
   std::string error;
-  if (!Generate(state, &text, &error)) {
+  if (!Generate(state, overrides, &text, &error)) {
     PostEvent(EncodableMap{
         {EncodableValue("code"), EncodableValue("ERROR")},
         {EncodableValue("message"), EncodableValue(error)},
@@ -394,6 +404,7 @@ void LocalAiSessionService::GenerateResponseAsync(
 void LocalAiSessionService::GenerateStructuredResponse(
     int64_t session_id,
     const std::string& schema_json,
+    const flutter_local_ai_pigeon::GenerationOverrides* overrides,
     std::function<void(ErrorOr<std::string> reply)> result) {
   result(ErrorOr<std::string>(FlutterError(
       "STRUCTURED_OUTPUT_UNSUPPORTED",

@@ -22,9 +22,11 @@ abstract final class LocalAi {
   /// Never throws and never hangs: a probe that doesn't return within
   /// [debugProbeTimeout] resolves to
   /// [LocalAiAvailability.unavailableOther] so callers can degrade.
-  static Future<LocalAiAvailability> availability() async {
+  static Future<LocalAiAvailability> availability({LocalAiHost? host}) async {
     try {
-      return await localAiHost.checkAvailability().timeout(debugProbeTimeout);
+      return await (host ?? localAiHost)
+          .checkAvailability()
+          .timeout(debugProbeTimeout);
     } on TimeoutException {
       return LocalAiAvailability.unavailableOther;
     } catch (_) {
@@ -33,14 +35,16 @@ abstract final class LocalAi {
   }
 
   /// One human-readable sentence naming what the user would have to change.
-  static Future<String> availabilityReason() =>
-      localAiHost.availabilityReason();
+  static Future<String> availabilityReason({LocalAiHost? host}) =>
+      (host ?? localAiHost).availabilityReason();
 
   /// What the running host can actually do — vision, tools, schemas, exact
   /// token counts. Gate optional features on this rather than on
   /// `Platform.isX`: the same binary answers differently across OS versions.
-  static Future<LocalAiBackendCapabilities> capabilities() =>
-      localAiHost.getBackendInfo();
+  static Future<LocalAiBackendCapabilities> capabilities({
+    LocalAiHost? host,
+  }) =>
+      (host ?? localAiHost).getBackendInfo();
 
   /// Ensures the OS model is ready, downloading it when the OS exposes it as
   /// [LocalAiAvailability.downloadable].
@@ -55,8 +59,10 @@ abstract final class LocalAi {
   static Future<void> ensureReady({
     void Function(int percent)? onProgress,
     Duration timeout = const Duration(minutes: 10),
+    LocalAiHost? host,
   }) async {
-    final initial = await availability();
+    final resolved = host ?? localAiHost;
+    final initial = await availability(host: resolved);
     switch (initial) {
       case LocalAiAvailability.available:
         return;
@@ -71,6 +77,7 @@ abstract final class LocalAi {
       case LocalAiAvailability.downloadable:
       case LocalAiAvailability.downloading:
         await _download(
+          host: resolved,
           kickOff: initial == LocalAiAvailability.downloadable,
           onProgress: onProgress,
           timeout: timeout,
@@ -79,6 +86,7 @@ abstract final class LocalAi {
   }
 
   static Future<void> _download({
+    required LocalAiHost host,
     required bool kickOff,
     required void Function(int percent)? onProgress,
     required Duration timeout,
@@ -90,7 +98,7 @@ abstract final class LocalAi {
     var settled = false;
 
     if (onProgress != null) {
-      progressSub = localAiHost.events.listen(
+      progressSub = host.events.listen(
         (event) {
           if (event is LocalAiDownloadProgressEvent) {
             final percent = event.percent;
@@ -106,7 +114,7 @@ abstract final class LocalAi {
     Future<void> poll() async {
       try {
         while (!settled && !ready.isCompleted) {
-          switch (await availability()) {
+          switch (await availability(host: host)) {
             case LocalAiAvailability.available:
               if (!ready.isCompleted) ready.complete();
               return;
@@ -142,7 +150,7 @@ abstract final class LocalAi {
         // it can hang. Availability polling is the readiness signal; a silent
         // failure surfaces there or via [timeout].
         unawaited(
-          localAiHost.downloadFeature().catchError((Object _) {
+          host.downloadFeature().catchError((Object _) {
             // Swallowed here so a kick-off failure can't escape a detached
             // future; poll() observes the real outcome.
           }),
@@ -164,6 +172,6 @@ abstract final class LocalAi {
 
   /// Opens Google AICore in the Play Store, for the Android case where AICore
   /// is missing or too old. False on every other platform.
-  static Future<bool> openAICorePlayStore() =>
-      localAiHost.openAICorePlayStore();
+  static Future<bool> openAICorePlayStore({LocalAiHost? host}) =>
+      (host ?? localAiHost).openAICorePlayStore();
 }

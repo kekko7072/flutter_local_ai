@@ -310,7 +310,10 @@ class _FailingStartHost extends _DelegatingHost {
   _FailingStartHost(super.inner);
 
   @override
-  Future<void> generateResponseAsync(int sessionId) async =>
+  Future<void> generateResponseAsync(
+    int sessionId, {
+    LocalAiGenerationOverrides? overrides,
+  }) async =>
       throw StateError('native refused');
 }
 

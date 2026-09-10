@@ -211,6 +211,57 @@ class ToolParameterSpec {
 };
 
 
+// Per-call sampling overrides.
+//
+// A session fixes its sampling at creation, which is what flutter_gemma's
+// engine contract expects. Both Apple `respond(options:)` and ML Kit's
+// request builder also accept options per request, though, and the
+// prompt-oriented Dart API applies a `GenerationConfig` to a single call
+// without disturbing the conversation. Every field is nullable: null means
+// "keep what the session was created with".
+//
+// Generated class from Pigeon that represents data sent in messages.
+class GenerationOverrides {
+ public:
+  // Constructs an object setting all non-nullable fields.
+  GenerationOverrides();
+
+  // Constructs an object setting all fields.
+  explicit GenerationOverrides(
+    const double* temperature,
+    const double* top_p,
+    const int64_t* top_k,
+    const int64_t* max_output_tokens);
+
+  const double* temperature() const;
+  void set_temperature(const double* value_arg);
+  void set_temperature(double value_arg);
+
+  const double* top_p() const;
+  void set_top_p(const double* value_arg);
+  void set_top_p(double value_arg);
+
+  const int64_t* top_k() const;
+  void set_top_k(const int64_t* value_arg);
+  void set_top_k(int64_t value_arg);
+
+  const int64_t* max_output_tokens() const;
+  void set_max_output_tokens(const int64_t* value_arg);
+  void set_max_output_tokens(int64_t value_arg);
+
+ private:
+  static GenerationOverrides FromEncodableList(const flutter::EncodableList& list);
+  flutter::EncodableList ToEncodableList() const;
+  friend class LocalAiService;
+  friend class LocalAiToolRunner;
+  friend class PigeonInternalCodecSerializer;
+  std::optional<double> temperature_;
+  std::optional<double> top_p_;
+  std::optional<int64_t> top_k_;
+  std::optional<int64_t> max_output_tokens_;
+};
+
+
 // Generated class from Pigeon that represents data sent in messages.
 class ToolSpec {
  public:
@@ -309,12 +360,14 @@ class LocalAiService {
     std::function<void(std::optional<FlutterError> reply)> result) = 0;
   virtual void GenerateResponse(
     int64_t session_id,
+    const GenerationOverrides* overrides,
     std::function<void(ErrorOr<std::string> reply)> result) = 0;
   // Streams the response; tokens arrive on the event channel as
   // `{sessionId, partialResult, done}` and failures as
   // `{sessionId, code: ERROR, message}`.
   virtual void GenerateResponseAsync(
     int64_t session_id,
+    const GenerationOverrides* overrides,
     std::function<void(std::optional<FlutterError> reply)> result) = 0;
   // Generation constrained to [schemaJson] (a JSON Schema document). Hosts
   // reporting `supportsStructuredOutput: false` fail this call rather than
@@ -322,6 +375,7 @@ class LocalAiService {
   virtual void GenerateStructuredResponse(
     int64_t session_id,
     const std::string& schema_json,
+    const GenerationOverrides* overrides,
     std::function<void(ErrorOr<std::string> reply)> result) = 0;
   virtual void StopGeneration(
     int64_t session_id,

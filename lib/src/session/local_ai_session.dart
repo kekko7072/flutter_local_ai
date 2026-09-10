@@ -55,9 +55,13 @@ class LocalAiSession {
   }
 
   /// Generates the full response for the pending turn.
-  Future<String> getResponse() {
+  ///
+  /// [overrides] varies sampling for this call only, leaving the session's
+  /// own settings alone. Hosts that fix sampling per session (the Chrome
+  /// Prompt API) log once and ignore it.
+  Future<String> getResponse({LocalAiGenerationOverrides? overrides}) {
     _assertOpen();
-    return _host.generateResponse(sessionId);
+    return _host.generateResponse(sessionId, overrides: overrides);
   }
 
   /// Generates the response as a stream of deltas — each event is the newly
@@ -65,7 +69,7 @@ class LocalAiSession {
   ///
   /// Cancelling the subscription detaches the Dart side; call
   /// [stopGeneration] to actually stop the model decoding.
-  Stream<String> getResponseAsync() {
+  Stream<String> getResponseAsync({LocalAiGenerationOverrides? overrides}) {
     _assertOpen();
 
     // A StreamController rather than `async*` so cleanup runs on done, on
@@ -111,7 +115,7 @@ class LocalAiSession {
 
       // Kick off generation. A synchronous native failure — before any event
       // is emitted — must surface here rather than hang the stream forever.
-      _host.generateResponseAsync(sessionId).catchError(
+      _host.generateResponseAsync(sessionId, overrides: overrides).catchError(
         (Object error, StackTrace stackTrace) {
           if (!controller.isClosed) controller.addError(error, stackTrace);
           cleanup();
@@ -133,12 +137,16 @@ class LocalAiSession {
   /// only). [schema] is validated in Dart first, so an unsupported construct
   /// fails with a path-qualified [ArgumentError] rather than an opaque native
   /// error after the round trip.
-  Future<String> getStructuredResponse(Map<String, dynamic> schema) {
+  Future<String> getStructuredResponse(
+    Map<String, dynamic> schema, {
+    LocalAiGenerationOverrides? overrides,
+  }) {
     _assertOpen();
     validateGenerationSchema(schema);
     return _host.generateStructuredResponse(
       sessionId: sessionId,
       schemaJson: jsonEncode(schema),
+      overrides: overrides,
     );
   }
 

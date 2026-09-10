@@ -417,21 +417,45 @@ internal class LocalAiSessionService(
 
   // === Generation ===
 
-  private fun buildRequest(state: SessionState) =
-    if (state.images.isNotEmpty()) {
-      generateContentRequest(
-        ImagePart(state.images.first()),
-        TextPart(state.transcript.toString())
-      ) {
-        temperature = state.temperature
-        topK = state.topK
-        state.maxOutputTokens?.let { maxOutputTokens = it }
-      }
-    } else {
-      generateContentRequest(TextPart(state.transcript.toString())) {
-        temperature = state.temperature
-        topK = state.topK
-        state.maxOutputTokens?.let { maxOutputTokens = it }
+  /**
+   * Per-call sampling, falling back to whatever the session was created with.
+   * ML Kit takes options per request, so a caller can vary one turn without
+   * disturbing the conversation.
+   */
+  private class EffectiveOptions(
+    state: SessionState,
+    overrides: GenerationOverrides?
+  ) {
+    val temperature: Float =
+      overrides?.temperature?.toFloat() ?: state.temperature
+    val topK: Int = overrides?.topK?.toInt() ?: state.topK
+    val maxOutputTokens: Int? =
+      overrides?.maxOutputTokens
+        ?.toInt()
+        ?.coerceIn(MAX_OUTPUT_TOKENS_MIN, MAX_OUTPUT_TOKENS_MAX)
+        ?: state.maxOutputTokens
+    // topP has no Prompt API builder parameter, on the session or the
+    // request. Accepted for cross-platform parity and deliberately dropped
+    // rather than mapped onto topK, which means something else.
+  }
+
+  private fun buildRequest(state: SessionState, overrides: GenerationOverrides?) =
+    EffectiveOptions(state, overrides).let { options ->
+      if (state.images.isNotEmpty()) {
+        generateContentRequest(
+          ImagePart(state.images.first()),
+          TextPart(state.transcript.toString())
+        ) {
+          temperature = options.temperature
+          topK = options.topK
+          options.maxOutputTokens?.let { maxOutputTokens = it }
+        }
+      } else {
+        generateContentRequest(TextPart(state.transcript.toString())) {
+          temperature = options.temperature
+          topK = options.topK
+          options.maxOutputTokens?.let { maxOutputTokens = it }
+        }
       }
     }
 
@@ -442,11 +466,15 @@ internal class LocalAiSessionService(
     state.images.clear()
   }
 
-  override fun generateResponse(sessionId: Long, callback: (Result<String>) -> Unit) {
+  override fun generateResponse(
+    sessionId: Long,
+    overrides: GenerationOverrides?,
+    callback: (Result<String>) -> Unit
+  ) {
     scope.launch {
       try {
         val state = requireSession(sessionId)
-        val response = client().generateContent(buildRequest(state))
+        val response = client().generateContent(buildRequest(state, overrides))
         val text = response.candidates.firstOrNull()?.text.orEmpty()
         commitTurn(state, text)
         callback(Result.success(text))
@@ -456,7 +484,11 @@ internal class LocalAiSessionService(
     }
   }
 
-  override fun generateResponseAsync(sessionId: Long, callback: (Result<Unit>) -> Unit) {
+  override fun generateResponseAsync(
+    sessionId: Long,
+    overrides: GenerationOverrides?,
+    callback: (Result<Unit>) -> Unit
+  ) {
     val state = try {
       requireSession(sessionId)
     } catch (e: Exception) {
@@ -467,7 +499,7 @@ internal class LocalAiSessionService(
     state.job = scope.launch {
       val generated = StringBuilder()
       try {
-        client().generateContentStream(buildRequest(state)).collect { chunk ->
+        client().generateContentStream(buildRequest(state, overrides)).collect { chunk ->
           val piece = chunk.candidates.firstOrNull()?.text.orEmpty()
           if (piece.isNotEmpty()) {
             generated.append(piece)
@@ -502,6 +534,7 @@ internal class LocalAiSessionService(
   override fun generateStructuredResponse(
     sessionId: Long,
     schemaJson: String,
+    overrides: GenerationOverrides?,
     callback: (Result<String>) -> Unit
   ) {
     callback(

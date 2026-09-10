@@ -1,167 +1,291 @@
 import 'package:flutter_local_ai/flutter_local_ai.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:plugin_platform_interface/plugin_platform_interface.dart';
+
+import 'session/fake_local_ai_host.dart';
 
 void main() {
-  late FlutterLocalAiPlatform originalPlatform;
-  late FakeFlutterLocalAiPlatform fakePlatform;
+  late FakeLocalAiHost host;
   late FlutterLocalAi subject;
 
+  setUp(() async {
+    host = FakeLocalAiHost();
+    debugLocalAiHost = host;
+    await FlutterLocalAi.debugReset();
+    subject = FlutterLocalAi(host: host);
+  });
+
+  tearDown(() async {
+    await FlutterLocalAi.debugReset();
+    debugLocalAiHost = null;
+    await host.dispose();
+  });
+
   group('FlutterLocalAi', () {
-    setUp(() {
-      originalPlatform = FlutterLocalAiPlatform.instance;
-      fakePlatform = FakeFlutterLocalAiPlatform();
-      FlutterLocalAiPlatform.instance = fakePlatform;
-      subject = FlutterLocalAi();
+    test('isAvailable is true only when the model is ready now', () async {
+      expect(await subject.isAvailable(), isTrue);
+
+      host.availability = LocalAiAvailability.downloadable;
+      expect(await subject.isAvailable(), isFalse);
     });
 
-    tearDown(() {
-      FlutterLocalAiPlatform.instance = originalPlatform;
+    test('isAvailable never throws', () async {
+      debugLocalAiHost = _ThrowingHost(host);
+      expect(await FlutterLocalAi().isAvailable(), isFalse);
     });
 
-    test('#isAvailable', () async {
-      fakePlatform.isAvailableResult = true;
+    test('initialize starts a session carrying the instructions', () async {
+      await subject.initialize(instructions: 'Be terse.');
 
-      final result = await subject.isAvailable();
-
-      expect(result, isTrue);
-      expect(fakePlatform.isAvailableCallCount, 1);
+      expect(host.createdSessions.single['systemInstruction'], 'Be terse.');
     });
 
-    test('#initialize', () async {
-      fakePlatform.initializeResult = true;
+    test('initialize again replaces the conversation', () async {
+      await subject.initialize(instructions: 'First.');
+      await subject.initialize(instructions: 'Second.');
 
-      final result =
-          await subject.initialize(instructions: 'system instructions');
-
-      expect(result, isTrue);
-      expect(fakePlatform.lastInstructions, contains('system instructions'));
+      expect(host.createdSessions.length, 2);
+      expect(host.closedSessions, [1]);
+      expect(host.createdSessions.last['systemInstruction'], 'Second.');
     });
 
-    test('#registerTools', () async {
-      final tools = [
-        LocalAiTool(
-          name: 'weather',
-          description: 'Lookup weather',
-          parameters: const [],
-          onCall: (_) async => 'clear',
-        ),
-      ];
-
-      await subject.registerTools(tools);
-
-      expect(fakePlatform.registeredTools, hasLength(1));
-      expect(fakePlatform.registeredTools.single.name, contains('weather'));
-    });
-
-    test('#generateText', () async {
-      fakePlatform.generateTextResult = const AiResponse(
-        text: 'hello',
-        tokenCount: 11,
-        generationTimeMs: 18,
-      );
-
-      final config = GenerationConfig(maxTokens: 32);
-      final result = await subject.generateText(prompt: 'Hi', config: config);
-
-      expect(result.text, contains('hello'));
-      expect(result.tokenCount, isNotNull);
-      expect(fakePlatform.lastPrompt, contains('Hi'));
-      expect(fakePlatform.lastConfig, same(config));
-    });
-
-    test('#generateTextStream', () async {
-      fakePlatform.generateTextStreamChunks = const ['hel', 'lo'];
-
-      final config = GenerationConfig(maxTokens: 32);
-      final chunks = await subject
-          .generateTextStream(prompt: 'Hi', config: config)
-          .toList();
-
-      expect(chunks, ['hel', 'lo']);
-      expect(fakePlatform.lastPrompt, contains('Hi'));
-      expect(fakePlatform.lastConfig, same(config));
-    });
-
-    test('one-shot instructions pass through to the platform', () async {
-      await subject.generateText(prompt: 'Hi', instructions: 'be terse');
-      expect(fakePlatform.lastOneShotInstructions, 'be terse');
-
-      fakePlatform.lastOneShotInstructions = null;
-      await subject
-          .generateTextStream(prompt: 'Hi', instructions: 'be terse')
-          .toList();
-      expect(fakePlatform.lastOneShotInstructions, 'be terse');
-
-      // Omitted → null: the platform keeps using its shared session.
-      fakePlatform.lastOneShotInstructions = 'stale';
-      await subject.generateText(prompt: 'Hi');
-      expect(fakePlatform.lastOneShotInstructions, isNull);
-    });
-
-    test('#generateTextSimple', () async {
-      fakePlatform.generateTextResult =
-          const AiResponse(text: 'simple response');
-
-      final result = await subject.generateTextSimple(
-        prompt: 'hello',
-        maxTokens: 21,
-      );
-
-      expect(result, contains('simple response'));
-      expect(fakePlatform.lastPrompt, contains('hello'));
-      expect(fakePlatform.lastConfig?.maxTokens, 21);
-    });
-
-    test('#openAICorePlayStore', () async {
-      fakePlatform.openAICorePlayStoreResult = true;
-
-      final result = await subject.openAICorePlayStore();
-
-      expect(result, isTrue);
-      expect(fakePlatform.openAICorePlayStoreCallCount, 1);
-    });
-
-    test('structured-output config carries the schema to the platform',
+    test('generateText creates a session on its own without initialize',
         () async {
-      fakePlatform.generateTextResult =
-          const AiResponse(text: '{"title":"Hello","priority":"high"}');
+      host.response = 'hello';
 
-      final config = GenerationConfig(
-        maxTokens: 128,
-        responseFormat: ResponseFormat.json,
-        schema: const {
-          'type': 'object',
-          'properties': {
-            'title': {'type': 'string'},
-            'priority': {
-              'enum': ['low', 'med', 'high'],
+      final response = await subject.generateText(prompt: 'hi');
+
+      expect(response.text, 'hello');
+      expect(host.createdSessions, hasLength(1));
+    });
+
+    test('successive calls share one conversation', () async {
+      await subject.generateText(prompt: 'first');
+      await subject.generateText(prompt: 'second');
+
+      // One session, both turns on it — the same on every platform now.
+      expect(host.createdSessions, hasLength(1));
+      expect(host.transcripts[1].toString(), 'firstsecond');
+    });
+
+    test('one-shot instructions run in a throwaway session', () async {
+      await subject.generateText(
+        prompt: 'hi',
+        instructions: 'Answer in French.',
+      );
+
+      expect(host.createdSessions.single['systemInstruction'],
+          'Answer in French.');
+      // The throwaway must not outlive the call, or the OS keeps a context
+      // alive for a conversation nobody will continue.
+      expect(host.closedSessions, [1]);
+    });
+
+    test('a one-shot call leaves the shared conversation untouched', () async {
+      await subject.initialize(instructions: 'Shared.');
+      await subject.generateText(prompt: 'aside', instructions: 'One-shot.');
+      await subject.generateText(prompt: 'later');
+
+      // Session 1 is the shared one and is still open; session 2 was the
+      // throwaway.
+      expect(host.closedSessions, [2]);
+      expect(host.transcripts[1].toString(), 'later');
+    });
+
+    test('a GenerationConfig reaches the host as per-call sampling', () async {
+      await subject.generateText(
+        prompt: 'hi',
+        config: const GenerationConfig(maxTokens: 64, temperature: 0.2),
+      );
+
+      expect(host.lastOverrides?.maxOutputTokens, 64);
+      expect(host.lastOverrides?.temperature, 0.2);
+      // Sampling is per call, so the shared session keeps its own settings.
+      expect(host.createdSessions.single['maxOutputTokens'], isNull);
+    });
+
+    test('generateText reports timing and a token count', () async {
+      host.response = 'some words';
+      host.countTokensResult = 3;
+
+      final response = await subject.generateText(prompt: 'hi');
+
+      expect(response.tokenCount, 3);
+      expect(response.generationTimeMs, isNotNull);
+    });
+
+    test('a failed token count does not fail a successful generation',
+        () async {
+      host.response = 'fine';
+      host.countTokensError = StateError('tokenizer exploded');
+
+      final response = await subject.generateText(prompt: 'hi');
+
+      expect(response.text, 'fine');
+      expect(response.tokenCount, isNull);
+    });
+
+    test('a schema is validated before any platform call', () async {
+      await expectLater(
+        subject.generateText(
+          prompt: 'hi',
+          config: const GenerationConfig(schema: {'type': 'date'}),
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        host.calls.where((c) => c.startsWith('generateStructuredResponse')),
+        isEmpty,
+      );
+    });
+
+    test('a valid schema routes to constrained generation', () async {
+      await subject.generateText(
+        prompt: 'hi',
+        config: const GenerationConfig(
+          schema: {
+            'type': 'object',
+            'properties': {
+              'city': {'type': 'string'},
             },
           },
-          'required': ['title'],
-        },
+        ),
       );
 
-      final result = await subject.generateText(prompt: 'Hi', config: config);
+      expect(host.calls.last, startsWith('generateStructuredResponse'));
+    });
 
-      expect(fakePlatform.lastConfig?.schema, isNotNull);
-      expect(fakePlatform.lastConfig?.responseFormat, ResponseFormat.json);
-      // The JSON arrives in `text`; `.json` is the decoded convenience view.
-      expect(result.json, {'title': 'Hello', 'priority': 'high'});
+    test('generateTextStream emits deltas', () async {
+      final chunks = <String>[];
+      final done = subject
+          .generateTextStream(prompt: 'hi')
+          .listen(chunks.add)
+          .asFuture<void>();
+      await pumpEventQueue();
+
+      host.emit(const LocalAiTokenEvent(
+          sessionId: 1, partialResult: 'a', done: false));
+      host.emit(
+          const LocalAiTokenEvent(sessionId: 1, partialResult: 'b', done: true));
+      await done;
+
+      expect(chunks, ['a', 'b']);
+    });
+
+    test('generateTextStream closes its one-shot session', () async {
+      final done = subject
+          .generateTextStream(prompt: 'hi', instructions: 'One-shot.')
+          .listen((_) {})
+          .asFuture<void>();
+      await pumpEventQueue();
+
+      host.emit(
+          const LocalAiTokenEvent(sessionId: 1, partialResult: '', done: true));
+      await done;
+
+      expect(host.closedSessions, [1]);
     });
 
     test('generateTextStream rejects structured-output requests', () async {
-      final config = GenerationConfig(
-        responseFormat: ResponseFormat.json,
-        schema: const {'type': 'object'},
-      );
-
       await expectLater(
-        subject.generateTextStream(prompt: 'Hi', config: config),
+        subject.generateTextStream(
+          prompt: 'hi',
+          config: const GenerationConfig(schema: {'type': 'object'}),
+        ),
         emitsError(isA<ArgumentError>()),
       );
-      // The request never reached the platform.
-      expect(fakePlatform.lastPrompt, isNull);
+    });
+
+    test('generateTextSimple returns just the text', () async {
+      host.response = 'short';
+      expect(await subject.generateTextSimple(prompt: 'hi'), 'short');
+    });
+
+    test('registerTools restarts the conversation so tools bind', () async {
+      await subject.initialize();
+      await subject.registerTools([
+        LocalAiTool(
+          name: 'weather',
+          description: 'Current weather',
+          parameters: const [ToolParameter(name: 'city')],
+          onCall: (_) async => 'sunny',
+        ),
+      ]);
+
+      // Apple binds tools when a session is constructed and cannot add them
+      // to a live one, so the old session has to go.
+      expect(host.closedSessions, [1]);
+      expect(host.createdSessions.last['tools'], ['weather']);
+    });
+
+    test('registering an empty list stops offering tools', () async {
+      await subject.registerTools([]);
+      await subject.generateText(prompt: 'hi');
+
+      expect(host.createdSessions.single['tools'], isNull);
+    });
+
+    test('getPlatformInfo narrows the host capabilities', () async {
+      host.capabilities = const LocalAiBackendCapabilities(
+        backend: LocalAiBackendKind.appleFoundationModels,
+        platform: 'ios',
+        apiName: 'Apple Foundation Models',
+        supportsToolCalling: true,
+        supportsStructuredOutput: true,
+      );
+
+      final info = await subject.getPlatformInfo();
+
+      expect(info.backend, LocalAiBackend.appleFoundationModels);
+      expect(info.supportsToolCalling, isTrue);
+      expect(info.supportsStructuredOutput, isTrue);
+    });
+
+    test('getPlatformInfo degrades instead of throwing', () async {
+      debugLocalAiHost = _ThrowingHost(host);
+      final info = await FlutterLocalAi().getPlatformInfo();
+      expect(info.backend, LocalAiBackend.unsupported);
+    });
+
+    test('getModelStatus maps availability', () async {
+      host.availability = LocalAiAvailability.downloading;
+      expect(await subject.getModelStatus(), ModelFeatureStatus.downloading);
+
+      host.availability = LocalAiAvailability.unavailableDisabled;
+      expect(await subject.getModelStatus(), ModelFeatureStatus.unavailable);
+    });
+
+    test('downloadModel always terminates, even on failure', () async {
+      host.availability = LocalAiAvailability.unavailableDeviceUnsupported;
+
+      final statuses = await subject.downloadModel().toList();
+
+      expect(statuses.first.type, ModelDownloadStatusType.started);
+      expect(statuses.last.type, ModelDownloadStatusType.failed);
+    });
+
+    test('downloadModel reports progress then completion', () async {
+      host.availability = LocalAiAvailability.downloadable;
+      final statuses = <ModelDownloadStatus>[];
+      final done = subject.downloadModel().listen(statuses.add).asFuture<void>();
+      await pumpEventQueue();
+
+      host.emit(const LocalAiDownloadProgressEvent(
+          bytesDownloaded: 1024, bytesTotal: 0));
+      await pumpEventQueue();
+      host.availability = LocalAiAvailability.available;
+      await done;
+
+      expect(statuses.map((s) => s.type), [
+        ModelDownloadStatusType.started,
+        ModelDownloadStatusType.progress,
+        ModelDownloadStatusType.completed,
+      ]);
+      expect(statuses[1].totalBytesDownloaded, 1024);
+    });
+
+    test('openAICorePlayStore is false where there is no Play Store',
+        () async {
+      expect(await subject.openAICorePlayStore(), isFalse);
     });
   });
 
@@ -282,86 +406,55 @@ void main() {
   });
 
   group('LocalAiPlatformInfo', () {
-    test('fromMap round-trips supportsStructuredOutput', () {
-      final info = LocalAiPlatformInfo.fromMap(const {
-        'backend': 'apple_foundation_models',
-        'supportsStructuredOutput': true,
-      });
+    test('carries structured-output support across from capabilities', () {
+      final info = LocalAiPlatformInfo.fromCapabilities(
+        const LocalAiBackendCapabilities(
+          backend: LocalAiBackendKind.appleFoundationModels,
+          platform: 'ios',
+          apiName: 'Apple Foundation Models',
+          supportsStructuredOutput: true,
+        ),
+      );
       expect(info.supportsStructuredOutput, isTrue);
+      expect(info.backend, LocalAiBackend.appleFoundationModels);
     });
 
-    test('supportsStructuredOutput defaults to false when absent', () {
-      final info = LocalAiPlatformInfo.fromMap(const {
-        'backend': 'android_mlkit_genai',
-      });
+    test('defaults to unsupported where the capability is absent', () {
+      final info = LocalAiPlatformInfo.fromCapabilities(
+        const LocalAiBackendCapabilities(
+          backend: LocalAiBackendKind.androidMlKitGenAi,
+          platform: 'android',
+          apiName: 'ML Kit GenAI',
+        ),
+      );
       expect(info.supportsStructuredOutput, isFalse);
+      expect(info.backend, LocalAiBackend.androidMlKitGenAi);
+    });
+
+    test('maps the web backend, which predates this enum', () {
+      final info = LocalAiPlatformInfo.fromCapabilities(
+        const LocalAiBackendCapabilities(
+          backend: LocalAiBackendKind.chromePromptApi,
+          platform: 'web',
+          apiName: 'Chrome Prompt API',
+        ),
+      );
+      expect(info.backend, LocalAiBackend.chromePromptApi);
     });
   });
 }
 
-class FakeFlutterLocalAiPlatform extends FlutterLocalAiPlatform
-    with MockPlatformInterfaceMixin {
-  bool isAvailableResult = false;
-  int isAvailableCallCount = 0;
+/// A host whose every call throws, for the paths documented as degrading
+/// rather than propagating.
+class _ThrowingHost implements LocalAiHost {
+  _ThrowingHost(this.inner);
 
-  bool initializeResult = false;
-  String? lastInstructions;
-
-  List<LocalAiTool> registeredTools = const [];
-
-  String? lastPrompt;
-  GenerationConfig? lastConfig;
-  String? lastOneShotInstructions;
-  AiResponse generateTextResult = const AiResponse(text: 'default');
-  List<String> generateTextStreamChunks = const [];
-
-  bool openAICorePlayStoreResult = false;
-  int openAICorePlayStoreCallCount = 0;
+  final LocalAiHost inner;
 
   @override
-  Future<bool> isAvailable() async {
-    isAvailableCallCount += 1;
-    return isAvailableResult;
-  }
+  Stream<LocalAiHostEvent> get events => inner.events;
 
   @override
-  Future<bool> initialize({String? instructions}) async {
-    lastInstructions = instructions;
-    return initializeResult;
-  }
-
-  @override
-  Future<void> registerTools(List<LocalAiTool> tools) async {
-    registeredTools = tools;
-  }
-
-  @override
-  Future<AiResponse> generateText({
-    required String prompt,
-    GenerationConfig? config,
-    String? instructions,
-  }) async {
-    lastPrompt = prompt;
-    lastConfig = config;
-    lastOneShotInstructions = instructions;
-    return generateTextResult;
-  }
-
-  @override
-  Stream<String> generateTextStream({
-    required String prompt,
-    GenerationConfig? config,
-    String? instructions,
-  }) {
-    lastPrompt = prompt;
-    lastConfig = config;
-    lastOneShotInstructions = instructions;
-    return Stream.fromIterable(generateTextStreamChunks);
-  }
-
-  @override
-  Future<bool> openAICorePlayStore() async {
-    openAICorePlayStoreCallCount += 1;
-    return openAICorePlayStoreResult;
-  }
+  dynamic noSuchMethod(Invocation invocation) =>
+      Future<Never>.error(StateError('host is broken'));
 }

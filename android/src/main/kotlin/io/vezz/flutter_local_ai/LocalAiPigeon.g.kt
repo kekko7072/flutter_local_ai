@@ -253,6 +253,54 @@ data class ToolParameterSpec (
   override fun hashCode(): Int = toList().hashCode()
 }
 
+/**
+ * Per-call sampling overrides.
+ *
+ * A session fixes its sampling at creation, which is what flutter_gemma's
+ * engine contract expects. Both Apple `respond(options:)` and ML Kit's
+ * request builder also accept options per request, though, and the
+ * prompt-oriented Dart API applies a `GenerationConfig` to a single call
+ * without disturbing the conversation. Every field is nullable: null means
+ * "keep what the session was created with".
+ *
+ * Generated class from Pigeon that represents data sent in messages.
+ */
+data class GenerationOverrides (
+  val temperature: Double? = null,
+  val topP: Double? = null,
+  val topK: Long? = null,
+  val maxOutputTokens: Long? = null
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): GenerationOverrides {
+      val temperature = pigeonVar_list[0] as Double?
+      val topP = pigeonVar_list[1] as Double?
+      val topK = pigeonVar_list[2] as Long?
+      val maxOutputTokens = pigeonVar_list[3] as Long?
+      return GenerationOverrides(temperature, topP, topK, maxOutputTokens)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      temperature,
+      topP,
+      topK,
+      maxOutputTokens,
+    )
+  }
+  override fun equals(other: Any?): Boolean {
+    if (other !is GenerationOverrides) {
+      return false
+    }
+    if (this === other) {
+      return true
+    }
+    return LocalAiPigeonPigeonUtils.deepEquals(toList(), other.toList())  }
+
+  override fun hashCode(): Int = toList().hashCode()
+}
+
 /** Generated class from Pigeon that represents data sent in messages. */
 data class ToolSpec (
   val name: String,
@@ -316,6 +364,11 @@ private open class LocalAiPigeonPigeonCodec : StandardMessageCodec() {
       }
       134.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
+          GenerationOverrides.fromList(it)
+        }
+      }
+      135.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
           ToolSpec.fromList(it)
         }
       }
@@ -344,8 +397,12 @@ private open class LocalAiPigeonPigeonCodec : StandardMessageCodec() {
         stream.write(133)
         writeValue(stream, value.toList())
       }
-      is ToolSpec -> {
+      is GenerationOverrides -> {
         stream.write(134)
+        writeValue(stream, value.toList())
+      }
+      is ToolSpec -> {
+        stream.write(135)
         writeValue(stream, value.toList())
       }
       else -> super.writeValue(stream, value)
@@ -387,19 +444,19 @@ interface LocalAiService {
   fun closeSession(sessionId: Long, callback: (Result<Unit>) -> Unit)
   fun addQueryChunk(sessionId: Long, text: String, callback: (Result<Unit>) -> Unit)
   fun addImage(sessionId: Long, imageBytes: ByteArray, callback: (Result<Unit>) -> Unit)
-  fun generateResponse(sessionId: Long, callback: (Result<String>) -> Unit)
+  fun generateResponse(sessionId: Long, overrides: GenerationOverrides?, callback: (Result<String>) -> Unit)
   /**
    * Streams the response; tokens arrive on the event channel as
    * `{sessionId, partialResult, done}` and failures as
    * `{sessionId, code: ERROR, message}`.
    */
-  fun generateResponseAsync(sessionId: Long, callback: (Result<Unit>) -> Unit)
+  fun generateResponseAsync(sessionId: Long, overrides: GenerationOverrides?, callback: (Result<Unit>) -> Unit)
   /**
    * Generation constrained to [schemaJson] (a JSON Schema document). Hosts
    * reporting `supportsStructuredOutput: false` fail this call rather than
    * silently returning prose.
    */
-  fun generateStructuredResponse(sessionId: Long, schemaJson: String, callback: (Result<String>) -> Unit)
+  fun generateStructuredResponse(sessionId: Long, schemaJson: String, overrides: GenerationOverrides?, callback: (Result<String>) -> Unit)
   fun stopGeneration(sessionId: Long, callback: (Result<Unit>) -> Unit)
   /**
    * Exact token count where the host has a tokenizer. Hosts reporting
@@ -632,7 +689,8 @@ interface LocalAiService {
           channel.setMessageHandler { message, reply ->
             val args = message as List<Any?>
             val sessionIdArg = args[0] as Long
-            api.generateResponse(sessionIdArg) { result: Result<String> ->
+            val overridesArg = args[1] as GenerationOverrides?
+            api.generateResponse(sessionIdArg, overridesArg) { result: Result<String> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(LocalAiPigeonPigeonUtils.wrapError(error))
@@ -652,7 +710,8 @@ interface LocalAiService {
           channel.setMessageHandler { message, reply ->
             val args = message as List<Any?>
             val sessionIdArg = args[0] as Long
-            api.generateResponseAsync(sessionIdArg) { result: Result<Unit> ->
+            val overridesArg = args[1] as GenerationOverrides?
+            api.generateResponseAsync(sessionIdArg, overridesArg) { result: Result<Unit> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(LocalAiPigeonPigeonUtils.wrapError(error))
@@ -672,7 +731,8 @@ interface LocalAiService {
             val args = message as List<Any?>
             val sessionIdArg = args[0] as Long
             val schemaJsonArg = args[1] as String
-            api.generateStructuredResponse(sessionIdArg, schemaJsonArg) { result: Result<String> ->
+            val overridesArg = args[2] as GenerationOverrides?
+            api.generateStructuredResponse(sessionIdArg, schemaJsonArg, overridesArg) { result: Result<String> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(LocalAiPigeonPigeonUtils.wrapError(error))

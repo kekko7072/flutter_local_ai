@@ -276,6 +276,52 @@ struct ToolParameterSpec: Hashable {
   }
 }
 
+/// Per-call sampling overrides.
+///
+/// A session fixes its sampling at creation, which is what flutter_gemma's
+/// engine contract expects. Both Apple `respond(options:)` and ML Kit's
+/// request builder also accept options per request, though, and the
+/// prompt-oriented Dart API applies a `GenerationConfig` to a single call
+/// without disturbing the conversation. Every field is nullable: null means
+/// "keep what the session was created with".
+///
+/// Generated class from Pigeon that represents data sent in messages.
+struct GenerationOverrides: Hashable {
+  var temperature: Double? = nil
+  var topP: Double? = nil
+  var topK: Int64? = nil
+  var maxOutputTokens: Int64? = nil
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> GenerationOverrides? {
+    let temperature: Double? = nilOrValue(pigeonVar_list[0])
+    let topP: Double? = nilOrValue(pigeonVar_list[1])
+    let topK: Int64? = nilOrValue(pigeonVar_list[2])
+    let maxOutputTokens: Int64? = nilOrValue(pigeonVar_list[3])
+
+    return GenerationOverrides(
+      temperature: temperature,
+      topP: topP,
+      topK: topK,
+      maxOutputTokens: maxOutputTokens
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      temperature,
+      topP,
+      topK,
+      maxOutputTokens,
+    ]
+  }
+  static func == (lhs: GenerationOverrides, rhs: GenerationOverrides) -> Bool {
+    return deepEqualsLocalAiPigeon(lhs.toList(), rhs.toList())  }
+  func hash(into hasher: inout Hasher) {
+    deepHashLocalAiPigeon(value: toList(), hasher: &hasher)
+  }
+}
+
 /// Generated class from Pigeon that represents data sent in messages.
 struct ToolSpec: Hashable {
   var name: String
@@ -335,6 +381,8 @@ private class LocalAiPigeonPigeonCodecReader: FlutterStandardReader {
     case 133:
       return ToolParameterSpec.fromList(self.readValue() as! [Any?])
     case 134:
+      return GenerationOverrides.fromList(self.readValue() as! [Any?])
+    case 135:
       return ToolSpec.fromList(self.readValue() as! [Any?])
     default:
       return super.readValue(ofType: type)
@@ -359,8 +407,11 @@ private class LocalAiPigeonPigeonCodecWriter: FlutterStandardWriter {
     } else if let value = value as? ToolParameterSpec {
       super.writeByte(133)
       super.writeValue(value.toList())
-    } else if let value = value as? ToolSpec {
+    } else if let value = value as? GenerationOverrides {
       super.writeByte(134)
+      super.writeValue(value.toList())
+    } else if let value = value as? ToolSpec {
+      super.writeByte(135)
       super.writeValue(value.toList())
     } else {
       super.writeValue(value)
@@ -410,15 +461,15 @@ protocol LocalAiService {
   func closeSession(sessionId: Int64, completion: @escaping (Result<Void, Error>) -> Void)
   func addQueryChunk(sessionId: Int64, text: String, completion: @escaping (Result<Void, Error>) -> Void)
   func addImage(sessionId: Int64, imageBytes: FlutterStandardTypedData, completion: @escaping (Result<Void, Error>) -> Void)
-  func generateResponse(sessionId: Int64, completion: @escaping (Result<String, Error>) -> Void)
+  func generateResponse(sessionId: Int64, overrides: GenerationOverrides?, completion: @escaping (Result<String, Error>) -> Void)
   /// Streams the response; tokens arrive on the event channel as
   /// `{sessionId, partialResult, done}` and failures as
   /// `{sessionId, code: ERROR, message}`.
-  func generateResponseAsync(sessionId: Int64, completion: @escaping (Result<Void, Error>) -> Void)
+  func generateResponseAsync(sessionId: Int64, overrides: GenerationOverrides?, completion: @escaping (Result<Void, Error>) -> Void)
   /// Generation constrained to [schemaJson] (a JSON Schema document). Hosts
   /// reporting `supportsStructuredOutput: false` fail this call rather than
   /// silently returning prose.
-  func generateStructuredResponse(sessionId: Int64, schemaJson: String, completion: @escaping (Result<String, Error>) -> Void)
+  func generateStructuredResponse(sessionId: Int64, schemaJson: String, overrides: GenerationOverrides?, completion: @escaping (Result<String, Error>) -> Void)
   func stopGeneration(sessionId: Int64, completion: @escaping (Result<Void, Error>) -> Void)
   /// Exact token count where the host has a tokenizer. Hosts reporting
   /// `supportsTokenCount: false` fail with `TOKENIZER_UNAVAILABLE`, which the
@@ -634,7 +685,8 @@ class LocalAiServiceSetup {
       generateResponseChannel.setMessageHandler { message, reply in
         let args = message as! [Any?]
         let sessionIdArg = args[0] as! Int64
-        api.generateResponse(sessionId: sessionIdArg) { result in
+        let overridesArg: GenerationOverrides? = nilOrValue(args[1])
+        api.generateResponse(sessionId: sessionIdArg, overrides: overridesArg) { result in
           switch result {
           case .success(let res):
             reply(wrapResult(res))
@@ -654,7 +706,8 @@ class LocalAiServiceSetup {
       generateResponseAsyncChannel.setMessageHandler { message, reply in
         let args = message as! [Any?]
         let sessionIdArg = args[0] as! Int64
-        api.generateResponseAsync(sessionId: sessionIdArg) { result in
+        let overridesArg: GenerationOverrides? = nilOrValue(args[1])
+        api.generateResponseAsync(sessionId: sessionIdArg, overrides: overridesArg) { result in
           switch result {
           case .success:
             reply(wrapResult(nil))
@@ -675,7 +728,8 @@ class LocalAiServiceSetup {
         let args = message as! [Any?]
         let sessionIdArg = args[0] as! Int64
         let schemaJsonArg = args[1] as! String
-        api.generateStructuredResponse(sessionId: sessionIdArg, schemaJson: schemaJsonArg) { result in
+        let overridesArg: GenerationOverrides? = nilOrValue(args[2])
+        api.generateStructuredResponse(sessionId: sessionIdArg, schemaJson: schemaJsonArg, overrides: overridesArg) { result in
           switch result {
           case .success(let res):
             reply(wrapResult(res))

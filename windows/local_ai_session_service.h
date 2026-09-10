@@ -100,16 +100,19 @@ class LocalAiSessionService : public flutter_local_ai_pigeon::LocalAiService {
           result) override;
   void GenerateResponse(
       int64_t session_id,
+      const flutter_local_ai_pigeon::GenerationOverrides* overrides,
       std::function<void(flutter_local_ai_pigeon::ErrorOr<std::string> reply)>
           result) override;
   void GenerateResponseAsync(
       int64_t session_id,
+      const flutter_local_ai_pigeon::GenerationOverrides* overrides,
       std::function<
           void(std::optional<flutter_local_ai_pigeon::FlutterError> reply)>
           result) override;
   void GenerateStructuredResponse(
       int64_t session_id,
       const std::string& schema_json,
+      const flutter_local_ai_pigeon::GenerationOverrides* overrides,
       std::function<void(flutter_local_ai_pigeon::ErrorOr<std::string> reply)>
           result) override;
   void StopGeneration(
@@ -134,8 +137,12 @@ class LocalAiSessionService : public flutter_local_ai_pigeon::LocalAiService {
   SessionState* Find(int64_t session_id);
 
   // Runs one turn against Windows AI, returning the generated text. Sets
-  // `error` and returns false when the model is unreachable.
-  bool Generate(SessionState* state, std::string* out, std::string* error);
+  // `error` and returns false when the model is unreachable. `overrides`,
+  // when present, replaces the session's sampling for this call only.
+  bool Generate(SessionState* state,
+                const flutter_local_ai_pigeon::GenerationOverrides* overrides,
+                std::string* out,
+                std::string* error);
 
   void PostEvent(const flutter::EncodableMap& payload);
   void PostDone(int64_t session_id);

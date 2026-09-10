@@ -67,12 +67,30 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
     private final class SessionState {
       let session: LanguageModelSession
       let options: GenerationOptions
+      /// The knobs `options` was built from. GenerationOptions exposes no
+      /// readable sampling mode, so a per-call override that touches one
+      /// field could not otherwise preserve the others.
+      let temperature: Double?
+      let topK: Int?
+      let topP: Double?
+      let maxOutputTokens: Int?
       var pendingText: String = ""
       var task: Task<Void, Never>?
 
-      init(session: LanguageModelSession, options: GenerationOptions) {
+      init(
+        session: LanguageModelSession,
+        options: GenerationOptions,
+        temperature: Double?,
+        topK: Int?,
+        topP: Double?,
+        maxOutputTokens: Int?
+      ) {
         self.session = session
         self.options = options
+        self.temperature = temperature
+        self.topK = topK
+        self.topP = topP
+        self.maxOutputTokens = maxOutputTokens
       }
     }
   #endif
@@ -127,6 +145,47 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
   }
 
   #if canImport(FoundationModels)
+    /// Sampling for one call: the session's own options unless `overrides`
+    /// replaces a field. FoundationModels takes options per `respond`, so a
+    /// caller can vary one turn without disturbing the conversation.
+    ///
+    /// `.greedy` must not carry a temperature — that pairing throws
+    /// on-device — so an override that introduces a temperature also moves
+    /// the mode off greedy, and one that only sets a cap keeps whatever the
+    /// session chose.
+    @available(iOS 26.0, macOS 26.0, *)
+    private static func options(
+      for state: SessionState, overrides: GenerationOverrides?
+    ) -> GenerationOptions {
+      guard let overrides = overrides else { return state.options }
+
+      let temperature = overrides.temperature ?? state.temperature
+      let positiveTemperature = (temperature ?? 0) > 0 ? temperature : nil
+      let maxTokens = overrides.maxOutputTokens.map { Int($0) }
+        ?? state.maxOutputTokens
+      let topK = overrides.topK.map { Int($0) } ?? state.topK
+      let topP = overrides.topP ?? state.topP
+
+      if let topK = topK, topK > 0 {
+        return GenerationOptions(
+          sampling: .random(top: topK),
+          temperature: positiveTemperature,
+          maximumResponseTokens: maxTokens)
+      }
+      if let topP = topP {
+        return GenerationOptions(
+          sampling: .random(probabilityThreshold: topP),
+          temperature: positiveTemperature,
+          maximumResponseTokens: maxTokens)
+      }
+      if let temperature = positiveTemperature {
+        return GenerationOptions(
+          temperature: temperature, maximumResponseTokens: maxTokens)
+      }
+      return GenerationOptions(
+        sampling: .greedy, maximumResponseTokens: maxTokens)
+    }
+
     @available(iOS 26.0, macOS 26.0, *)
     private func state(for sessionId: Int64) -> SessionState? {
       sessionsLock.lock()
@@ -367,7 +426,13 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
         return
       }
 
-      let state = SessionState(session: session, options: options)
+      let state = SessionState(
+        session: session,
+        options: options,
+        temperature: positiveTemperature,
+        topK: topK > 0 ? Int(topK) : nil,
+        topP: topP,
+        maxOutputTokens: maxTokens)
       sessionsLock.lock()
       // Replace any session already at this id, cancelling its in-flight work.
       (sessions[sessionId] as? SessionState)?.task?.cancel()
@@ -436,7 +501,9 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
   // MARK: - Generation
 
   public func generateResponse(
-    sessionId: Int64, completion: @escaping (Result<String, Error>) -> Void
+    sessionId: Int64,
+    overrides: GenerationOverrides?,
+    completion: @escaping (Result<String, Error>) -> Void
   ) {
     #if canImport(FoundationModels)
       guard #available(iOS 26.0, macOS 26.0, *),
@@ -453,7 +520,8 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
       Task {
         do {
           let response = try await state.session.respond(
-            to: Prompt(prompt), options: state.options)
+            to: Prompt(prompt),
+            options: Self.options(for: state, overrides: overrides))
           completion(.success(response.content))
         } catch {
           completion(
@@ -470,7 +538,9 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
   }
 
   public func generateResponseAsync(
-    sessionId: Int64, completion: @escaping (Result<Void, Error>) -> Void
+    sessionId: Int64,
+    overrides: GenerationOverrides?,
+    completion: @escaping (Result<Void, Error>) -> Void
   ) {
     #if canImport(FoundationModels)
       guard #available(iOS 26.0, macOS 26.0, *),
@@ -487,7 +557,8 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
         guard let self = self else { return }
         do {
           let stream = state.session.streamResponse(
-            to: Prompt(prompt), options: state.options)
+            to: Prompt(prompt),
+            options: Self.options(for: state, overrides: overrides))
           for try await snapshot in stream {
             if Task.isCancelled { break }
             let delta = converter.delta(from: snapshot.content)
@@ -522,6 +593,7 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
   public func generateStructuredResponse(
     sessionId: Int64,
     schemaJson: String,
+    overrides: GenerationOverrides?,
     completion: @escaping (Result<String, Error>) -> Void
   ) {
     #if canImport(FoundationModels)
@@ -560,7 +632,9 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
           let schema = try SchemaBuilder.generationSchema(
             from: schemaMap, rootName: "Output")
           let response = try await state.session.respond(
-            to: Prompt(prompt), schema: schema, options: state.options)
+            to: Prompt(prompt),
+            schema: schema,
+            options: Self.options(for: state, overrides: overrides))
           completion(.success(response.content.jsonString))
         } catch {
           completion(

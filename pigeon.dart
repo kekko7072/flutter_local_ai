@@ -101,6 +101,28 @@ class ToolParameterSpec {
   String? description;
 }
 
+/// Per-call sampling overrides.
+///
+/// A session fixes its sampling at creation, which is what flutter_gemma's
+/// engine contract expects. Both Apple `respond(options:)` and ML Kit's
+/// request builder also accept options per request, though, and the
+/// prompt-oriented Dart API applies a `GenerationConfig` to a single call
+/// without disturbing the conversation. Every field is nullable: null means
+/// "keep what the session was created with".
+class GenerationOverrides {
+  GenerationOverrides({
+    this.temperature,
+    this.topP,
+    this.topK,
+    this.maxOutputTokens,
+  });
+
+  double? temperature;
+  double? topP;
+  int? topK;
+  int? maxOutputTokens;
+}
+
 class ToolSpec {
   ToolSpec({
     required this.name,
@@ -191,13 +213,13 @@ abstract class LocalAiService {
   // --- Generation ---------------------------------------------------------
 
   @async
-  String generateResponse(int sessionId);
+  String generateResponse(int sessionId, GenerationOverrides? overrides);
 
   /// Streams the response; tokens arrive on the event channel as
   /// `{sessionId, partialResult, done}` and failures as
   /// `{sessionId, code: ERROR, message}`.
   @async
-  void generateResponseAsync(int sessionId);
+  void generateResponseAsync(int sessionId, GenerationOverrides? overrides);
 
   /// Generation constrained to [schemaJson] (a JSON Schema document). Hosts
   /// reporting `supportsStructuredOutput: false` fail this call rather than
@@ -206,6 +228,7 @@ abstract class LocalAiService {
   String generateStructuredResponse({
     required int sessionId,
     required String schemaJson,
+    GenerationOverrides? overrides,
   });
 
   @async

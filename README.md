@@ -61,8 +61,8 @@ if (caps.supportsVision) { /* ... */ }
 
 ## Two APIs
 
-This package exposes two surfaces over the same native backends. Pick by what
-you need, not by which came first.
+Two surfaces, one implementation: the prompt-oriented API is a facade over
+the session layer, not a second code path. Pick by what you need.
 
 **`FlutterLocalAi`** — the original one-shot API. One process-wide session,
 `generateText` / `generateTextStream`, native tool calling, schema-constrained

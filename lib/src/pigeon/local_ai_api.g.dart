@@ -226,6 +226,70 @@ class ToolParameterSpec {
 ;
 }
 
+/// Per-call sampling overrides.
+///
+/// A session fixes its sampling at creation, which is what flutter_gemma's
+/// engine contract expects. Both Apple `respond(options:)` and ML Kit's
+/// request builder also accept options per request, though, and the
+/// prompt-oriented Dart API applies a `GenerationConfig` to a single call
+/// without disturbing the conversation. Every field is nullable: null means
+/// "keep what the session was created with".
+class GenerationOverrides {
+  GenerationOverrides({
+    this.temperature,
+    this.topP,
+    this.topK,
+    this.maxOutputTokens,
+  });
+
+  double? temperature;
+
+  double? topP;
+
+  int? topK;
+
+  int? maxOutputTokens;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      temperature,
+      topP,
+      topK,
+      maxOutputTokens,
+    ];
+  }
+
+  Object encode() {
+    return _toList();  }
+
+  static GenerationOverrides decode(Object result) {
+    result as List<Object?>;
+    return GenerationOverrides(
+      temperature: result[0] as double?,
+      topP: result[1] as double?,
+      topK: result[2] as int?,
+      maxOutputTokens: result[3] as int?,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! GenerationOverrides || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(encode(), other.encode());
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => Object.hashAll(_toList())
+;
+}
+
 class ToolSpec {
   ToolSpec({
     required this.name,
@@ -300,8 +364,11 @@ class _PigeonCodec extends StandardMessageCodec {
     }    else if (value is ToolParameterSpec) {
       buffer.putUint8(133);
       writeValue(buffer, value.encode());
-    }    else if (value is ToolSpec) {
+    }    else if (value is GenerationOverrides) {
       buffer.putUint8(134);
+      writeValue(buffer, value.encode());
+    }    else if (value is ToolSpec) {
+      buffer.putUint8(135);
       writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
@@ -325,6 +392,8 @@ class _PigeonCodec extends StandardMessageCodec {
       case 133: 
         return ToolParameterSpec.decode(readValue(buffer)!);
       case 134: 
+        return GenerationOverrides.decode(readValue(buffer)!);
+      case 135: 
         return ToolSpec.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);
@@ -632,14 +701,14 @@ class LocalAiService {
     }
   }
 
-  Future<String> generateResponse(int sessionId) async {
+  Future<String> generateResponse(int sessionId, GenerationOverrides? overrides) async {
     final String pigeonVar_channelName = 'dev.flutter.pigeon.flutter_local_ai.LocalAiService.generateResponse$pigeonVar_messageChannelSuffix';
     final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
       binaryMessenger: pigeonVar_binaryMessenger,
     );
-    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[sessionId]);
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[sessionId, overrides]);
     final List<Object?>? pigeonVar_replyList =
         await pigeonVar_sendFuture as List<Object?>?;
     if (pigeonVar_replyList == null) {
@@ -663,14 +732,14 @@ class LocalAiService {
   /// Streams the response; tokens arrive on the event channel as
   /// `{sessionId, partialResult, done}` and failures as
   /// `{sessionId, code: ERROR, message}`.
-  Future<void> generateResponseAsync(int sessionId) async {
+  Future<void> generateResponseAsync(int sessionId, GenerationOverrides? overrides) async {
     final String pigeonVar_channelName = 'dev.flutter.pigeon.flutter_local_ai.LocalAiService.generateResponseAsync$pigeonVar_messageChannelSuffix';
     final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
       binaryMessenger: pigeonVar_binaryMessenger,
     );
-    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[sessionId]);
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[sessionId, overrides]);
     final List<Object?>? pigeonVar_replyList =
         await pigeonVar_sendFuture as List<Object?>?;
     if (pigeonVar_replyList == null) {
@@ -689,14 +758,14 @@ class LocalAiService {
   /// Generation constrained to [schemaJson] (a JSON Schema document). Hosts
   /// reporting `supportsStructuredOutput: false` fail this call rather than
   /// silently returning prose.
-  Future<String> generateStructuredResponse({required int sessionId, required String schemaJson}) async {
+  Future<String> generateStructuredResponse({required int sessionId, required String schemaJson, GenerationOverrides? overrides, }) async {
     final String pigeonVar_channelName = 'dev.flutter.pigeon.flutter_local_ai.LocalAiService.generateStructuredResponse$pigeonVar_messageChannelSuffix';
     final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
       binaryMessenger: pigeonVar_binaryMessenger,
     );
-    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[sessionId, schemaJson]);
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[sessionId, schemaJson, overrides]);
     final List<Object?>? pigeonVar_replyList =
         await pigeonVar_sendFuture as List<Object?>?;
     if (pigeonVar_replyList == null) {

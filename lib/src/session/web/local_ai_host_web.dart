@@ -39,6 +39,7 @@ class WebLocalAiHost implements LocalAiHost {
   final Map<int, _WebSession> _sessions = {};
 
   bool _supportImage = false;
+  bool _warnedOverrides = false;
 
   @override
   Stream<LocalAiHostEvent> get events => _events.stream;
@@ -219,8 +220,12 @@ class WebLocalAiHost implements LocalAiHost {
   }
 
   @override
-  Future<String> generateResponse(int sessionId) async {
+  Future<String> generateResponse(
+    int sessionId, {
+    LocalAiGenerationOverrides? overrides,
+  }) async {
     final state = _require(sessionId);
+    _warnOverridesIgnored(overrides);
     final controller = AbortController();
     state.inFlight = controller;
     try {
@@ -235,8 +240,12 @@ class WebLocalAiHost implements LocalAiHost {
   }
 
   @override
-  Future<void> generateResponseAsync(int sessionId) async {
+  Future<void> generateResponseAsync(
+    int sessionId, {
+    LocalAiGenerationOverrides? overrides,
+  }) async {
     final state = _require(sessionId);
+    _warnOverridesIgnored(overrides);
     final controller = AbortController();
     state.inFlight = controller;
     final options = buildPromptOptions(signal: controller.signal);
@@ -275,8 +284,10 @@ class WebLocalAiHost implements LocalAiHost {
   Future<String> generateStructuredResponse({
     required int sessionId,
     required String schemaJson,
+    LocalAiGenerationOverrides? overrides,
   }) async {
     final state = _require(sessionId);
+    _warnOverridesIgnored(overrides);
     final controller = AbortController();
     state.inFlight = controller;
     try {
@@ -296,6 +307,20 @@ class WebLocalAiHost implements LocalAiHost {
   @override
   Future<void> stopGeneration(int sessionId) async {
     _sessions[sessionId]?.inFlight?.abort();
+  }
+
+  /// Chrome fixes sampling at `create()`; `prompt()` takes no temperature or
+  /// topK. Rather than silently ignore an override, say so once — repeating
+  /// it per token would drown the console.
+  void _warnOverridesIgnored(LocalAiGenerationOverrides? overrides) {
+    if (overrides == null || overrides.isEmpty || _warnedOverrides) return;
+    _warnedOverrides = true;
+    // ignore: avoid_print
+    print(
+      '[flutter_local_ai/web] Per-call sampling overrides are ignored: the '
+      'Chrome Prompt API fixes temperature and topK when the session is '
+      'created. Create a session with the sampling you want instead.',
+    );
   }
 
   @override

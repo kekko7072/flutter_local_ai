@@ -50,6 +50,17 @@ wire.ToolArgumentKind _kindFromType(ToolArgumentType type) => switch (type) {
       ToolArgumentType.boolean => wire.ToolArgumentKind.boolean,
     };
 
+wire.GenerationOverrides? _overridesToWire(
+        LocalAiGenerationOverrides? overrides) =>
+    overrides == null || overrides.isEmpty
+        ? null
+        : wire.GenerationOverrides(
+            temperature: overrides.temperature,
+            topP: overrides.topP,
+            topK: overrides.topK,
+            maxOutputTokens: overrides.maxOutputTokens,
+          );
+
 wire.ToolSpec _toolToWire(LocalAiTool tool) => wire.ToolSpec(
       name: tool.name,
       description: tool.description,
@@ -234,21 +245,29 @@ class NativeLocalAiHost implements LocalAiHost, wire.LocalAiToolRunner {
       _service.addImage(sessionId: sessionId, imageBytes: imageBytes);
 
   @override
-  Future<String> generateResponse(int sessionId) =>
-      _service.generateResponse(sessionId);
+  Future<String> generateResponse(
+    int sessionId, {
+    LocalAiGenerationOverrides? overrides,
+  }) =>
+      _service.generateResponse(sessionId, _overridesToWire(overrides));
 
   @override
-  Future<void> generateResponseAsync(int sessionId) =>
-      _service.generateResponseAsync(sessionId);
+  Future<void> generateResponseAsync(
+    int sessionId, {
+    LocalAiGenerationOverrides? overrides,
+  }) =>
+      _service.generateResponseAsync(sessionId, _overridesToWire(overrides));
 
   @override
   Future<String> generateStructuredResponse({
     required int sessionId,
     required String schemaJson,
+    LocalAiGenerationOverrides? overrides,
   }) =>
       _service.generateStructuredResponse(
         sessionId: sessionId,
         schemaJson: schemaJson,
+        overrides: _overridesToWire(overrides),
       );
 
   @override

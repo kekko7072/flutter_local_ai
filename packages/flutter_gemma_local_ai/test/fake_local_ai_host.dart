@@ -20,6 +20,10 @@ class FakeLocalAiHost implements LocalAiHost {
 
   String response = 'ok';
 
+  /// Sampling the last generate call carried, so tests can assert that a
+  /// GenerationConfig reached the host instead of being dropped.
+  LocalAiGenerationOverrides? lastOverrides;
+
   void emit(LocalAiHostEvent event) => _events.add(event);
 
   @override
@@ -94,17 +98,31 @@ class FakeLocalAiHost implements LocalAiHost {
       images.putIfAbsent(sessionId, () => []).add(imageBytes);
 
   @override
-  Future<String> generateResponse(int sessionId) async => response;
+  Future<String> generateResponse(
+    int sessionId, {
+    LocalAiGenerationOverrides? overrides,
+  }) async {
+    lastOverrides = overrides;
+    return response;
+  }
 
   @override
-  Future<void> generateResponseAsync(int sessionId) async {}
+  Future<void> generateResponseAsync(
+    int sessionId, {
+    LocalAiGenerationOverrides? overrides,
+  }) async {
+    lastOverrides = overrides;
+  }
 
   @override
   Future<String> generateStructuredResponse({
     required int sessionId,
     required String schemaJson,
-  }) async =>
-      response;
+    LocalAiGenerationOverrides? overrides,
+  }) async {
+    lastOverrides = overrides;
+    return response;
+  }
 
   @override
   Future<void> stopGeneration(int sessionId) async =>

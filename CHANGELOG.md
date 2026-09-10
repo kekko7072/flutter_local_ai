@@ -1,49 +1,72 @@
 ## 0.1.0
 
-### flutter_gemma integration
-
-This release makes flutter_local_ai usable as the OS-model layer under
-[flutter_gemma](https://pub.dev/packages/flutter_gemma), through the new
+A rewrite onto one architecture, and the OS-model layer under
+[flutter_gemma](https://pub.dev/packages/flutter_gemma) via the new
 `flutter_gemma_local_ai` bridge package in this repository.
 
-* **New session API.** `LocalAiModel` mints `LocalAiSession`s that buffer a
-  turn (`addQueryChunk` / `addImage`) and then generate it
-  (`getResponse`, `getResponseAsync`, `getStructuredResponse`), with
-  `stopGeneration`, `sizeInTokens` and `close`. Several sessions can be open
-  at once, each with its own conversation. This is what flutter_gemma's
-  engine contract needs and what the existing one-shot `generateText` API
-  could not express.
-* **New availability facade.** `LocalAi.availability()`,
-  `LocalAi.ensureReady()` (with download progress) and `LocalAi.capabilities()`.
-  Capabilities are reported by the running host rather than assumed per
-  platform — the same binary answers differently across OS versions.
-* **New web support.** A Chrome Prompt API arm, including
-  schema-constrained output through `responseConstraint`, which no native
-  backend offers.
-* **Images.** `addImage` on Android (ML Kit GenAI). Apple needs OS 27 and
-  reports `supportsVision: false` until then; check before calling.
-* **Exact token counts.** Native on Android and on Apple 26.4+; elsewhere
-  `sizeInTokens` falls back to a documented `length / 4` estimate rather
-  than failing.
+### One implementation instead of two
+
+Every platform previously carried two paths: a hand-rolled method channel
+with its own generation logic, and nothing else. Both Dart surfaces now run
+on a single pigeon-typed session host per platform.
+
+* `FlutterLocalAi` is now a thin facade over the session layer rather than a
+  parallel implementation. Its API is unchanged; there is simply one place
+  where generation happens.
+* The Android plugin drops from 515 to 39 lines, the Apple plugin from 932 to
+  38, and Windows from 373 to 48. What is left is registration.
+* The native contract lives in `pigeon.dart`, generated for Dart, Kotlin,
+  Swift and C++. Its session half is shape-compatible with
+  `flutter_gemma_builtin_ai`'s `BuiltInAiService`.
+
+### New capability
+
+* **Session API.** `LocalAiModel` mints `LocalAiSession`s that buffer a turn
+  (`addQueryChunk` / `addImage`) then generate it, with `stopGeneration`,
+  `sizeInTokens` and `close`. Several conversations can be open at once.
+* **Availability facade.** `LocalAi.availability()`, `LocalAi.ensureReady()`
+  with download progress, and `LocalAi.capabilities()`. Capabilities are
+  reported by the running host, not assumed per platform — the same binary
+  answers differently across OS versions.
+* **Web.** A Chrome Prompt API arm, including schema-constrained output via
+  `responseConstraint`, which no native backend offers.
+* **Images.** `addImage` on Android. Apple needs OS 27 and reports
+  `supportsVision: false` until then.
+* **Exact token counts.** Native on Android and Apple 26.4+; elsewhere
+  `sizeInTokens` falls back to a documented `length / 4` estimate rather than
+  failing.
 * **Cancellation.** `stopGeneration` reaches the model, not just the Dart
   subscription.
-
-### Wire
-
-* The native contract is now defined by pigeon (`pigeon.dart`), typed across
-  Dart, Kotlin, Swift and C++. Its session half is shape-compatible with
-  `flutter_gemma_builtin_ai`'s `BuiltInAiService`.
-* Tokens, generation errors and download progress travel on one
-  `flutter_local_ai_events` event channel, tagged with a session id.
+* **Per-call sampling on the wire.** `GenerationOverrides` lets one call vary
+  temperature or length without disturbing the conversation, which is how
+  both Apple's `respond(options:)` and ML Kit's request builder already work.
 
 ### Breaking
 
+* `FlutterLocalAiPlatform` and `MethodChannelFlutterLocalAi` are removed. The
+  platform seam is now `LocalAiHost`; tests substitute one with
+  `debugLocalAiHost`.
+* `LocalAiPlatformInfo.fromMap` is replaced by
+  `LocalAiPlatformInfo.fromCapabilities`. The type is now a narrowed view of
+  `LocalAiBackendCapabilities`, which is the single source of truth.
+* `LocalAiBackend` gains `chromePromptApi`, so exhaustive switches over it
+  need a new case.
+* **Behaviour:** `generateText` without `instructions` now continues one
+  shared conversation on *every* platform. Apple already did; Android
+  silently discarded history. Pass `instructions:` for a stateless call, as
+  the docs have always described.
+* `registerTools` now restarts the shared conversation, because Apple's
+  FoundationModels binds tools when a session is constructed and cannot add
+  them to a live one.
 * The SDK floor moves to Dart 3.6 / Flutter 3.27, required by the
   `extension type` and `dart:js_interop` the web arm is written against.
 
-The existing `FlutterLocalAi` API (`initialize`, `generateText`,
-`generateTextStream`, `registerTools`, `getPlatformInfo`, `downloadModel`)
-is unchanged and keeps working on its own method channel.
+### Preserved
+
+Native Apple tool calling, schema-constrained output with Dart-side schema
+validation, Windows AI Foundry, genUI module specs, AICore availability
+reasons and the Play Store redirect all carry over unchanged, and are now
+reachable from the session API as well.
 
 ## 0.0.15
 

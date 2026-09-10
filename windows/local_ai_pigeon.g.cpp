@@ -255,6 +255,103 @@ ToolParameterSpec ToolParameterSpec::FromEncodableList(const EncodableList& list
   return decoded;
 }
 
+// GenerationOverrides
+
+GenerationOverrides::GenerationOverrides() {}
+
+GenerationOverrides::GenerationOverrides(
+  const double* temperature,
+  const double* top_p,
+  const int64_t* top_k,
+  const int64_t* max_output_tokens)
+ : temperature_(temperature ? std::optional<double>(*temperature) : std::nullopt),
+    top_p_(top_p ? std::optional<double>(*top_p) : std::nullopt),
+    top_k_(top_k ? std::optional<int64_t>(*top_k) : std::nullopt),
+    max_output_tokens_(max_output_tokens ? std::optional<int64_t>(*max_output_tokens) : std::nullopt) {}
+
+const double* GenerationOverrides::temperature() const {
+  return temperature_ ? &(*temperature_) : nullptr;
+}
+
+void GenerationOverrides::set_temperature(const double* value_arg) {
+  temperature_ = value_arg ? std::optional<double>(*value_arg) : std::nullopt;
+}
+
+void GenerationOverrides::set_temperature(double value_arg) {
+  temperature_ = value_arg;
+}
+
+
+const double* GenerationOverrides::top_p() const {
+  return top_p_ ? &(*top_p_) : nullptr;
+}
+
+void GenerationOverrides::set_top_p(const double* value_arg) {
+  top_p_ = value_arg ? std::optional<double>(*value_arg) : std::nullopt;
+}
+
+void GenerationOverrides::set_top_p(double value_arg) {
+  top_p_ = value_arg;
+}
+
+
+const int64_t* GenerationOverrides::top_k() const {
+  return top_k_ ? &(*top_k_) : nullptr;
+}
+
+void GenerationOverrides::set_top_k(const int64_t* value_arg) {
+  top_k_ = value_arg ? std::optional<int64_t>(*value_arg) : std::nullopt;
+}
+
+void GenerationOverrides::set_top_k(int64_t value_arg) {
+  top_k_ = value_arg;
+}
+
+
+const int64_t* GenerationOverrides::max_output_tokens() const {
+  return max_output_tokens_ ? &(*max_output_tokens_) : nullptr;
+}
+
+void GenerationOverrides::set_max_output_tokens(const int64_t* value_arg) {
+  max_output_tokens_ = value_arg ? std::optional<int64_t>(*value_arg) : std::nullopt;
+}
+
+void GenerationOverrides::set_max_output_tokens(int64_t value_arg) {
+  max_output_tokens_ = value_arg;
+}
+
+
+EncodableList GenerationOverrides::ToEncodableList() const {
+  EncodableList list;
+  list.reserve(4);
+  list.push_back(temperature_ ? EncodableValue(*temperature_) : EncodableValue());
+  list.push_back(top_p_ ? EncodableValue(*top_p_) : EncodableValue());
+  list.push_back(top_k_ ? EncodableValue(*top_k_) : EncodableValue());
+  list.push_back(max_output_tokens_ ? EncodableValue(*max_output_tokens_) : EncodableValue());
+  return list;
+}
+
+GenerationOverrides GenerationOverrides::FromEncodableList(const EncodableList& list) {
+  GenerationOverrides decoded;
+  auto& encodable_temperature = list[0];
+  if (!encodable_temperature.IsNull()) {
+    decoded.set_temperature(std::get<double>(encodable_temperature));
+  }
+  auto& encodable_top_p = list[1];
+  if (!encodable_top_p.IsNull()) {
+    decoded.set_top_p(std::get<double>(encodable_top_p));
+  }
+  auto& encodable_top_k = list[2];
+  if (!encodable_top_k.IsNull()) {
+    decoded.set_top_k(std::get<int64_t>(encodable_top_k));
+  }
+  auto& encodable_max_output_tokens = list[3];
+  if (!encodable_max_output_tokens.IsNull()) {
+    decoded.set_max_output_tokens(std::get<int64_t>(encodable_max_output_tokens));
+  }
+  return decoded;
+}
+
 // ToolSpec
 
 ToolSpec::ToolSpec(
@@ -338,6 +435,9 @@ EncodableValue PigeonInternalCodecSerializer::ReadValueOfType(
         return CustomEncodableValue(ToolParameterSpec::FromEncodableList(std::get<EncodableList>(ReadValue(stream))));
       }
     case 134: {
+        return CustomEncodableValue(GenerationOverrides::FromEncodableList(std::get<EncodableList>(ReadValue(stream))));
+      }
+    case 135: {
         return CustomEncodableValue(ToolSpec::FromEncodableList(std::get<EncodableList>(ReadValue(stream))));
       }
     default:
@@ -374,8 +474,13 @@ void PigeonInternalCodecSerializer::WriteValue(
       WriteValue(EncodableValue(std::any_cast<ToolParameterSpec>(*custom_value).ToEncodableList()), stream);
       return;
     }
-    if (custom_value->type() == typeid(ToolSpec)) {
+    if (custom_value->type() == typeid(GenerationOverrides)) {
       stream->WriteByte(134);
+      WriteValue(EncodableValue(std::any_cast<GenerationOverrides>(*custom_value).ToEncodableList()), stream);
+      return;
+    }
+    if (custom_value->type() == typeid(ToolSpec)) {
+      stream->WriteByte(135);
       WriteValue(EncodableValue(std::any_cast<ToolSpec>(*custom_value).ToEncodableList()), stream);
       return;
     }
@@ -721,7 +826,9 @@ void LocalAiService::SetUp(
             return;
           }
           const int64_t session_id_arg = encodable_session_id_arg.LongValue();
-          api->GenerateResponse(session_id_arg, [reply](ErrorOr<std::string>&& output) {
+          const auto& encodable_overrides_arg = args.at(1);
+          const auto* overrides_arg = encodable_overrides_arg.IsNull() ? nullptr : &(std::any_cast<const GenerationOverrides&>(std::get<CustomEncodableValue>(encodable_overrides_arg)));
+          api->GenerateResponse(session_id_arg, overrides_arg, [reply](ErrorOr<std::string>&& output) {
             if (output.has_error()) {
               reply(WrapError(output.error()));
               return;
@@ -750,7 +857,9 @@ void LocalAiService::SetUp(
             return;
           }
           const int64_t session_id_arg = encodable_session_id_arg.LongValue();
-          api->GenerateResponseAsync(session_id_arg, [reply](std::optional<FlutterError>&& output) {
+          const auto& encodable_overrides_arg = args.at(1);
+          const auto* overrides_arg = encodable_overrides_arg.IsNull() ? nullptr : &(std::any_cast<const GenerationOverrides&>(std::get<CustomEncodableValue>(encodable_overrides_arg)));
+          api->GenerateResponseAsync(session_id_arg, overrides_arg, [reply](std::optional<FlutterError>&& output) {
             if (output.has_value()) {
               reply(WrapError(output.value()));
               return;
@@ -785,7 +894,9 @@ void LocalAiService::SetUp(
             return;
           }
           const auto& schema_json_arg = std::get<std::string>(encodable_schema_json_arg);
-          api->GenerateStructuredResponse(session_id_arg, schema_json_arg, [reply](ErrorOr<std::string>&& output) {
+          const auto& encodable_overrides_arg = args.at(2);
+          const auto* overrides_arg = encodable_overrides_arg.IsNull() ? nullptr : &(std::any_cast<const GenerationOverrides&>(std::get<CustomEncodableValue>(encodable_overrides_arg)));
+          api->GenerateStructuredResponse(session_id_arg, schema_json_arg, overrides_arg, [reply](ErrorOr<std::string>&& output) {
             if (output.has_error()) {
               reply(WrapError(output.error()));
               return;

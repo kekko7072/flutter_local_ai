@@ -131,6 +131,35 @@ class LocalAiBackendCapabilities {
   );
 }
 
+/// Sampling for a single call, overriding what the session was created with.
+///
+/// A session fixes its sampling at creation, which is what an engine-style
+/// caller wants. Both Apple's `respond(options:)` and ML Kit's request
+/// builder also take options per request, though, so a prompt-oriented caller
+/// can vary temperature or length for one turn without disturbing the
+/// conversation. Every field is null-means-inherit.
+class LocalAiGenerationOverrides {
+  const LocalAiGenerationOverrides({
+    this.temperature,
+    this.topP,
+    this.topK,
+    this.maxOutputTokens,
+  });
+
+  final double? temperature;
+  final double? topP;
+  final int? topK;
+  final int? maxOutputTokens;
+
+  /// True when nothing is actually overridden, so callers can skip sending
+  /// an object that would change nothing.
+  bool get isEmpty =>
+      temperature == null &&
+      topP == null &&
+      topK == null &&
+      maxOutputTokens == null;
+}
+
 /// An event from the host, tagged with the session it belongs to.
 sealed class LocalAiHostEvent {
   const LocalAiHostEvent();
@@ -216,13 +245,20 @@ abstract class LocalAiHost {
     required Uint8List imageBytes,
   });
 
-  Future<String> generateResponse(int sessionId);
+  Future<String> generateResponse(
+    int sessionId, {
+    LocalAiGenerationOverrides? overrides,
+  });
 
-  Future<void> generateResponseAsync(int sessionId);
+  Future<void> generateResponseAsync(
+    int sessionId, {
+    LocalAiGenerationOverrides? overrides,
+  });
 
   Future<String> generateStructuredResponse({
     required int sessionId,
     required String schemaJson,
+    LocalAiGenerationOverrides? overrides,
   });
 
   Future<void> stopGeneration(int sessionId);
