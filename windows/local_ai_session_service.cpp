@@ -94,10 +94,28 @@ void LocalAiSessionService::PostEvent(const EncodableMap& payload) {
   }
 }
 
+void LocalAiSessionService::PostToken(int64_t session_id,
+                                      const std::string& text) {
+  PostEvent(EncodableMap{
+      {EncodableValue("partialResult"), EncodableValue(text)},
+      {EncodableValue("done"), EncodableValue(false)},
+      {EncodableValue("sessionId"), EncodableValue(session_id)},
+  });
+}
+
 void LocalAiSessionService::PostDone(int64_t session_id) {
   PostEvent(EncodableMap{
       {EncodableValue("partialResult"), EncodableValue("")},
       {EncodableValue("done"), EncodableValue(true)},
+      {EncodableValue("sessionId"), EncodableValue(session_id)},
+  });
+}
+
+void LocalAiSessionService::PostError(int64_t session_id,
+                                      const std::string& message) {
+  PostEvent(EncodableMap{
+      {EncodableValue("code"), EncodableValue("ERROR")},
+      {EncodableValue("message"), EncodableValue(message)},
       {EncodableValue("sessionId"), EncodableValue(session_id)},
   });
 }
@@ -381,22 +399,14 @@ void LocalAiSessionService::GenerateResponseAsync(
   std::string text;
   std::string error;
   if (!Generate(state, overrides, &text, &error)) {
-    PostEvent(EncodableMap{
-        {EncodableValue("code"), EncodableValue("ERROR")},
-        {EncodableValue("message"), EncodableValue(error)},
-        {EncodableValue("sessionId"), EncodableValue(session_id)},
-    });
+    PostError(session_id, error);
     return;
   }
   state->transcript += text;
   // One chunk rather than token-by-token: Windows AI is awaited
   // synchronously so nothing off the platform thread touches the sink.
   if (!text.empty()) {
-    PostEvent(EncodableMap{
-        {EncodableValue("partialResult"), EncodableValue(text)},
-        {EncodableValue("done"), EncodableValue(false)},
-        {EncodableValue("sessionId"), EncodableValue(session_id)},
-    });
+    PostToken(session_id, text);
   }
   PostDone(session_id);
 }

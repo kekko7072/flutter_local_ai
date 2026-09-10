@@ -35,9 +35,11 @@ void _validateNode(Object? node, String path) {
     }
     for (var i = 0; i < choices.length; i++) {
       if (choices[i] is! String) {
-        throw ArgumentError.value(choices[i], 'enum',
+        throw ArgumentError.value(
+            choices[i],
+            'enum',
             'Schema `enum` at $path[$i] must be a string; only string enums '
-            'are supported.');
+                'are supported.');
       }
     }
     return;
@@ -46,9 +48,11 @@ void _validateNode(Object? node, String path) {
   final rawType = node['type'];
   if (rawType != null && rawType is! String) {
     // e.g. `type: ['string', 'null']` for nullability — not supported yet.
-    throw ArgumentError.value(rawType, 'type',
+    throw ArgumentError.value(
+        rawType,
+        'type',
         'Schema `type` at $path must be a string; union/nullable types are '
-        'not supported.');
+            'not supported.');
   }
   final type = (rawType as String?)?.toLowerCase() ?? 'object';
 
@@ -67,17 +71,19 @@ void _validateNode(Object? node, String path) {
       final required = node['required'];
       if (required != null &&
           (required is! List || required.any((e) => e is! String))) {
-        throw ArgumentError.value(required, 'required',
+        throw ArgumentError.value(
+            required,
+            'required',
             'Schema `required` at $path must be a list of property-name '
-            'strings.');
+                'strings.');
       }
       return;
 
     case 'array':
       final items = node['items'];
       if (items == null) {
-        throw ArgumentError.value(null, 'items',
-            'Array schema at $path requires an `items` schema.');
+        throw ArgumentError.value(
+            null, 'items', 'Array schema at $path requires an `items` schema.');
       }
       _validateNode(items, '$path.items');
       _validateIntBound(node['minItems'], 'minItems', path);
@@ -86,9 +92,11 @@ void _validateNode(Object? node, String path) {
 
     default:
       if (_scalarTypes.contains(type)) return;
-      throw ArgumentError.value(type, 'type',
+      throw ArgumentError.value(
+          type,
+          'type',
           'Unsupported schema type `$type` at $path. Supported: object, '
-          'array, string, integer, number, boolean, or a string `enum`.');
+              'array, string, integer, number, boolean, or a string `enum`.');
   }
 }
 

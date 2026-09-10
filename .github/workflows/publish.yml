@@ -1,0 +1,64 @@
+name: Publish
+
+# Two packages ship from this repository, so the tag says which one:
+#
+#   v1.2.3                        -> flutter_local_ai
+#   flutter_gemma_local_ai-v0.2.0 -> packages/flutter_gemma_local_ai
+#
+# Both patterns must also be registered on pub.dev under the package's
+# Admin -> Automated publishing tab, against this repository. Without that,
+# the token exchange below is refused and nothing is published.
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+*"
+      - "flutter_gemma_local_ai-v[0-9]+.[0-9]+.[0-9]+*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      # Required: pub.dev authenticates the run by its OIDC identity, so
+      # there is no long-lived credential in this repository to leak.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve the package this tag refers to
+        id: target
+        run: |
+          if [[ "${GITHUB_REF_NAME}" == flutter_gemma_local_ai-* ]]; then
+            echo "path=packages/flutter_gemma_local_ai" >> "$GITHUB_OUTPUT"
+            echo "name=flutter_gemma_local_ai" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=." >> "$GITHUB_OUTPUT"
+            echo "name=flutter_local_ai" >> "$GITHUB_OUTPUT"
+          fi
+
+      # setup-dart performs the pub.dev OIDC exchange and writes the
+      # credentials; flutter-action follows so `flutter pub` is what actually
+      # resolves the Flutter SDK dependencies. Both read the same pub config.
+      - uses: dart-lang/setup-dart@v1
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.27.x"
+          cache: true
+
+      - name: Check the tag matches the pubspec version
+        working-directory: ${{ steps.target.outputs.path }}
+        run: |
+          pubspec=$(grep -m1 '^version:' pubspec.yaml | awk '{print $2}')
+          tag="${GITHUB_REF_NAME#flutter_gemma_local_ai-}"
+          tag="${tag#v}"
+          if [[ "$pubspec" != "$tag" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME says $tag, pubspec.yaml says" \
+                 "$pubspec. Publishing them out of step makes the version on" \
+                 "pub.dev untraceable to a commit."
+            exit 1
+          fi
+
+      - name: Publish ${{ steps.target.outputs.name }}
+        working-directory: ${{ steps.target.outputs.path }}
+        run: |
+          flutter pub get
+          flutter pub publish --force

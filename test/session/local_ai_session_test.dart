@@ -2,9 +2,8 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_local_ai/flutter_local_ai.dart';
+import 'package:flutter_local_ai/testing.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'fake_local_ai_host.dart';
 
 void main() {
   late FakeLocalAiHost host;
@@ -23,8 +22,7 @@ void main() {
       LocalAiModel.create(supportImage: supportImage, host: host);
 
   group('sessions', () {
-    test('each session gets a distinct id, never reused after close',
-        () async {
+    test('each session gets a distinct id, never reused after close', () async {
       final model = await newModel();
       final first = await model.openSession();
       await first.close();
@@ -42,7 +40,8 @@ void main() {
       await session.addQueryChunk('Hello ');
       await session.addQueryChunk('world');
 
-      expect(host.transcripts[session.sessionId].toString(), 'Hello world');
+      expect(host.session(session.sessionId)!.transcript.toString(),
+          'Hello world');
     });
 
     test('a closed session refuses further work', () async {
@@ -62,10 +61,7 @@ void main() {
       await session.close();
       await session.close();
 
-      expect(
-        host.closedSessions.where((id) => id == session.sessionId).length,
-        1,
-      );
+      expect(host.closedIds.where((id) => id == session.sessionId).length, 1);
     });
 
     test('closing the model closes every open session', () async {
@@ -75,8 +71,8 @@ void main() {
 
       await model.close();
 
-      expect(host.closedSessions, containsAll([a.sessionId, b.sessionId]));
-      expect(host.calls, contains('closeModel'));
+      expect(host.closedIds, containsAll([a.sessionId, b.sessionId]));
+      expect(host.modelClosed, isTrue);
       expect(model.sessions, isEmpty);
     });
 
@@ -101,14 +97,10 @@ void main() {
       await pumpEventQueue();
 
       // Interleaved, as two concurrent generations on one host would be.
-      host.emit(LocalAiTokenEvent(
-          sessionId: a.sessionId, partialResult: 'a1', done: false));
-      host.emit(LocalAiTokenEvent(
-          sessionId: b.sessionId, partialResult: 'b1', done: false));
-      host.emit(LocalAiTokenEvent(
-          sessionId: a.sessionId, partialResult: 'a2', done: true));
-      host.emit(LocalAiTokenEvent(
-          sessionId: b.sessionId, partialResult: 'b2', done: true));
+      host.emitToken(a.sessionId, 'a1');
+      host.emitToken(b.sessionId, 'b1');
+      host.emitDone(a.sessionId, text: 'a2');
+      host.emitDone(b.sessionId, text: 'b2');
       await Future.wait([aDone, bDone]);
 
       expect(aChunks, ['a1', 'a2']);
@@ -124,11 +116,9 @@ void main() {
           session.getResponseAsync().listen(chunks.add).asFuture<void>();
       await pumpEventQueue();
 
-      host.emit(LocalAiTokenEvent(
-          sessionId: session.sessionId, partialResult: 'hi', done: false));
+      host.emitToken(session.sessionId, 'hi');
       // The terminal event carries no text — a common host shape.
-      host.emit(LocalAiTokenEvent(
-          sessionId: session.sessionId, partialResult: '', done: true));
+      host.emitDone(session.sessionId);
       await done;
 
       expect(chunks, ['hi']);
@@ -153,9 +143,7 @@ void main() {
           );
       await pumpEventQueue();
 
-      host.emit(
-        LocalAiErrorEvent(sessionId: a.sessionId, message: 'model exploded'),
-      );
+      host.emitError(a.sessionId, 'model exploded');
       await aDone.future;
 
       expect(aErrors.single, isA<LocalAiGenerationException>());
@@ -189,8 +177,7 @@ void main() {
       expect(await session.sizeInTokens('whatever'), 42);
     });
 
-    test('falls back to an estimate when the host has no tokenizer',
-        () async {
+    test('falls back to an estimate when the host has no tokenizer', () async {
       host.countTokensError = LocalAiTokenizerUnavailable('no tokenizer');
       final model = await newModel();
       final session = await model.openSession();
@@ -217,10 +204,7 @@ void main() {
         () => session.getStructuredResponse({'type': 'wat'}),
         throwsArgumentError,
       );
-      expect(
-        host.calls.where((c) => c.startsWith('generateStructuredResponse')),
-        isEmpty,
-      );
+      expect(host.calls, isNot(contains('generateStructuredResponse')));
     });
 
     test('sends a valid schema as JSON', () async {
@@ -235,7 +219,7 @@ void main() {
       });
 
       expect(
-        host.calls.last,
+        host.session(session.sessionId)!.lastSchemaJson,
         contains('"properties":{"name":{"type":"string"}}'),
       );
     });
@@ -249,7 +233,140 @@ void main() {
 
       await session.addImage(bytes);
 
-      expect(host.images[session.sessionId], [bytes]);
+      expect(host.session(session.sessionId)!.images, [bytes]);
+    });
+  });
+
+  group('model', () {
+    test('image support is requested of the host up front', () async {
+      await newModel(supportImage: true);
+
+      // The host has to prepare a multimodal path before any session exists.
+      expect(host.modelSupportsImage, isTrue);
+    });
+
+    test('closing the model releases it at the host', () async {
+      final model = await newModel();
+      await model.close();
+
+      expect(host.modelClosed, isTrue);
+    });
+
+    test('closing twice is a no-op', () async {
+      final model = await newModel();
+      await model.close();
+      host.calls.clear();
+      await model.close();
+
+      expect(host.calls, isEmpty);
+    });
+
+    test('session options reach the host', () async {
+      final model = await newModel();
+      await model.openSession(
+        temperature: 0.4,
+        topK: 12,
+        topP: 0.85,
+        maxOutputTokens: 256,
+        systemInstruction: 'Be brief.',
+      );
+
+      final created = host.sessions.single;
+      expect(created.temperature, 0.4);
+      expect(created.topK, 12);
+      expect(created.topP, 0.85);
+      expect(created.maxOutputTokens, 256);
+      expect(created.systemInstruction, 'Be brief.');
+    });
+
+    test('a host that rejects the session does not leave one behind', () async {
+      final model = await newModel();
+      host.createSessionError = StateError('tools unsupported');
+
+      await expectLater(model.openSession(), throwsStateError);
+      expect(model.sessions, isEmpty);
+    });
+  });
+
+  group('generation controls', () {
+    test('stopGeneration reaches the host', () async {
+      final model = await newModel();
+      final session = await model.openSession();
+
+      await session.stopGeneration();
+
+      expect(host.calls, contains('stopGeneration'));
+    });
+
+    test('stopGeneration on a closed session still reaches the host', () async {
+      final model = await newModel();
+      final session = await model.openSession();
+      await session.close();
+
+      // Deliberately not guarded: a stop racing a close must not throw, or
+      // every cancel path needs its own try/catch.
+      await session.stopGeneration();
+
+      expect(host.calls, contains('stopGeneration'));
+    });
+
+    test('per-call sampling reaches the host without touching the session',
+        () async {
+      final model = await newModel();
+      final session = await model.openSession(temperature: 0.9);
+
+      await session.getResponse(
+        overrides: const LocalAiGenerationOverrides(
+          temperature: 0.1,
+          maxOutputTokens: 32,
+        ),
+      );
+
+      expect(host.lastOverrides?.temperature, 0.1);
+      expect(host.lastOverrides?.maxOutputTokens, 32);
+      expect(host.sessions.single.temperature, 0.9);
+    });
+
+    test('an override that changes nothing is not sent', () async {
+      final model = await newModel();
+      final session = await model.openSession();
+
+      await session.getResponse(
+        overrides: const LocalAiGenerationOverrides(),
+      );
+
+      // An empty override would make a host rebuild its options for no
+      // reason, and on Apple that can flip the sampling mode.
+      expect(host.lastOverrides, isNull);
+    });
+
+    test('structured generation carries overrides too', () async {
+      final model = await newModel();
+      final session = await model.openSession();
+
+      await session.getStructuredResponse(
+        const {'type': 'object'},
+        overrides: const LocalAiGenerationOverrides(maxOutputTokens: 16),
+      );
+
+      expect(host.lastOverrides?.maxOutputTokens, 16);
+    });
+  });
+
+  group('LocalAiAvailability', () {
+    test('only downloadable and downloading are worth waiting on', () {
+      expect(LocalAiAvailability.downloadable.isTransient, isTrue);
+      expect(LocalAiAvailability.downloading.isTransient, isTrue);
+
+      for (final terminal in [
+        LocalAiAvailability.available,
+        LocalAiAvailability.unavailableDeviceUnsupported,
+        LocalAiAvailability.unavailableOsTooOld,
+        LocalAiAvailability.unavailableDisabled,
+        LocalAiAvailability.unavailableOther,
+      ]) {
+        expect(terminal.isTransient, isFalse, reason: '$terminal');
+      }
     });
   });
 
@@ -280,8 +397,7 @@ void main() {
 
       final ready = LocalAi.ensureReady(onProgress: percents.add);
       await pumpEventQueue();
-      host.emit(const LocalAiDownloadProgressEvent(
-          bytesDownloaded: 50, bytesTotal: 100));
+      host.emitDownloadProgress(50, bytesTotal: 100);
       await pumpEventQueue();
       host.availability = LocalAiAvailability.available;
       await ready;
@@ -290,8 +406,7 @@ void main() {
       expect(percents, contains(50));
     });
 
-    test('joins an in-flight download instead of starting a second',
-        () async {
+    test('joins an in-flight download instead of starting a second', () async {
       host.availability = LocalAiAvailability.downloading;
 
       final ready = LocalAi.ensureReady();

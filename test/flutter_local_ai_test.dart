@@ -1,7 +1,6 @@
 import 'package:flutter_local_ai/flutter_local_ai.dart';
+import 'package:flutter_local_ai/testing.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'session/fake_local_ai_host.dart';
 
 void main() {
   late FakeLocalAiHost host;
@@ -36,16 +35,16 @@ void main() {
     test('initialize starts a session carrying the instructions', () async {
       await subject.initialize(instructions: 'Be terse.');
 
-      expect(host.createdSessions.single['systemInstruction'], 'Be terse.');
+      expect(host.sessions.single.systemInstruction, 'Be terse.');
     });
 
     test('initialize again replaces the conversation', () async {
       await subject.initialize(instructions: 'First.');
       await subject.initialize(instructions: 'Second.');
 
-      expect(host.createdSessions.length, 2);
-      expect(host.closedSessions, [1]);
-      expect(host.createdSessions.last['systemInstruction'], 'Second.');
+      expect(host.sessions, hasLength(2));
+      expect(host.closedIds, [1]);
+      expect(host.sessions.last.systemInstruction, 'Second.');
     });
 
     test('generateText creates a session on its own without initialize',
@@ -55,7 +54,7 @@ void main() {
       final response = await subject.generateText(prompt: 'hi');
 
       expect(response.text, 'hello');
-      expect(host.createdSessions, hasLength(1));
+      expect(host.sessions, hasLength(1));
     });
 
     test('successive calls share one conversation', () async {
@@ -63,8 +62,8 @@ void main() {
       await subject.generateText(prompt: 'second');
 
       // One session, both turns on it — the same on every platform now.
-      expect(host.createdSessions, hasLength(1));
-      expect(host.transcripts[1].toString(), 'firstsecond');
+      expect(host.sessions, hasLength(1));
+      expect(host.sessions.single.transcript.toString(), 'firstsecond');
     });
 
     test('one-shot instructions run in a throwaway session', () async {
@@ -73,11 +72,10 @@ void main() {
         instructions: 'Answer in French.',
       );
 
-      expect(host.createdSessions.single['systemInstruction'],
-          'Answer in French.');
+      expect(host.sessions.single.systemInstruction, 'Answer in French.');
       // The throwaway must not outlive the call, or the OS keeps a context
       // alive for a conversation nobody will continue.
-      expect(host.closedSessions, [1]);
+      expect(host.closedIds, [1]);
     });
 
     test('a one-shot call leaves the shared conversation untouched', () async {
@@ -87,8 +85,8 @@ void main() {
 
       // Session 1 is the shared one and is still open; session 2 was the
       // throwaway.
-      expect(host.closedSessions, [2]);
-      expect(host.transcripts[1].toString(), 'later');
+      expect(host.closedIds, [2]);
+      expect(host.session(1)!.transcript.toString(), 'later');
     });
 
     test('a GenerationConfig reaches the host as per-call sampling', () async {
@@ -100,7 +98,7 @@ void main() {
       expect(host.lastOverrides?.maxOutputTokens, 64);
       expect(host.lastOverrides?.temperature, 0.2);
       // Sampling is per call, so the shared session keeps its own settings.
-      expect(host.createdSessions.single['maxOutputTokens'], isNull);
+      expect(host.sessions.single.maxOutputTokens, isNull);
     });
 
     test('generateText reports timing and a token count', () async {
@@ -132,10 +130,7 @@ void main() {
         ),
         throwsArgumentError,
       );
-      expect(
-        host.calls.where((c) => c.startsWith('generateStructuredResponse')),
-        isEmpty,
-      );
+      expect(host.calls, isNot(contains('generateStructuredResponse')));
     });
 
     test('a valid schema routes to constrained generation', () async {
@@ -151,7 +146,7 @@ void main() {
         ),
       );
 
-      expect(host.calls.last, startsWith('generateStructuredResponse'));
+      expect(host.calls, contains('generateStructuredResponse'));
     });
 
     test('generateTextStream emits deltas', () async {
@@ -162,10 +157,8 @@ void main() {
           .asFuture<void>();
       await pumpEventQueue();
 
-      host.emit(const LocalAiTokenEvent(
-          sessionId: 1, partialResult: 'a', done: false));
-      host.emit(
-          const LocalAiTokenEvent(sessionId: 1, partialResult: 'b', done: true));
+      host.emitToken(1, 'a');
+      host.emitDone(1, text: 'b');
       await done;
 
       expect(chunks, ['a', 'b']);
@@ -178,11 +171,10 @@ void main() {
           .asFuture<void>();
       await pumpEventQueue();
 
-      host.emit(
-          const LocalAiTokenEvent(sessionId: 1, partialResult: '', done: true));
+      host.emitDone(1);
       await done;
 
-      expect(host.closedSessions, [1]);
+      expect(host.closedIds, [1]);
     });
 
     test('generateTextStream rejects structured-output requests', () async {
@@ -213,15 +205,15 @@ void main() {
 
       // Apple binds tools when a session is constructed and cannot add them
       // to a live one, so the old session has to go.
-      expect(host.closedSessions, [1]);
-      expect(host.createdSessions.last['tools'], ['weather']);
+      expect(host.closedIds, [1]);
+      expect(host.sessions.last.toolNames, ['weather']);
     });
 
     test('registering an empty list stops offering tools', () async {
       await subject.registerTools([]);
       await subject.generateText(prompt: 'hi');
 
-      expect(host.createdSessions.single['tools'], isNull);
+      expect(host.sessions.single.toolNames, isEmpty);
     });
 
     test('getPlatformInfo narrows the host capabilities', () async {
@@ -266,11 +258,11 @@ void main() {
     test('downloadModel reports progress then completion', () async {
       host.availability = LocalAiAvailability.downloadable;
       final statuses = <ModelDownloadStatus>[];
-      final done = subject.downloadModel().listen(statuses.add).asFuture<void>();
+      final done =
+          subject.downloadModel().listen(statuses.add).asFuture<void>();
       await pumpEventQueue();
 
-      host.emit(const LocalAiDownloadProgressEvent(
-          bytesDownloaded: 1024, bytesTotal: 0));
+      host.emitDownloadProgress(1024);
       await pumpEventQueue();
       host.availability = LocalAiAvailability.available;
       await done;
@@ -283,8 +275,7 @@ void main() {
       expect(statuses[1].totalBytesDownloaded, 1024);
     });
 
-    test('openAICorePlayStore is false where there is no Play Store',
-        () async {
+    test('openAICorePlayStore is false where there is no Play Store', () async {
       expect(await subject.openAICorePlayStore(), isFalse);
     });
   });
@@ -319,7 +310,8 @@ void main() {
       });
     });
 
-    test('a schema implies JSON mode even when responseFormat is left text', () {
+    test('a schema implies JSON mode even when responseFormat is left text',
+        () {
       const config = GenerationConfig(
         maxTokens: 100,
         schema: {'type': 'object'},

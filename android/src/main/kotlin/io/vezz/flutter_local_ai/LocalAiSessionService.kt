@@ -121,8 +121,16 @@ internal class LocalAiSessionService(
     scope.launch(Dispatchers.Main) { eventSink?.success(payload) }
   }
 
+  private fun postToken(sessionId: Long, text: String) = postEvent(
+    mapOf("partialResult" to text, "done" to false, "sessionId" to sessionId)
+  )
+
   private fun postDone(sessionId: Long) = postEvent(
     mapOf("partialResult" to "", "done" to true, "sessionId" to sessionId)
+  )
+
+  private fun postError(sessionId: Long, message: String) = postEvent(
+    mapOf("code" to "ERROR", "message" to message, "sessionId" to sessionId)
   )
 
   // === Availability ===
@@ -503,13 +511,7 @@ internal class LocalAiSessionService(
           val piece = chunk.candidates.firstOrNull()?.text.orEmpty()
           if (piece.isNotEmpty()) {
             generated.append(piece)
-            postEvent(
-              mapOf(
-                "partialResult" to piece,
-                "done" to false,
-                "sessionId" to sessionId,
-              )
-            )
+            postToken(sessionId, piece)
           }
         }
         commitTurn(state, generated.toString())
@@ -519,13 +521,7 @@ internal class LocalAiSessionService(
         // stopGeneration posts the single completion event on that path.
         throw e
       } catch (e: Exception) {
-        postEvent(
-          mapOf(
-            "code" to "ERROR",
-            "message" to (e.message ?: "Generation failed"),
-            "sessionId" to sessionId,
-          )
-        )
+        postError(sessionId, e.message ?: "Generation failed")
       }
     }
     callback(Result.success(Unit))

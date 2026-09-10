@@ -140,8 +140,16 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
     }
   }
 
+  private func postToken(_ sessionId: Int64, _ text: String) {
+    postEvent(["partialResult": text, "done": false, "sessionId": sessionId])
+  }
+
   private func postDone(_ sessionId: Int64) {
     postEvent(["partialResult": "", "done": true, "sessionId": sessionId])
+  }
+
+  private func postError(_ sessionId: Int64, _ message: String) {
+    postEvent(["code": "ERROR", "message": message, "sessionId": sessionId])
   }
 
   #if canImport(FoundationModels)
@@ -563,11 +571,7 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
             if Task.isCancelled { break }
             let delta = converter.delta(from: snapshot.content)
             if !delta.isEmpty {
-              self.postEvent([
-                "partialResult": delta,
-                "done": false,
-                "sessionId": sessionId,
-              ])
+              self.postToken(sessionId, delta)
             }
           }
           // stopGeneration already posted the single completion on the cancel
@@ -577,11 +581,7 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
         } catch is CancellationError {
           return
         } catch {
-          self.postEvent([
-            "code": "ERROR",
-            "message": Self.describeGenerationError(error),
-            "sessionId": sessionId,
-          ])
+          self.postError(sessionId, Self.describeGenerationError(error))
         }
       }
       completion(.success(()))

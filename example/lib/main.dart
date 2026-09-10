@@ -234,7 +234,8 @@ class _MyHomePageState extends State<MyHomePage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to ${enable ? "enable" : "disable"} tools: $e'),
+            content:
+                Text('Failed to ${enable ? "enable" : "disable"} tools: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -249,26 +250,26 @@ class _MyHomePageState extends State<MyHomePage> {
         description: 'Searches a local database for bread recipes.',
         parameters: const [
           ToolParameter(
-              name: 'searchTerm',
-              type: ToolArgumentType.string,
-              description: 'Type of bread to search for',
-            ),
-            ToolParameter(
-              name: 'limit',
-              type: ToolArgumentType.integer,
-              description: 'Number of recipes to return',
-            ),
-          ],
-          onCall: (arguments) async {
-            final term = arguments['searchTerm']?.toString() ?? '';
-            final limit = (arguments['limit'] as num?)?.toInt() ?? 2;
-            // Replace with your own data lookup
-            return List.generate(
-              limit,
-              (index) => 'Recipe ${index + 1} for "$term"',
-            );
-          },
-        ),
+            name: 'searchTerm',
+            type: ToolArgumentType.string,
+            description: 'Type of bread to search for',
+          ),
+          ToolParameter(
+            name: 'limit',
+            type: ToolArgumentType.integer,
+            description: 'Number of recipes to return',
+          ),
+        ],
+        onCall: (arguments) async {
+          final term = arguments['searchTerm']?.toString() ?? '';
+          final limit = (arguments['limit'] as num?)?.toInt() ?? 2;
+          // Replace with your own data lookup
+          return List.generate(
+            limit,
+            (index) => 'Recipe ${index + 1} for "$term"',
+          );
+        },
+      ),
       LocalAiTool(
         name: 'quickMath',
         description: 'Performs a basic arithmetic operation on two numbers.',
@@ -521,7 +522,8 @@ class _MyHomePageState extends State<MyHomePage> {
     );
     debugPrint('[LocalAI][genUI] raw response: ${rawOutput ?? '(no output)'}');
     if (spec == null) {
-      debugPrint('[LocalAI][genUI] module parse failed: ${generator.lastError}');
+      debugPrint(
+          '[LocalAI][genUI] module parse failed: ${generator.lastError}');
     }
 
     setState(() {
@@ -768,8 +770,7 @@ class _MyHomePageState extends State<MyHomePage> {
                       children: [
                         Icon(
                           _isInitialized ? Icons.check_circle : Icons.pending,
-                          color:
-                              _isInitialized ? Colors.green : Colors.orange,
+                          color: _isInitialized ? Colors.green : Colors.orange,
                           size: 20,
                         ),
                         const SizedBox(width: 8),
@@ -813,8 +814,7 @@ class _MyHomePageState extends State<MyHomePage> {
                         Icon(
                           _modelStatus == ModelFeatureStatus.available
                               ? Icons.check_circle
-                              : _modelStatus ==
-                                      ModelFeatureStatus.downloadable
+                              : _modelStatus == ModelFeatureStatus.downloadable
                                   ? Icons.download
                                   : _modelStatus ==
                                           ModelFeatureStatus.downloading
@@ -822,8 +822,7 @@ class _MyHomePageState extends State<MyHomePage> {
                                       : Icons.info,
                           color: _modelStatus == ModelFeatureStatus.available
                               ? Colors.green
-                              : _modelStatus ==
-                                      ModelFeatureStatus.downloadable
+                              : _modelStatus == ModelFeatureStatus.downloadable
                                   ? Colors.orange
                                   : _modelStatus ==
                                           ModelFeatureStatus.downloading
@@ -839,7 +838,8 @@ class _MyHomePageState extends State<MyHomePage> {
                         ),
                       ],
                     ),
-                    if (_isDownloading || _modelStatus == ModelFeatureStatus.downloading) ...[
+                    if (_isDownloading ||
+                        _modelStatus == ModelFeatureStatus.downloading) ...[
                       const SizedBox(height: 8),
                       Row(
                         children: [
@@ -870,11 +870,11 @@ class _MyHomePageState extends State<MyHomePage> {
                     ],
                     const SizedBox(height: 8),
                     ElevatedButton.icon(
-                      onPressed: (_modelStatus ==
-                                  ModelFeatureStatus.downloadable &&
-                              !_isDownloading)
-                          ? _downloadModel
-                          : null,
+                      onPressed:
+                          (_modelStatus == ModelFeatureStatus.downloadable &&
+                                  !_isDownloading)
+                              ? _downloadModel
+                              : null,
                       icon: const Icon(Icons.download),
                       label: const Text('Download Model'),
                       style: ElevatedButton.styleFrom(

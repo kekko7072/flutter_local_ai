@@ -139,8 +139,7 @@ Future<void> pumpTextStream(
   JSObject stream,
   void Function(String chunk) onChunk,
 ) async {
-  final reader =
-      stream.callMethod<_StreamReader>('getReader'.toJS);
+  final reader = stream.callMethod<_StreamReader>('getReader'.toJS);
   try {
     while (true) {
       final result = await reader.read().toDart;

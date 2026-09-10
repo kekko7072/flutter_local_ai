@@ -8,9 +8,8 @@ import 'package:flutter_gemma/core/model_management/model_specs.dart'
 import 'package:flutter_gemma/core/registry/runtime_config.dart';
 import 'package:flutter_gemma_local_ai/flutter_gemma_local_ai.dart';
 import 'package:flutter_local_ai/flutter_local_ai.dart';
+import 'package:flutter_local_ai/testing.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'fake_local_ai_host.dart';
 
 InferenceModelSpec _spec({ModelFileType fileType = ModelFileType.builtIn}) =>
     InferenceModelSpec(
@@ -51,8 +50,7 @@ void main() {
       }
     });
 
-    test('reserves the builtIn Hugging Face slot with a clear error',
-        () async {
+    test('reserves the builtIn Hugging Face slot with a clear error', () async {
       const resolver = LocalAiHuggingFaceResolver();
 
       expect(resolver.canResolve('any/repo', fileType: ModelFileType.builtIn),
@@ -97,14 +95,13 @@ void main() {
         await const LocalAiEngine().createModel(_spec(), _config)
             as LocalAiGemmaModel;
 
-    test('createSession replaces and closes the previous singleton',
-        () async {
+    test('createSession replaces and closes the previous singleton', () async {
       final model = await newModel();
 
       final first = await model.createSession();
       final second = await model.createSession();
 
-      expect(host.closedSessions, [1]);
+      expect(host.closedIds, [1]);
       expect(model.session, same(second));
       expect(model.sessions, [second]);
       expect(first, isNot(same(second)));
@@ -118,7 +115,7 @@ void main() {
 
       expect(model.session, same(singleton));
       expect(model.sessions, containsAll([singleton, detached]));
-      expect(host.closedSessions, isEmpty);
+      expect(host.closedIds, isEmpty);
     });
 
     test('closing an open session removes it from sessions', () async {
@@ -148,9 +145,9 @@ void main() {
         temperature: 0.3,
       );
 
-      expect(host.createdSessions.single['systemInstruction'], 'Be terse.');
-      expect(host.createdSessions.single['maxOutputTokens'], 128);
-      expect(host.createdSessions.single['temperature'], 0.3);
+      expect(host.sessions.single.systemInstruction, 'Be terse.');
+      expect(host.sessions.single.maxOutputTokens, 128);
+      expect(host.sessions.single.temperature, 0.3);
     });
 
     test('flutter_gemma tools are not handed to the native tool runner',
@@ -162,7 +159,7 @@ void main() {
       // them natively too would run two tool loops for one turn.
       await model.createSession(tools: const []);
 
-      expect(host.createdSessions.single['tools'], isNull);
+      expect(host.sessions.single.toolNames, isEmpty);
     });
   });
 
@@ -177,7 +174,7 @@ void main() {
       );
 
       expect(
-        host.transcripts[session.localAiSession.sessionId].toString(),
+        host.session(session.localAiSession.sessionId)!.transcript.toString(),
         contains('Hello!'),
       );
     });
@@ -202,9 +199,58 @@ void main() {
         ),
       );
 
+      final fake = host.session(session.localAiSession.sessionId)!;
+      expect(fake.images, [bytes]);
+      expect(fake.transcript.toString(), contains('What is this?'));
+    });
+
+    test('sizeInTokens and stopGeneration delegate to the session', () async {
+      final model = await const LocalAiEngine().createModel(_spec(), _config)
+          as LocalAiGemmaModel;
+      final session = await model.createSession();
+
+      host.countTokensResult = 11;
+      expect(await session.sizeInTokens('some text'), 11);
+
+      await session.stopGeneration();
+      expect(host.calls, contains('stopGeneration'));
+    });
+
+    test('a streamed response reaches flutter_gemma unchanged', () async {
+      final model = await const LocalAiEngine().createModel(_spec(), _config)
+          as LocalAiGemmaModel;
+      final session = await model.createSession() as LocalAiGemmaSession;
       final id = session.localAiSession.sessionId;
-      expect(host.images[id], [bytes]);
-      expect(host.transcripts[id].toString(), contains('What is this?'));
+
+      final chunks = <String>[];
+      final done = session.getResponseAsync().listen(chunks.add).asFuture();
+      await pumpEventQueue();
+      host.emitToken(id, 'one ');
+      host.emitDone(id, text: 'two');
+      await done;
+
+      expect(chunks, ['one ', 'two']);
+    });
+
+    test('closing the model closes it at the host', () async {
+      final model = await const LocalAiEngine().createModel(_spec(), _config)
+          as LocalAiGemmaModel;
+      await model.createSession();
+
+      await model.close();
+
+      expect(host.modelClosed, isTrue);
+      expect(model.sessions, isEmpty);
+    });
+
+    test('close listeners fire so core can reset its bookkeeping', () async {
+      final model = await const LocalAiEngine().createModel(_spec(), _config);
+      var notified = false;
+      model.addCloseListener(() => notified = true);
+
+      await model.close();
+
+      expect(notified, isTrue);
     });
 
     test('metrics are empty rather than invented', () async {

@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A superseded run on the same branch has nothing left to tell us.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: "3.27.x"
+
+jobs:
+  # Both packages get identical treatment; the matrix is the whole reason
+  # there is one job here instead of two copies.
+  check:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: flutter_local_ai
+            path: .
+          - name: flutter_gemma_local_ai
+            path: packages/flutter_gemma_local_ai
+    defaults:
+      run:
+        working-directory: ${{ matrix.path }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Verify formatting
+        run: dart format --output=none --set-exit-if-changed .
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test --coverage
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-${{ matrix.name }}
+          path: ${{ matrix.path }}/coverage/lcov.info
+          if-no-files-found: ignore
+
+  # The native hosts are generated from pigeon.dart. Hand-editing the output
+  # is easy and silently survives review until a wire mismatch shows up on a
+  # device, so the build refuses a diff between what is committed and what
+  # the generator produces.
+  pigeon:
+    name: Generated code is current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get
+      - run: dart run pigeon --input pigeon.dart
+      - run: dart format .
+      - name: Fail if the generated output differs from what is committed
+        run: |
+          if ! git diff --exit-code; then
+            echo "::error::Generated files are stale. Run:" \
+                 "dart run pigeon --input pigeon.dart && dart format ."
+            exit 1
+          fi
+
+  # A plugin that cannot be packaged is broken for everyone downstream, and
+  # the failure modes (an ignore rule hiding a pubspec, a missing licence) do
+  # not show up in analyze or test.
+  package:
+    name: Package ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: flutter_local_ai
+            path: .
+          - name: flutter_gemma_local_ai
+            path: packages/flutter_gemma_local_ai
+    defaults:
+      run:
+        working-directory: ${{ matrix.path }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter pub get
+      - run: flutter pub publish --dry-run

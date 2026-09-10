@@ -145,7 +145,9 @@ class LocalAiSessionService : public flutter_local_ai_pigeon::LocalAiService {
                 std::string* error);
 
   void PostEvent(const flutter::EncodableMap& payload);
+  void PostToken(int64_t session_id, const std::string& text);
   void PostDone(int64_t session_id);
+  void PostError(int64_t session_id, const std::string& message);
 
   std::map<int64_t, SessionState> sessions_;
   std::unique_ptr<flutter::EventChannel<flutter::EncodableValue>>

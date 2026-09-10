@@ -15,7 +15,8 @@ PlatformException _createConnectionError(String channelName) {
   );
 }
 
-List<Object?> wrapResponse({Object? result, PlatformException? error, bool empty = false}) {
+List<Object?> wrapResponse(
+    {Object? result, PlatformException? error, bool empty = false}) {
   if (empty) {
     return <Object?>[];
   }
@@ -24,20 +25,21 @@ List<Object?> wrapResponse({Object? result, PlatformException? error, bool empty
   }
   return <Object?>[error.code, error.message, error.details];
 }
+
 bool _deepEquals(Object? a, Object? b) {
   if (a is List && b is List) {
     return a.length == b.length &&
         a.indexed
-        .every(((int, dynamic) item) => _deepEquals(item.$2, b[item.$1]));
+            .every(((int, dynamic) item) => _deepEquals(item.$2, b[item.$1]));
   }
   if (a is Map && b is Map) {
-    return a.length == b.length && a.entries.every((MapEntry<Object?, Object?> entry) =>
-        (b as Map<Object?, Object?>).containsKey(entry.key) &&
-        _deepEquals(entry.value, b[entry.key]));
+    return a.length == b.length &&
+        a.entries.every((MapEntry<Object?, Object?> entry) =>
+            (b as Map<Object?, Object?>).containsKey(entry.key) &&
+            _deepEquals(entry.value, b[entry.key]));
   }
   return a == b;
 }
-
 
 /// Availability of the OS built-in model. Mirrors
 /// `flutter_gemma_builtin_ai`'s `AvailabilityStatus` one-to-one so the bridge
@@ -48,6 +50,7 @@ enum AvailabilityStatus {
   downloading,
   unavailableDeviceUnsupported,
   unavailableOsTooOld,
+
   /// The feature exists but the user turned it off — Apple Intelligence in
   /// Settings, or the AICore/Gemini Nano toggle on Android.
   unavailableDisabled,
@@ -60,6 +63,7 @@ enum LocalAiBackend {
   androidMlKitGenAi,
   appleFoundationModels,
   windowsAiFoundry,
+
   /// Windows AI Foundry is present but the plugin was built without the
   /// Windows AI SDK headers, so no inference can run.
   windowsAiFoundryUnconfigured,
@@ -134,7 +138,8 @@ class LocalAiBackendInfo {
   }
 
   Object encode() {
-    return _toList();  }
+    return _toList();
+  }
 
   static LocalAiBackendInfo decode(Object result) {
     result as List<Object?>;
@@ -166,8 +171,7 @@ class LocalAiBackendInfo {
 
   @override
   // ignore: avoid_equals_and_hash_code_on_mutable_classes
-  int get hashCode => Object.hashAll(_toList())
-;
+  int get hashCode => Object.hashAll(_toList());
 }
 
 class ToolParameterSpec {
@@ -196,7 +200,8 @@ class ToolParameterSpec {
   }
 
   Object encode() {
-    return _toList();  }
+    return _toList();
+  }
 
   static ToolParameterSpec decode(Object result) {
     result as List<Object?>;
@@ -222,8 +227,7 @@ class ToolParameterSpec {
 
   @override
   // ignore: avoid_equals_and_hash_code_on_mutable_classes
-  int get hashCode => Object.hashAll(_toList())
-;
+  int get hashCode => Object.hashAll(_toList());
 }
 
 /// Per-call sampling overrides.
@@ -260,7 +264,8 @@ class GenerationOverrides {
   }
 
   Object encode() {
-    return _toList();  }
+    return _toList();
+  }
 
   static GenerationOverrides decode(Object result) {
     result as List<Object?>;
@@ -286,8 +291,7 @@ class GenerationOverrides {
 
   @override
   // ignore: avoid_equals_and_hash_code_on_mutable_classes
-  int get hashCode => Object.hashAll(_toList())
-;
+  int get hashCode => Object.hashAll(_toList());
 }
 
 class ToolSpec {
@@ -312,7 +316,8 @@ class ToolSpec {
   }
 
   Object encode() {
-    return _toList();  }
+    return _toList();
+  }
 
   static ToolSpec decode(Object result) {
     result as List<Object?>;
@@ -337,10 +342,8 @@ class ToolSpec {
 
   @override
   // ignore: avoid_equals_and_hash_code_on_mutable_classes
-  int get hashCode => Object.hashAll(_toList())
-;
+  int get hashCode => Object.hashAll(_toList());
 }
-
 
 class _PigeonCodec extends StandardMessageCodec {
   const _PigeonCodec();
@@ -349,25 +352,25 @@ class _PigeonCodec extends StandardMessageCodec {
     if (value is int) {
       buffer.putUint8(4);
       buffer.putInt64(value);
-    }    else if (value is AvailabilityStatus) {
+    } else if (value is AvailabilityStatus) {
       buffer.putUint8(129);
       writeValue(buffer, value.index);
-    }    else if (value is LocalAiBackend) {
+    } else if (value is LocalAiBackend) {
       buffer.putUint8(130);
       writeValue(buffer, value.index);
-    }    else if (value is ToolArgumentKind) {
+    } else if (value is ToolArgumentKind) {
       buffer.putUint8(131);
       writeValue(buffer, value.index);
-    }    else if (value is LocalAiBackendInfo) {
+    } else if (value is LocalAiBackendInfo) {
       buffer.putUint8(132);
       writeValue(buffer, value.encode());
-    }    else if (value is ToolParameterSpec) {
+    } else if (value is ToolParameterSpec) {
       buffer.putUint8(133);
       writeValue(buffer, value.encode());
-    }    else if (value is GenerationOverrides) {
+    } else if (value is GenerationOverrides) {
       buffer.putUint8(134);
       writeValue(buffer, value.encode());
-    }    else if (value is ToolSpec) {
+    } else if (value is ToolSpec) {
       buffer.putUint8(135);
       writeValue(buffer, value.encode());
     } else {
@@ -378,22 +381,22 @@ class _PigeonCodec extends StandardMessageCodec {
   @override
   Object? readValueOfType(int type, ReadBuffer buffer) {
     switch (type) {
-      case 129: 
+      case 129:
         final int? value = readValue(buffer) as int?;
         return value == null ? null : AvailabilityStatus.values[value];
-      case 130: 
+      case 130:
         final int? value = readValue(buffer) as int?;
         return value == null ? null : LocalAiBackend.values[value];
-      case 131: 
+      case 131:
         final int? value = readValue(buffer) as int?;
         return value == null ? null : ToolArgumentKind.values[value];
-      case 132: 
+      case 132:
         return LocalAiBackendInfo.decode(readValue(buffer)!);
-      case 133: 
+      case 133:
         return ToolParameterSpec.decode(readValue(buffer)!);
-      case 134: 
+      case 134:
         return GenerationOverrides.decode(readValue(buffer)!);
-      case 135: 
+      case 135:
         return ToolSpec.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);
@@ -405,9 +408,11 @@ class LocalAiService {
   /// Constructor for [LocalAiService].  The [binaryMessenger] named argument is
   /// available for dependency injection.  If it is left null, the default
   /// BinaryMessenger will be used which routes to the host platform.
-  LocalAiService({BinaryMessenger? binaryMessenger, String messageChannelSuffix = ''})
+  LocalAiService(
+      {BinaryMessenger? binaryMessenger, String messageChannelSuffix = ''})
       : pigeonVar_binaryMessenger = binaryMessenger,
-        pigeonVar_messageChannelSuffix = messageChannelSuffix.isNotEmpty ? '.$messageChannelSuffix' : '';
+        pigeonVar_messageChannelSuffix =
+            messageChannelSuffix.isNotEmpty ? '.$messageChannelSuffix' : '';
   final BinaryMessenger? pigeonVar_binaryMessenger;
 
   static const MessageCodec<Object?> pigeonChannelCodec = _PigeonCodec();
@@ -415,8 +420,10 @@ class LocalAiService {
   final String pigeonVar_messageChannelSuffix;
 
   Future<AvailabilityStatus> checkAvailability() async {
-    final String pigeonVar_channelName = 'dev.flutter.pigeon.flutter_local_ai.LocalAiService.checkAvailability$pigeonVar_messageChannelSuffix';
-    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+    final String pigeonVar_channelName =
+        'dev.flutter.pigeon.flutter_local_ai.LocalAiService.checkAvailability$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel =
+        BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
       binaryMessenger: pigeonVar_binaryMessenger,
@@ -446,8 +453,10 @@ class LocalAiService {
   /// enable Apple Intelligence, update the OS, use an eligible device. Shown
   /// in UI, so it is prose, not a status code.
   Future<String> availabilityReason() async {
-    final String pigeonVar_channelName = 'dev.flutter.pigeon.flutter_local_ai.LocalAiService.availabilityReason$pigeonVar_messageChannelSuffix';
-    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+    final String pigeonVar_channelName =
+        'dev.flutter.pigeon.flutter_local_ai.LocalAiService.availabilityReason$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel =
+        BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
       binaryMessenger: pigeonVar_binaryMessenger,
@@ -474,8 +483,10 @@ class LocalAiService {
   }
 
   Future<LocalAiBackendInfo> getBackendInfo() async {
-    final String pigeonVar_channelName = 'dev.flutter.pigeon.flutter_local_ai.LocalAiService.getBackendInfo$pigeonVar_messageChannelSuffix';
-    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+    final String pigeonVar_channelName =
+        'dev.flutter.pigeon.flutter_local_ai.LocalAiService.getBackendInfo$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel =
+        BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
       binaryMessenger: pigeonVar_binaryMessenger,
@@ -505,8 +516,10 @@ class LocalAiService {
   /// channel as `{code: DOWNLOAD_PROGRESS, bytesDownloaded, bytesTotal}`.
   /// No-op on darwin, where readiness is user-controlled in Settings.
   Future<void> downloadFeature() async {
-    final String pigeonVar_channelName = 'dev.flutter.pigeon.flutter_local_ai.LocalAiService.downloadFeature$pigeonVar_messageChannelSuffix';
-    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+    final String pigeonVar_channelName =
+        'dev.flutter.pigeon.flutter_local_ai.LocalAiService.downloadFeature$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel =
+        BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
       binaryMessenger: pigeonVar_binaryMessenger,
@@ -529,8 +542,10 @@ class LocalAiService {
 
   /// Opens Google AICore in the Play Store. False on every non-Android host.
   Future<bool> openAICorePlayStore() async {
-    final String pigeonVar_channelName = 'dev.flutter.pigeon.flutter_local_ai.LocalAiService.openAICorePlayStore$pigeonVar_messageChannelSuffix';
-    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+    final String pigeonVar_channelName =
+        'dev.flutter.pigeon.flutter_local_ai.LocalAiService.openAICorePlayStore$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel =
+        BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
       binaryMessenger: pigeonVar_binaryMessenger,
@@ -557,13 +572,16 @@ class LocalAiService {
   }
 
   Future<void> createModel({required bool supportImage}) async {
-    final String pigeonVar_channelName = 'dev.flutter.pigeon.flutter_local_ai.LocalAiService.createModel$pigeonVar_messageChannelSuffix';
-    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+    final String pigeonVar_channelName =
+        'dev.flutter.pigeon.flutter_local_ai.LocalAiService.createModel$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel =
+        BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
       binaryMessenger: pigeonVar_binaryMessenger,
     );
-    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[supportImage]);
+    final Future<Object?> pigeonVar_sendFuture =
+        pigeonVar_channel.send(<Object?>[supportImage]);
     final List<Object?>? pigeonVar_replyList =
         await pigeonVar_sendFuture as List<Object?>?;
     if (pigeonVar_replyList == null) {
@@ -580,8 +598,10 @@ class LocalAiService {
   }
 
   Future<void> closeModel() async {
-    final String pigeonVar_channelName = 'dev.flutter.pigeon.flutter_local_ai.LocalAiService.closeModel$pigeonVar_messageChannelSuffix';
-    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+    final String pigeonVar_channelName =
+        'dev.flutter.pigeon.flutter_local_ai.LocalAiService.closeModel$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel =
+        BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
       binaryMessenger: pigeonVar_binaryMessenger,
@@ -609,14 +629,33 @@ class LocalAiService {
   /// [tools] must be supplied here rather than per-request: Apple binds tools
   /// at `LanguageModelSession` construction and cannot add them to a live
   /// session.
-  Future<void> createSession({required int sessionId, required double temperature, required int topK, double? topP, int? maxOutputTokens, String? systemInstruction, List<ToolSpec>? tools, }) async {
-    final String pigeonVar_channelName = 'dev.flutter.pigeon.flutter_local_ai.LocalAiService.createSession$pigeonVar_messageChannelSuffix';
-    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+  Future<void> createSession({
+    required int sessionId,
+    required double temperature,
+    required int topK,
+    double? topP,
+    int? maxOutputTokens,
+    String? systemInstruction,
+    List<ToolSpec>? tools,
+  }) async {
+    final String pigeonVar_channelName =
+        'dev.flutter.pigeon.flutter_local_ai.LocalAiService.createSession$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel =
+        BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
       binaryMessenger: pigeonVar_binaryMessenger,
     );
-    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[sessionId, temperature, topK, topP, maxOutputTokens, systemInstruction, tools]);
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel
+        .send(<Object?>[
+      sessionId,
+      temperature,
+      topK,
+      topP,
+      maxOutputTokens,
+      systemInstruction,
+      tools
+    ]);
     final List<Object?>? pigeonVar_replyList =
         await pigeonVar_sendFuture as List<Object?>?;
     if (pigeonVar_replyList == null) {
@@ -633,13 +672,16 @@ class LocalAiService {
   }
 
   Future<void> closeSession(int sessionId) async {
-    final String pigeonVar_channelName = 'dev.flutter.pigeon.flutter_local_ai.LocalAiService.closeSession$pigeonVar_messageChannelSuffix';
-    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+    final String pigeonVar_channelName =
+        'dev.flutter.pigeon.flutter_local_ai.LocalAiService.closeSession$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel =
+        BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
       binaryMessenger: pigeonVar_binaryMessenger,
     );
-    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[sessionId]);
+    final Future<Object?> pigeonVar_sendFuture =
+        pigeonVar_channel.send(<Object?>[sessionId]);
     final List<Object?>? pigeonVar_replyList =
         await pigeonVar_sendFuture as List<Object?>?;
     if (pigeonVar_replyList == null) {
@@ -655,14 +697,18 @@ class LocalAiService {
     }
   }
 
-  Future<void> addQueryChunk({required int sessionId, required String text}) async {
-    final String pigeonVar_channelName = 'dev.flutter.pigeon.flutter_local_ai.LocalAiService.addQueryChunk$pigeonVar_messageChannelSuffix';
-    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+  Future<void> addQueryChunk(
+      {required int sessionId, required String text}) async {
+    final String pigeonVar_channelName =
+        'dev.flutter.pigeon.flutter_local_ai.LocalAiService.addQueryChunk$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel =
+        BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
       binaryMessenger: pigeonVar_binaryMessenger,
     );
-    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[sessionId, text]);
+    final Future<Object?> pigeonVar_sendFuture =
+        pigeonVar_channel.send(<Object?>[sessionId, text]);
     final List<Object?>? pigeonVar_replyList =
         await pigeonVar_sendFuture as List<Object?>?;
     if (pigeonVar_replyList == null) {
@@ -678,14 +724,18 @@ class LocalAiService {
     }
   }
 
-  Future<void> addImage({required int sessionId, required Uint8List imageBytes}) async {
-    final String pigeonVar_channelName = 'dev.flutter.pigeon.flutter_local_ai.LocalAiService.addImage$pigeonVar_messageChannelSuffix';
-    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+  Future<void> addImage(
+      {required int sessionId, required Uint8List imageBytes}) async {
+    final String pigeonVar_channelName =
+        'dev.flutter.pigeon.flutter_local_ai.LocalAiService.addImage$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel =
+        BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
       binaryMessenger: pigeonVar_binaryMessenger,
     );
-    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[sessionId, imageBytes]);
+    final Future<Object?> pigeonVar_sendFuture =
+        pigeonVar_channel.send(<Object?>[sessionId, imageBytes]);
     final List<Object?>? pigeonVar_replyList =
         await pigeonVar_sendFuture as List<Object?>?;
     if (pigeonVar_replyList == null) {
@@ -701,14 +751,18 @@ class LocalAiService {
     }
   }
 
-  Future<String> generateResponse(int sessionId, GenerationOverrides? overrides) async {
-    final String pigeonVar_channelName = 'dev.flutter.pigeon.flutter_local_ai.LocalAiService.generateResponse$pigeonVar_messageChannelSuffix';
-    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+  Future<String> generateResponse(
+      int sessionId, GenerationOverrides? overrides) async {
+    final String pigeonVar_channelName =
+        'dev.flutter.pigeon.flutter_local_ai.LocalAiService.generateResponse$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel =
+        BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
       binaryMessenger: pigeonVar_binaryMessenger,
     );
-    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[sessionId, overrides]);
+    final Future<Object?> pigeonVar_sendFuture =
+        pigeonVar_channel.send(<Object?>[sessionId, overrides]);
     final List<Object?>? pigeonVar_replyList =
         await pigeonVar_sendFuture as List<Object?>?;
     if (pigeonVar_replyList == null) {
@@ -732,14 +786,18 @@ class LocalAiService {
   /// Streams the response; tokens arrive on the event channel as
   /// `{sessionId, partialResult, done}` and failures as
   /// `{sessionId, code: ERROR, message}`.
-  Future<void> generateResponseAsync(int sessionId, GenerationOverrides? overrides) async {
-    final String pigeonVar_channelName = 'dev.flutter.pigeon.flutter_local_ai.LocalAiService.generateResponseAsync$pigeonVar_messageChannelSuffix';
-    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+  Future<void> generateResponseAsync(
+      int sessionId, GenerationOverrides? overrides) async {
+    final String pigeonVar_channelName =
+        'dev.flutter.pigeon.flutter_local_ai.LocalAiService.generateResponseAsync$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel =
+        BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
       binaryMessenger: pigeonVar_binaryMessenger,
     );
-    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[sessionId, overrides]);
+    final Future<Object?> pigeonVar_sendFuture =
+        pigeonVar_channel.send(<Object?>[sessionId, overrides]);
     final List<Object?>? pigeonVar_replyList =
         await pigeonVar_sendFuture as List<Object?>?;
     if (pigeonVar_replyList == null) {
@@ -758,14 +816,21 @@ class LocalAiService {
   /// Generation constrained to [schemaJson] (a JSON Schema document). Hosts
   /// reporting `supportsStructuredOutput: false` fail this call rather than
   /// silently returning prose.
-  Future<String> generateStructuredResponse({required int sessionId, required String schemaJson, GenerationOverrides? overrides, }) async {
-    final String pigeonVar_channelName = 'dev.flutter.pigeon.flutter_local_ai.LocalAiService.generateStructuredResponse$pigeonVar_messageChannelSuffix';
-    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+  Future<String> generateStructuredResponse({
+    required int sessionId,
+    required String schemaJson,
+    GenerationOverrides? overrides,
+  }) async {
+    final String pigeonVar_channelName =
+        'dev.flutter.pigeon.flutter_local_ai.LocalAiService.generateStructuredResponse$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel =
+        BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
       binaryMessenger: pigeonVar_binaryMessenger,
     );
-    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[sessionId, schemaJson, overrides]);
+    final Future<Object?> pigeonVar_sendFuture =
+        pigeonVar_channel.send(<Object?>[sessionId, schemaJson, overrides]);
     final List<Object?>? pigeonVar_replyList =
         await pigeonVar_sendFuture as List<Object?>?;
     if (pigeonVar_replyList == null) {
@@ -787,13 +852,16 @@ class LocalAiService {
   }
 
   Future<void> stopGeneration(int sessionId) async {
-    final String pigeonVar_channelName = 'dev.flutter.pigeon.flutter_local_ai.LocalAiService.stopGeneration$pigeonVar_messageChannelSuffix';
-    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+    final String pigeonVar_channelName =
+        'dev.flutter.pigeon.flutter_local_ai.LocalAiService.stopGeneration$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel =
+        BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
       binaryMessenger: pigeonVar_binaryMessenger,
     );
-    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[sessionId]);
+    final Future<Object?> pigeonVar_sendFuture =
+        pigeonVar_channel.send(<Object?>[sessionId]);
     final List<Object?>? pigeonVar_replyList =
         await pigeonVar_sendFuture as List<Object?>?;
     if (pigeonVar_replyList == null) {
@@ -813,13 +881,16 @@ class LocalAiService {
   /// `supportsTokenCount: false` fail with `TOKENIZER_UNAVAILABLE`, which the
   /// Dart layer turns into a documented character-based estimate.
   Future<int> countTokens(String text) async {
-    final String pigeonVar_channelName = 'dev.flutter.pigeon.flutter_local_ai.LocalAiService.countTokens$pigeonVar_messageChannelSuffix';
-    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+    final String pigeonVar_channelName =
+        'dev.flutter.pigeon.flutter_local_ai.LocalAiService.countTokens$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel =
+        BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
       binaryMessenger: pigeonVar_binaryMessenger,
     );
-    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[text]);
+    final Future<Object?> pigeonVar_sendFuture =
+        pigeonVar_channel.send(<Object?>[text]);
     final List<Object?>? pigeonVar_replyList =
         await pigeonVar_sendFuture as List<Object?>?;
     if (pigeonVar_replyList == null) {
@@ -849,20 +920,29 @@ abstract class LocalAiToolRunner {
   /// [argumentsJson] is a JSON object of the arguments the model produced.
   /// Returns the tool's result encoded as JSON, or null when the tool yields
   /// nothing.
-  Future<String?> onToolCall(int sessionId, String toolName, String argumentsJson);
+  Future<String?> onToolCall(
+      int sessionId, String toolName, String argumentsJson);
 
-  static void setUp(LocalAiToolRunner? api, {BinaryMessenger? binaryMessenger, String messageChannelSuffix = '',}) {
-    messageChannelSuffix = messageChannelSuffix.isNotEmpty ? '.$messageChannelSuffix' : '';
+  static void setUp(
+    LocalAiToolRunner? api, {
+    BinaryMessenger? binaryMessenger,
+    String messageChannelSuffix = '',
+  }) {
+    messageChannelSuffix =
+        messageChannelSuffix.isNotEmpty ? '.$messageChannelSuffix' : '';
     {
-      final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
-          'dev.flutter.pigeon.flutter_local_ai.LocalAiToolRunner.onToolCall$messageChannelSuffix', pigeonChannelCodec,
+      final BasicMessageChannel<
+          Object?> pigeonVar_channel = BasicMessageChannel<
+              Object?>(
+          'dev.flutter.pigeon.flutter_local_ai.LocalAiToolRunner.onToolCall$messageChannelSuffix',
+          pigeonChannelCodec,
           binaryMessenger: binaryMessenger);
       if (api == null) {
         pigeonVar_channel.setMessageHandler(null);
       } else {
         pigeonVar_channel.setMessageHandler((Object? message) async {
           assert(message != null,
-          'Argument for dev.flutter.pigeon.flutter_local_ai.LocalAiToolRunner.onToolCall was null.');
+              'Argument for dev.flutter.pigeon.flutter_local_ai.LocalAiToolRunner.onToolCall was null.');
           final List<Object?> args = (message as List<Object?>?)!;
           final int? arg_sessionId = (args[0] as int?);
           assert(arg_sessionId != null,
@@ -874,12 +954,14 @@ abstract class LocalAiToolRunner {
           assert(arg_argumentsJson != null,
               'Argument for dev.flutter.pigeon.flutter_local_ai.LocalAiToolRunner.onToolCall was null, expected non-null String.');
           try {
-            final String? output = await api.onToolCall(arg_sessionId!, arg_toolName!, arg_argumentsJson!);
+            final String? output = await api.onToolCall(
+                arg_sessionId!, arg_toolName!, arg_argumentsJson!);
             return wrapResponse(result: output);
           } on PlatformException catch (e) {
             return wrapResponse(error: e);
-          }          catch (e) {
-            return wrapResponse(error: PlatformException(code: 'error', message: e.toString()));
+          } catch (e) {
+            return wrapResponse(
+                error: PlatformException(code: 'error', message: e.toString()));
           }
         });
       }

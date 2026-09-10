@@ -1,11 +1,11 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/services.dart';
 
 import '../models/tool.dart';
 import '../pigeon/local_ai_api.g.dart' as wire;
 import 'local_ai_host.dart';
+import 'local_ai_tool_registry.dart';
 
 /// Tokens, generation errors and download progress from the native hosts.
 /// A single channel for every session (payloads carry `sessionId`), matching
@@ -38,8 +38,7 @@ LocalAiBackendKind _backendFromWire(wire.LocalAiBackend backend) =>
         LocalAiBackendKind.windowsAiFoundry,
       wire.LocalAiBackend.windowsAiFoundryUnconfigured =>
         LocalAiBackendKind.windowsAiFoundryUnconfigured,
-      wire.LocalAiBackend.chromePromptApi =>
-        LocalAiBackendKind.chromePromptApi,
+      wire.LocalAiBackend.chromePromptApi => LocalAiBackendKind.chromePromptApi,
       wire.LocalAiBackend.unsupported => LocalAiBackendKind.unsupported,
     };
 
@@ -86,22 +85,20 @@ class NativeLocalAiHost implements LocalAiHost, wire.LocalAiToolRunner {
 
   final _service = wire.LocalAiService();
 
-  /// Tools by session, so a tool call arriving for one session can never
-  /// invoke another session's handler.
-  final Map<int, Map<String, LocalAiTool>> _toolsBySession = {};
+  final _tools = LocalAiToolRegistry();
 
   Stream<LocalAiHostEvent>? _events;
 
   @override
   Stream<LocalAiHostEvent> get events =>
       _events ??= _eventChannel.receiveBroadcastStream().transform(
-            StreamTransformer<dynamic, LocalAiHostEvent>.fromHandlers(
-              handleData: (event, sink) {
-                final parsed = _parseEvent(event);
-                if (parsed != null) sink.add(parsed);
-              },
-            ),
-          );
+        StreamTransformer<dynamic, LocalAiHostEvent>.fromHandlers(
+          handleData: (event, sink) {
+            final parsed = _parseEvent(event);
+            if (parsed != null) sink.add(parsed);
+          },
+        ),
+      );
 
   LocalAiHostEvent? _parseEvent(Object? event) {
     if (event is! Map) return null;
@@ -134,20 +131,13 @@ class NativeLocalAiHost implements LocalAiHost, wire.LocalAiToolRunner {
     String toolName,
     String argumentsJson,
   ) async {
-    final tool = _toolsBySession[sessionId]?[toolName];
-    if (tool == null) {
-      throw PlatformException(
-        code: 'TOOL_NOT_FOUND',
-        message: 'No tool named "$toolName" is registered for session '
-            '$sessionId.',
-      );
+    try {
+      return await _tools.invoke(sessionId, toolName, argumentsJson);
+    } on UnknownToolException catch (e) {
+      // Crosses back to native as a platform error the model can be told
+      // about, rather than an arbitrary Dart exception unwinding through it.
+      throw PlatformException(code: 'TOOL_NOT_FOUND', message: '$e');
     }
-    final decoded = argumentsJson.isEmpty ? null : jsonDecode(argumentsJson);
-    final arguments = decoded is Map
-        ? decoded.map((key, value) => MapEntry(key.toString(), value))
-        : <String, dynamic>{};
-    final result = await tool.onCall(arguments);
-    return result == null ? null : jsonEncode(result);
   }
 
   @override
@@ -188,7 +178,7 @@ class NativeLocalAiHost implements LocalAiHost, wire.LocalAiToolRunner {
   Future<void> closeModel() async {
     // Every session dies with the model; drop their handlers so a late native
     // callback can't reach a tool the app considers unregistered.
-    _toolsBySession.clear();
+    _tools.clear();
     await _service.closeModel();
   }
 
@@ -202,11 +192,7 @@ class NativeLocalAiHost implements LocalAiHost, wire.LocalAiToolRunner {
     String? systemInstruction,
     List<LocalAiTool>? tools,
   }) async {
-    if (tools != null && tools.isNotEmpty) {
-      _toolsBySession[sessionId] = {
-        for (final tool in tools) tool.name: tool,
-      };
-    }
+    _tools.register(sessionId, tools);
     try {
       await _service.createSession(
         sessionId: sessionId,
@@ -219,14 +205,14 @@ class NativeLocalAiHost implements LocalAiHost, wire.LocalAiToolRunner {
       );
     } catch (_) {
       // The native session doesn't exist, so nothing can call these.
-      _toolsBySession.remove(sessionId);
+      _tools.forget(sessionId);
       rethrow;
     }
   }
 
   @override
   Future<void> closeSession(int sessionId) async {
-    _toolsBySession.remove(sessionId);
+    _tools.forget(sessionId);
     await _service.closeSession(sessionId);
   }
 

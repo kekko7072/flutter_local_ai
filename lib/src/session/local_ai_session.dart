@@ -61,7 +61,7 @@ class LocalAiSession {
   /// Prompt API) log once and ignore it.
   Future<String> getResponse({LocalAiGenerationOverrides? overrides}) {
     _assertOpen();
-    return _host.generateResponse(sessionId, overrides: overrides);
+    return _host.generateResponse(sessionId, overrides: _meaningful(overrides));
   }
 
   /// Generates the response as a stream of deltas — each event is the newly
@@ -115,7 +115,9 @@ class LocalAiSession {
 
       // Kick off generation. A synchronous native failure — before any event
       // is emitted — must surface here rather than hang the stream forever.
-      _host.generateResponseAsync(sessionId, overrides: overrides).catchError(
+      _host
+          .generateResponseAsync(sessionId, overrides: _meaningful(overrides))
+          .catchError(
         (Object error, StackTrace stackTrace) {
           if (!controller.isClosed) controller.addError(error, stackTrace);
           cleanup();
@@ -146,7 +148,7 @@ class LocalAiSession {
     return _host.generateStructuredResponse(
       sessionId: sessionId,
       schemaJson: jsonEncode(schema),
-      overrides: overrides,
+      overrides: _meaningful(overrides),
     );
   }
 
@@ -168,6 +170,15 @@ class LocalAiSession {
       return (text.length / 4).ceil();
     }
   }
+
+  /// Normalizes an override that overrides nothing to null, so every host
+  /// sees either null or a real change. Sending an empty one would make a
+  /// host rebuild its options for no reason — and on Apple, rebuilding can
+  /// flip the sampling mode off greedy.
+  static LocalAiGenerationOverrides? _meaningful(
+    LocalAiGenerationOverrides? overrides,
+  ) =>
+      overrides == null || overrides.isEmpty ? null : overrides;
 
   /// Releases the native session. Idempotent.
   Future<void> close() async {
