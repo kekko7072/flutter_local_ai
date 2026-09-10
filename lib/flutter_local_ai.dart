@@ -27,6 +27,9 @@ export 'src/session/local_ai_host.dart'
         LocalAiUnavailableException,
         LocalAiUnsupportedException;
 export 'src/session/local_ai_model.dart';
+// `debugLocalAiHost` lets tests (and the bridge package's tests) swap in a
+// fake host without reaching into src/.
+export 'src/session/local_ai_runtime.dart';
 export 'src/session/local_ai_session.dart';
 
 // genUI integration: turn a user goal into a genui-renderable module spec.
