@@ -16,6 +16,7 @@ import com.google.mlkit.genai.common.FeatureStatus
 import com.google.mlkit.genai.common.GenAiException
 import com.google.mlkit.genai.common.StreamingCallback
 import io.flutter.embedding.engine.plugins.FlutterPlugin
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
@@ -36,10 +37,26 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
   private val coroutineScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
   private lateinit var context: Context
 
+  /**
+   * Session half of the plugin, on the pigeon `LocalAiService` channel plus a
+   * shared event channel. Additive: the legacy `flutter_local_ai` method
+   * channel below is unchanged, so existing apps keep working while
+   * flutter_gemma drives the session API.
+   */
+  private var sessionService: LocalAiSessionService? = null
+  private var sessionEvents: EventChannel? = null
+
   override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
     context = flutterPluginBinding.applicationContext
     channel = MethodChannel(flutterPluginBinding.binaryMessenger, "flutter_local_ai")
     channel.setMethodCallHandler(this)
+
+    val service = LocalAiSessionService(context)
+    sessionService = service
+    LocalAiService.setUp(flutterPluginBinding.binaryMessenger, service)
+    sessionEvents =
+      EventChannel(flutterPluginBinding.binaryMessenger, "flutter_local_ai_events")
+        .apply { setStreamHandler(service) }
   }
 
   override fun onMethodCall(@NonNull call: MethodCall, @NonNull result: Result) {
@@ -507,6 +524,11 @@ class FlutterLocalAiPlugin: FlutterPlugin, MethodCallHandler {
 
   override fun onDetachedFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
     channel.setMethodCallHandler(null)
+    LocalAiService.setUp(binding.binaryMessenger, null)
+    sessionEvents?.setStreamHandler(null)
+    sessionEvents = null
+    sessionService?.cleanup()
+    sessionService = null
     coroutineScope.cancel()
     generativeModel?.close()
     generativeModel = null

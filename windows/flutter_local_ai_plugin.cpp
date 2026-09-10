@@ -5,6 +5,8 @@
 #include <flutter/method_channel.h>
 #include <flutter/plugin_registrar_windows.h>
 #include <flutter/standard_method_codec.h>
+
+#include "local_ai_session_service.h"
 #include <windows.h>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
@@ -70,6 +72,7 @@ class FlutterLocalAiPlugin : public flutter::Plugin {
 #endif
 
   // State
+  std::unique_ptr<flutter_local_ai::LocalAiSessionService> session_service_;
   std::string instructions_;
   bool is_initialized_;
 #if WINDOWS_AI_AVAILABLE
@@ -92,6 +95,13 @@ void FlutterLocalAiPlugin::RegisterWithRegistrar(
       [plugin_pointer = plugin.get()](const auto &call, auto result) {
         plugin_pointer->HandleMethodCall(call, std::move(result));
       });
+
+  // Session half of the plugin, additive alongside the legacy method channel
+  // above so existing apps keep working unchanged. Owned by the plugin so it
+  // lives exactly as long as the engine attachment: pigeon's SetUp keeps only
+  // a raw pointer.
+  plugin->session_service_ =
+      flutter_local_ai::LocalAiSessionService::Register(registrar->messenger());
 
   registrar->AddPlugin(std::move(plugin));
 }

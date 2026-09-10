@@ -263,15 +263,33 @@ import FoundationModels
   }
   #endif
   
+  /// Retains the session service for the lifetime of the process. Pigeon's
+  /// `setUp` holds only a weak reference to the handler, and
+  /// `FlutterEventChannel` does not retain its stream handler either, so
+  /// without this the service would deallocate the moment `register` returns
+  /// and every session call would fail with a channel error.
+  private static var sessionService: LocalAiSessionService?
+
   public static func register(with registrar: FlutterPluginRegistrar) {
     #if os(OSX)
-    let channel = FlutterMethodChannel(name: "flutter_local_ai", binaryMessenger: registrar.messenger)
+    let messenger = registrar.messenger
     #elseif os(iOS)
-    let channel = FlutterMethodChannel(name: "flutter_local_ai", binaryMessenger: registrar.messenger())
+    let messenger = registrar.messenger()
     #endif
+
+    let channel = FlutterMethodChannel(name: "flutter_local_ai", binaryMessenger: messenger)
     let instance = FlutterLocalAiPlugin()
     instance.channel = channel
     registrar.addMethodCallDelegate(instance, channel: channel)
+
+    // Session half of the plugin, additive alongside the legacy method
+    // channel above so existing apps keep working unchanged.
+    let service = LocalAiSessionService(
+      toolRunner: LocalAiToolRunner(binaryMessenger: messenger))
+    sessionService = service
+    LocalAiServiceSetup.setUp(binaryMessenger: messenger, api: service)
+    FlutterEventChannel(name: "flutter_local_ai_events", binaryMessenger: messenger)
+      .setStreamHandler(service)
   }
 
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -848,8 +866,12 @@ private enum FlutterToolParsingError: Error, LocalizedError {
 /// recursive: it supports nested objects, arrays, and string enums in addition to
 /// the scalar types tool parameters allow. Tree-shaped schemas nest inline via
 /// `Property.schema`, so the root needs no separate `dependencies`.
+///
+/// Internal rather than file-private so `LocalAiSessionService` can constrain
+/// generation with the same translation this file already uses — two copies
+/// would drift.
 @available(iOS 26.0, macOS 26.0, *)
-private enum SchemaBuilder {
+enum SchemaBuilder {
   static func generationSchema(
     from json: [String: Any],
     rootName: String

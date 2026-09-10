@@ -8,6 +8,8 @@ set(PLUGIN_NAME "flutter_local_ai_plugin")
 # Define the plugin library target
 add_library(${PLUGIN_NAME} SHARED
   "flutter_local_ai_plugin.cpp"
+  "local_ai_pigeon.g.cpp"
+  "local_ai_session_service.cpp"
 )
 
 # Apply a standard Windows set of build settings
