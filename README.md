@@ -35,16 +35,75 @@ Text generation (blocking or streamed), structured JSON outputs, tool calling, a
 
 ## Platform Support
 
-| Feature            | iOS / macOS (26+) | Android (API 26+) | Windows (11 22H2+) |
-|--------------------|-------------------|-------------------|-------------------|
-| Text generation    | ✅                | ✅                 | ⚠️ Testing         |
-| Structured outputs | ✅                | ❌                 | ❌                 |
-| Generative UI (genUI) | ✅             | ✅                 | 🚧 Planned         |
-| Summarization*     | 🚧 Planned        | 🚧 Planned         | 🚧 Planned         |
-| Image generation   | 🚧 Planned        | ❌                 | 🚧 Planned         |
-| Tool calls         | ✅                | ❌                 | 🚧 Planned         |
+| Feature            | iOS / macOS (26+) | Android (API 26+) | Windows (11 22H2+) | Web (Chrome) |
+|--------------------|-------------------|-------------------|--------------------|--------------|
+| Text generation    | ✅                | ✅                 | ⚠️ Testing         | ✅           |
+| Streaming          | ✅                | ✅                 | ⚠️ single chunk    | ✅           |
+| Structured outputs | ✅                | ❌                 | ❌                 | ✅           |
+| Image input        | 🚧 Needs OS 27    | ✅                 | ❌                 | ❌           |
+| Generative UI (genUI) | ✅             | ✅                 | 🚧 Planned         | 🚧 Planned   |
+| Summarization*     | 🚧 Planned        | 🚧 Planned         | 🚧 Planned         | 🚧 Planned   |
+| Image generation   | 🚧 Planned        | ❌                 | 🚧 Planned         | ❌           |
+| Tool calls         | ✅ native         | ❌                 | 🚧 Planned         | ❌           |
+| Exact token counts | ✅ OS 26.4+       | ✅                 | ❌ estimate        | ✅           |
+| Concurrent sessions | ✅               | ✅                 | ✅                 | ✅           |
 
 *Summarization is achieved through text-generation prompts and shares the same API surface.
+
+Every row is a *runtime* property, not a build-time one — the same binary
+reports image input as unavailable on iOS 26 and available on iOS 27. Ask the
+device rather than the platform:
+
+```dart
+final caps = await LocalAi.capabilities();
+if (caps.supportsVision) { /* ... */ }
+```
+
+## Two APIs
+
+This package exposes two surfaces over the same native backends. Pick by what
+you need, not by which came first.
+
+**`FlutterLocalAi`** — the original one-shot API. One process-wide session,
+`generateText` / `generateTextStream`, native tool calling, schema-constrained
+output, genUI specs. Unchanged and fully supported.
+
+**`LocalAiModel` / `LocalAiSession`** — the session API. Several independent
+conversations at once, a turn built from parts (`addQueryChunk`, `addImage`)
+and then generated, real cancellation, exact token counts, and explicit
+lifecycle. This is the fuller surface, and the one
+[flutter_gemma](https://pub.dev/packages/flutter_gemma) drives.
+
+```dart
+await LocalAi.ensureReady(onProgress: (p) => debugPrint('$p%'));
+
+final model = await LocalAiModel.create(maxTokens: 4096);
+final session = await model.openSession(systemInstruction: 'Be concise.');
+
+await session.addQueryChunk('Summarize this in one line: ...');
+await for (final chunk in session.getResponseAsync()) {
+  stdout.write(chunk);
+}
+
+await session.close();
+await model.close();
+```
+
+## Using this package with flutter_gemma
+
+`flutter_gemma_local_ai`, in this repository, registers flutter_local_ai as a
+flutter_gemma inference engine, so the OS built-in model appears behind the
+same `FlutterGemma` facade as any bundled checkpoint:
+
+```dart
+await FlutterGemma.initialize(
+  inferenceEngines: const [LocalAiEngine()],
+);
+```
+
+See [`packages/flutter_gemma_local_ai`](packages/flutter_gemma_local_ai) for
+the full guide, including how to fall back to a downloaded model when the OS
+model is unavailable, and how to migrate from `flutter_gemma_builtin_ai`.
 
 ## Installation
 

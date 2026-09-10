@@ -1,3 +1,50 @@
+## 0.1.0
+
+### flutter_gemma integration
+
+This release makes flutter_local_ai usable as the OS-model layer under
+[flutter_gemma](https://pub.dev/packages/flutter_gemma), through the new
+`flutter_gemma_local_ai` bridge package in this repository.
+
+* **New session API.** `LocalAiModel` mints `LocalAiSession`s that buffer a
+  turn (`addQueryChunk` / `addImage`) and then generate it
+  (`getResponse`, `getResponseAsync`, `getStructuredResponse`), with
+  `stopGeneration`, `sizeInTokens` and `close`. Several sessions can be open
+  at once, each with its own conversation. This is what flutter_gemma's
+  engine contract needs and what the existing one-shot `generateText` API
+  could not express.
+* **New availability facade.** `LocalAi.availability()`,
+  `LocalAi.ensureReady()` (with download progress) and `LocalAi.capabilities()`.
+  Capabilities are reported by the running host rather than assumed per
+  platform — the same binary answers differently across OS versions.
+* **New web support.** A Chrome Prompt API arm, including
+  schema-constrained output through `responseConstraint`, which no native
+  backend offers.
+* **Images.** `addImage` on Android (ML Kit GenAI). Apple needs OS 27 and
+  reports `supportsVision: false` until then; check before calling.
+* **Exact token counts.** Native on Android and on Apple 26.4+; elsewhere
+  `sizeInTokens` falls back to a documented `length / 4` estimate rather
+  than failing.
+* **Cancellation.** `stopGeneration` reaches the model, not just the Dart
+  subscription.
+
+### Wire
+
+* The native contract is now defined by pigeon (`pigeon.dart`), typed across
+  Dart, Kotlin, Swift and C++. Its session half is shape-compatible with
+  `flutter_gemma_builtin_ai`'s `BuiltInAiService`.
+* Tokens, generation errors and download progress travel on one
+  `flutter_local_ai_events` event channel, tagged with a session id.
+
+### Breaking
+
+* The SDK floor moves to Dart 3.6 / Flutter 3.27, required by the
+  `extension type` and `dart:js_interop` the web arm is written against.
+
+The existing `FlutterLocalAi` API (`initialize`, `generateText`,
+`generateTextStream`, `registerTools`, `getPlatformInfo`, `downloadModel`)
+is unchanged and keeps working on its own method channel.
+
 ## 0.0.15
 
 ### Structured (JSON-schema) outputs

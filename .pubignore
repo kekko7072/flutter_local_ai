@@ -5,6 +5,15 @@
 # Local-only scripts
 publish.sh
 
+# The flutter_gemma bridge is published as its own package, and shipping a
+# copy inside this archive would bloat it and confuse `pub` about which
+# pubspec is which.
+packages/
+
+# Pigeon input: consumers get the generated output, not the generator, and
+# the pigeon dev-dependency is not resolved for them.
+pigeon.dart
+
 # Build & tooling artifacts
 build/
 .dart_tool/
