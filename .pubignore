@@ -5,10 +5,11 @@
 # Local-only scripts
 publish.sh
 
-# The flutter_gemma bridge is published as its own package, and shipping a
-# copy inside this archive would bloat it and confuse `pub` about which
-# pubspec is which.
-packages/
+# NOTE: do NOT add `packages/` here. Pub reads a parent .pubignore when
+# publishing a nested package too, so excluding the directory here hides the
+# bridge package's own pubspec from its own `pub publish`. The bridge's source
+# is small; it rides along in this archive, and its build artifacts are
+# excluded by the rules below.
 
 # Pigeon input: consumers get the generated output, not the generator, and
 # the pigeon dev-dependency is not resolved for them.

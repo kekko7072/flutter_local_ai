@@ -31,6 +31,10 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
+# Nested packages build into their own directories, which the anchored
+# rule above does not reach.
+packages/*/build/
+packages/*/.dart_tool/
 
 # Symbolication related
 app.*.symbols
