@@ -90,16 +90,15 @@ Add to your `.vscode/settings.json`:
 ## Current Configuration
 
 - **Flutter SDK Version:** 3.44.8 (as specified in `.fvmrc`)
-- **Minimum Required:** >=3.38.4 for `flutter_local_ai`; >=3.44.0 for
-  `packages/flutter_gemma_local_ai`, which inherits the Dart >=3.12.0 floor
-  of `flutter_gemma` 1.8.0. The pin must satisfy the higher of the two, so
-  a version below 3.44 cannot resolve the bridge package.
+- **Minimum Required:** >=3.44.0 / Dart >=3.12.0, inherited from
+  `flutter_gemma` 1.8.0, which the engine in `lib/gemma.dart` depends on.
+  A version below 3.44 cannot resolve the package.
 
 ## What Gets Shared vs. Not Shared
 
 ### ✅ **Shared (Committed to Git):**
 - `.fvmrc` - The Flutter version specification (e.g., "3.44.8")
-- `pubspec.yaml` - Flutter SDK constraints (e.g., `flutter: ">=3.38.4"`)
+- `pubspec.yaml` - Flutter SDK constraints (e.g., `flutter: ">=3.44.0"`)
 - Other project-level configs (analysis_options.yaml, etc.)
 
 **This ensures all team members use the same Flutter version.**

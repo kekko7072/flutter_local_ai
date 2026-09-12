@@ -13,9 +13,10 @@ topics:
   - foundation-models
 
 environment:
-  # genui 0.9.2 requires Dart 3.10; keep the advertised floor honest.
-  sdk: '>=3.10.0 <4.0.0'
-  flutter: ">=3.38.4"
+  # flutter_gemma 1.8.0 requires Dart 3.12 / Flutter 3.44; keep the advertised
+  # floor honest.
+  sdk: '>=3.12.0 <4.0.0'
+  flutter: ">=3.44.0"
 
 dependencies:
   flutter:
@@ -23,8 +24,10 @@ dependencies:
   plugin_platform_interface: ^2.1.8
   flutter_web_plugins:
     sdk: flutter
-  # genUI integration: lets the package emit specs the genui renderer can build.
-  genui: ^0.9.2
+  # The flutter_gemma engine ships from `package:flutter_local_ai/gemma.dart`.
+  # Dart has no optional dependencies and no structural typing, so
+  # implementing InferenceEngineProvider means depending on flutter_gemma.
+  flutter_gemma: ^1.8.0
 
 dev_dependencies:
   flutter_test:

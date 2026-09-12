@@ -1,11 +1,12 @@
-import 'package:genui/genui.dart';
-
 /// A genUI module specification produced by the local AI from a user's goal.
 ///
-/// This is the bridge between `flutter_local_ai` and `genui`: the on-device
-/// model emits one of these (as JSON), and it can be rendered either through
-/// the host app's typed-block renderer ([toModuleJson]) or directly by the
-/// `genui` runtime as an A2UI component tree ([toComponents]).
+/// The on-device model emits one of these (as JSON), and it can be rendered
+/// either through the host app's typed-block renderer ([toModuleJson]) or as
+/// an A2UI component tree ([toComponentMaps]).
+///
+/// The component tree is returned as plain maps rather than `genui`'s typed
+/// `Component`, so this package carries no renderer dependency — see
+/// [toComponentMaps] for the three-line adaptation.
 ///
 /// A module is a stack of typed blocks:
 ///   note | field | amount | progress | checklist | week | stat | list |
@@ -85,35 +86,50 @@ class GenUiModuleSpec {
     'blocks': blocks,
   };
 
-  /// An A2UI component tree for the `genui` renderer — a compact, faithful
-  /// summary of the generated module that `genui`'s `Surface` can build.
-  List<Component> toComponents() {
+  /// An A2UI component tree — a compact, faithful summary of the generated
+  /// module that a renderer such as `genui`'s `Surface` can build.
+  ///
+  /// Each entry carries `id`, `type` and `properties`. Plain maps rather than
+  /// `genui`'s typed `Component`, so this package does not drag a renderer
+  /// (and its native plugins) into apps that only want text generation. With
+  /// `genui` in your app:
+  ///
+  /// ```dart
+  /// final components = [
+  ///   for (final c in spec.toComponentMaps())
+  ///     Component(
+  ///       id: c['id'] as String,
+  ///       type: c['type'] as String,
+  ///       properties: c['properties'] as Map<String, Object?>,
+  ///     ),
+  /// ];
+  /// ```
+  List<Map<String, dynamic>> toComponentMaps() {
     final children = <String>['gen_header'];
-    final components = <Component>[
-      Component(
-        id: 'gen_header',
-        type: 'Text',
-        properties: {'text': title, 'variant': 'h4'},
-      ),
+    final components = <Map<String, dynamic>>[
+      {
+        'id': 'gen_header',
+        'type': 'Text',
+        'properties': {'text': title, 'variant': 'h4'},
+      },
     ];
 
     for (var i = 0; i < blocks.length; i++) {
       final b = blocks[i];
       final id = 'gen_block_$i';
       children.add(id);
-      components.add(
-        Component(
-          id: id,
-          type: 'Text',
-          properties: {'text': _describeBlock(b)},
-        ),
-      );
+      components.add({
+        'id': id,
+        'type': 'Text',
+        'properties': {'text': _describeBlock(b)},
+      });
     }
 
-    components.insert(
-      0,
-      Component(id: 'root', type: 'Column', properties: {'children': children}),
-    );
+    components.insert(0, {
+      'id': 'root',
+      'type': 'Column',
+      'properties': {'children': children},
+    });
     return components;
   }
 

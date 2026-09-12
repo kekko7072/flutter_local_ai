@@ -6,8 +6,8 @@ version: 1.0.0+1
 
 environment:
   # Must not sit below the plugin it consumes via `path: ../`.
-  sdk: '>=3.10.0 <4.0.0'
-  flutter: ">=3.38.4"
+  sdk: '>=3.12.0 <4.0.0'
+  flutter: ">=3.44.0"
 
 dependencies:
   flutter:

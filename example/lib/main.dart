@@ -95,7 +95,9 @@ class _MyHomePageState extends State<MyHomePage> {
       try {
         final info = await _aiEngine.getPlatformInfo();
         if (mounted) setState(() => _backend = info.backend);
-      } catch (_) {/* keep unsupported */}
+      } catch (_) {
+        /* keep unsupported */
+      }
 
       if (Platform.isAndroid) {
         await _refreshModelStatus();
@@ -234,8 +236,9 @@ class _MyHomePageState extends State<MyHomePage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content:
-                Text('Failed to ${enable ? "enable" : "disable"} tools: $e'),
+            content: Text(
+              'Failed to ${enable ? "enable" : "disable"} tools: $e',
+            ),
             backgroundColor: Colors.red,
           ),
         );
@@ -406,9 +409,9 @@ class _MyHomePageState extends State<MyHomePage> {
   Future<void> _generateText() async {
     if (_promptController.text.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please enter a prompt')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Please enter a prompt')));
       }
       return;
     }
@@ -440,17 +443,21 @@ class _MyHomePageState extends State<MyHomePage> {
         return;
       }
 
-      debugPrint('[LocalAI] request: "${_promptController.text}" '
-          '(instructions: "${_instructionsController.text}", '
-          'tools: ${_toolsEnabled ? "on" : "off"}, maxTokens: 200)');
+      debugPrint(
+        '[LocalAI] request: "${_promptController.text}" '
+        '(instructions: "${_instructionsController.text}", '
+        'tools: ${_toolsEnabled ? "on" : "off"}, maxTokens: 200)',
+      );
 
       final response = await _aiEngine.generateText(
         prompt: _promptController.text,
         config: const GenerationConfig(maxTokens: 200),
       );
 
-      debugPrint('[LocalAI] response (${response.generationTimeMs} ms, '
-          '~${response.tokenCount} tokens): ${response.text}');
+      debugPrint(
+        '[LocalAI] response (${response.generationTimeMs} ms, '
+        '~${response.tokenCount} tokens): ${response.text}',
+      );
 
       setState(() {
         _response = response.text;
@@ -509,8 +516,10 @@ class _MyHomePageState extends State<MyHomePage> {
     final generator = _uiGenerator!;
 
     final principles = _principlesController.text.trim();
-    debugPrint('[LocalAI][genUI] request goal: "$goal"'
-        '${principles.isEmpty ? '' : ' principles: "$principles"'}');
+    debugPrint(
+      '[LocalAI][genUI] request goal: "$goal"'
+      '${principles.isEmpty ? '' : ' principles: "$principles"'}',
+    );
 
     // onText receives the cumulative raw model output, so the last value is
     // the complete response — printable even when module parsing fails.
@@ -523,7 +532,8 @@ class _MyHomePageState extends State<MyHomePage> {
     debugPrint('[LocalAI][genUI] raw response: ${rawOutput ?? '(no output)'}');
     if (spec == null) {
       debugPrint(
-          '[LocalAI][genUI] module parse failed: ${generator.lastError}');
+        '[LocalAI][genUI] module parse failed: ${generator.lastError}',
+      );
     }
 
     setState(() {
@@ -700,10 +710,7 @@ class _MyHomePageState extends State<MyHomePage> {
           ),
         ),
         body: TabBarView(
-          children: [
-            _buildGenUiTab(context),
-            _buildTextTab(context),
-          ],
+          children: [_buildGenUiTab(context), _buildTextTab(context)],
         ),
       ),
     );
@@ -746,18 +753,14 @@ class _MyHomePageState extends State<MyHomePage> {
                                 Platform.isWindows
                                     ? 'Windows'
                                     : Platform.isAndroid
-                                        ? 'Android'
-                                        : Platform.isIOS
-                                            ? 'iOS'
-                                            : Platform.isMacOS
-                                                ? 'macOS'
-                                                : 'Unknown',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(
-                                      color: Colors.grey,
-                                    ),
+                                    ? 'Android'
+                                    : Platform.isIOS
+                                    ? 'iOS'
+                                    : Platform.isMacOS
+                                    ? 'macOS'
+                                    : 'Unknown',
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: Colors.grey),
                               ),
                           ],
                         ),
@@ -778,8 +781,8 @@ class _MyHomePageState extends State<MyHomePage> {
                           _isInitialized
                               ? 'Model initialized'
                               : _isInitializing
-                                  ? 'Initializing...'
-                                  : 'Model not initialized',
+                              ? 'Initializing...'
+                              : 'Model not initialized',
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
                       ],
@@ -791,9 +794,9 @@ class _MyHomePageState extends State<MyHomePage> {
                               _errorMessage.contains('cppwinrt')
                           ? 'Windows AI headers not configured'
                           : 'Error: ${_errorMessage.length > 100 ? "${_errorMessage.substring(0, 100)}..." : _errorMessage}',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Colors.orange,
-                          ),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: Colors.orange),
                     ),
                   ],
                 ],
@@ -815,19 +818,17 @@ class _MyHomePageState extends State<MyHomePage> {
                           _modelStatus == ModelFeatureStatus.available
                               ? Icons.check_circle
                               : _modelStatus == ModelFeatureStatus.downloadable
-                                  ? Icons.download
-                                  : _modelStatus ==
-                                          ModelFeatureStatus.downloading
-                                      ? Icons.downloading
-                                      : Icons.info,
+                              ? Icons.download
+                              : _modelStatus == ModelFeatureStatus.downloading
+                              ? Icons.downloading
+                              : Icons.info,
                           color: _modelStatus == ModelFeatureStatus.available
                               ? Colors.green
                               : _modelStatus == ModelFeatureStatus.downloadable
-                                  ? Colors.orange
-                                  : _modelStatus ==
-                                          ModelFeatureStatus.downloading
-                                      ? Colors.blue
-                                      : Colors.grey,
+                              ? Colors.orange
+                              : _modelStatus == ModelFeatureStatus.downloading
+                              ? Colors.blue
+                              : Colors.grey,
                         ),
                         const SizedBox(width: 8),
                         Expanded(
@@ -862,19 +863,18 @@ class _MyHomePageState extends State<MyHomePage> {
                       const SizedBox(height: 8),
                       Text(
                         _downloadError,
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: Colors.red),
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodySmall?.copyWith(color: Colors.red),
                       ),
                     ],
                     const SizedBox(height: 8),
                     ElevatedButton.icon(
                       onPressed:
                           (_modelStatus == ModelFeatureStatus.downloadable &&
-                                  !_isDownloading)
-                              ? _downloadModel
-                              : null,
+                              !_isDownloading)
+                          ? _downloadModel
+                          : null,
                       icon: const Icon(Icons.download),
                       label: const Text('Download Model'),
                       style: ElevatedButton.styleFrom(
@@ -929,10 +929,9 @@ class _MyHomePageState extends State<MyHomePage> {
                 padding: const EdgeInsets.only(bottom: 8.0),
                 child: Text(
                   'Try: "Use quickMath to add 4 and 9" or "Find 2 sourdough recipes with searchBreadDatabase".',
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: Colors.grey[700]),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: Colors.grey[700]),
                 ),
               ),
           ],
@@ -949,7 +948,8 @@ class _MyHomePageState extends State<MyHomePage> {
                     )
                   : const Icon(Icons.settings),
               label: Text(
-                  _isInitializing ? 'Initializing...' : 'Initialize Model'),
+                _isInitializing ? 'Initializing...' : 'Initialize Model',
+              ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.blue,
                 foregroundColor: Colors.white,
@@ -1085,12 +1085,12 @@ class _MyHomePageState extends State<MyHomePage> {
                   label: Text(example),
                   onPressed: _isAvailable
                       ? () => setState(() {
-                            _goalController.text = example;
-                            _goalController.selection =
-                                TextSelection.fromPosition(
-                              TextPosition(offset: example.length),
-                            );
-                          })
+                          _goalController.text = example;
+                          _goalController.selection =
+                              TextSelection.fromPosition(
+                                TextPosition(offset: example.length),
+                              );
+                        })
                       : null,
                 ),
             ],
@@ -1189,9 +1189,7 @@ class _MyHomePageState extends State<MyHomePage> {
                       if (module.blurb.isNotEmpty)
                         Text(
                           module.blurb,
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
+                          style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(color: Colors.grey[700]),
                         ),
                     ],
@@ -1217,8 +1215,9 @@ class _MyHomePageState extends State<MyHomePage> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: SelectableText(
-                    const JsonEncoder.withIndent('  ')
-                        .convert(module.toModuleJson()),
+                    const JsonEncoder.withIndent(
+                      '  ',
+                    ).convert(module.toModuleJson()),
                     style: const TextStyle(
                       fontFamily: 'monospace',
                       fontSize: 12,
@@ -1287,12 +1286,11 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Widget _blockLabel(BuildContext context, String label) => Text(
-        label,
-        style: Theme.of(context)
-            .textTheme
-            .labelMedium
-            ?.copyWith(color: Colors.grey[700]),
-      );
+    label,
+    style: Theme.of(
+      context,
+    ).textTheme.labelMedium?.copyWith(color: Colors.grey[700]),
+  );
 
   Widget _amountBlock(BuildContext context, Map<String, dynamic> b) {
     final prefix = (b['prefix'] ?? '').toString();
@@ -1303,17 +1301,19 @@ class _MyHomePageState extends State<MyHomePage> {
         const SizedBox(height: 4),
         Text(
           '$prefix${b['value'] ?? 0}',
-          style: Theme.of(context)
-              .textTheme
-              .headlineSmall
-              ?.copyWith(fontWeight: FontWeight.bold),
+          style: Theme.of(
+            context,
+          ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
         ),
       ],
     );
   }
 
   Widget _progressBlock(
-      BuildContext context, Map<String, dynamic> b, Color tone) {
+    BuildContext context,
+    Map<String, dynamic> b,
+    Color tone,
+  ) {
     final prefix = (b['prefix'] ?? '').toString();
     final value = _toDouble(b['value']);
     final target = _toDouble(b['target']);
@@ -1339,7 +1339,10 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Widget _checklistBlock(
-      BuildContext context, Map<String, dynamic> b, Color tone) {
+    BuildContext context,
+    Map<String, dynamic> b,
+    Color tone,
+  ) {
     final items = (b['items'] as List?) ?? const [];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1369,9 +1372,7 @@ class _MyHomePageState extends State<MyHomePage> {
                         if ((raw['meta'] ?? '').toString().isNotEmpty)
                           Text(
                             raw['meta'].toString(),
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
+                            style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(color: Colors.grey[600]),
                           ),
                       ],
@@ -1418,7 +1419,8 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Widget _statBlock(BuildContext context, Map<String, dynamic> b) {
-    final value = b['value']?.toString() ??
+    final value =
+        b['value']?.toString() ??
         (b['dynamic'] != null ? '(${b['dynamic']})' : '—');
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1426,10 +1428,9 @@ class _MyHomePageState extends State<MyHomePage> {
         _blockLabel(context, (b['label'] ?? 'Stat').toString()),
         Text(
           value,
-          style: Theme.of(context)
-              .textTheme
-              .titleMedium
-              ?.copyWith(fontWeight: FontWeight.bold),
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
         ),
       ],
     );
@@ -1460,7 +1461,10 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Widget _lessonsBlock(
-      BuildContext context, Map<String, dynamic> b, Color tone) {
+    BuildContext context,
+    Map<String, dynamic> b,
+    Color tone,
+  ) {
     final items = (b['items'] as List?) ?? const [];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1495,7 +1499,10 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Widget _reminderBlock(
-      BuildContext context, Map<String, dynamic> b, Color tone) {
+    BuildContext context,
+    Map<String, dynamic> b,
+    Color tone,
+  ) {
     final parts = <String>[
       if ((b['date'] ?? '').toString().isNotEmpty) b['date'].toString(),
       if ((b['time'] ?? '').toString().isNotEmpty) b['time'].toString(),
@@ -1511,10 +1518,9 @@ class _MyHomePageState extends State<MyHomePage> {
             children: [
               Text(
                 (b['title'] ?? 'Reminder').toString(),
-                style: Theme.of(context)
-                    .textTheme
-                    .titleSmall
-                    ?.copyWith(fontWeight: FontWeight.bold),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
               ),
               if (parts.isNotEmpty)
                 Text(
@@ -1557,10 +1563,9 @@ class _MyHomePageState extends State<MyHomePage> {
           const SizedBox(height: 4),
           Text(
             '→ ${b['resultLabel']}',
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(fontStyle: FontStyle.italic),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic),
           ),
         ],
       ],

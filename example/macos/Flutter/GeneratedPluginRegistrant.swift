@@ -5,14 +5,14 @@
 import FlutterMacOS
 import Foundation
 
-import audioplayers_darwin
+import flutter_gemma
 import flutter_local_ai
-import url_launcher_macos
-import video_player_avfoundation
+import large_file_handler
+import shared_preferences_foundation
 
 func RegisterGeneratedPlugins(registry: FlutterPluginRegistry) {
-  AudioplayersDarwinPlugin.register(with: registry.registrar(forPlugin: "AudioplayersDarwinPlugin"))
+  FlutterGemmaPlugin.register(with: registry.registrar(forPlugin: "FlutterGemmaPlugin"))
   FlutterLocalAiPlugin.register(with: registry.registrar(forPlugin: "FlutterLocalAiPlugin"))
-  UrlLauncherPlugin.register(with: registry.registrar(forPlugin: "UrlLauncherPlugin"))
-  VideoPlayerPlugin.register(with: registry.registrar(forPlugin: "VideoPlayerPlugin"))
+  LargeFileHandlerPlugin.register(with: registry.registrar(forPlugin: "LargeFileHandlerPlugin"))
+  SharedPreferencesPlugin.register(with: registry.registrar(forPlugin: "SharedPreferencesPlugin"))
 }

@@ -1,5 +1,25 @@
 ## Unreleased
 
+- **Breaking:** merge `flutter_gemma_local_ai` into this package. The engine
+  now ships from `package:flutter_local_ai/gemma.dart`, which also re-exports
+  the whole core library, so `LocalAiTool` and friends no longer need a
+  second import. Replace the `flutter_gemma_local_ai` dependency with
+  `flutter_local_ai` and the import with `package:flutter_local_ai/gemma.dart`.
+- **Breaking:** `flutter_gemma` ^1.8.0 is now a dependency, raising the floor
+  to Dart >=3.12.0 / Flutter >=3.44.0.
+- **Breaking:** drop the `genui` dependency. `GenUiModuleSpec.toComponents()`
+  becomes `toComponentMaps()`, returning plain maps instead of genui's typed
+  `Component`, so the package no longer pulls a renderer — and its native
+  plugins — into apps that only generate text. The doc comment carries the
+  three-line adaptation for genui users.
+- Report Apple tool calling and structured output only on iOS/macOS 26+
+  rather than unconditionally, so the capability gate is usable.
+- Report a real Android download total from `DownloadStarted.bytesToDownload`,
+  so `ensureReady(onProgress:)` reports a percentage.
+- Settle the Android transcript when a turn fails or is cancelled: commit
+  partial streamed text, otherwise drop the abandoned prompt instead of
+  leaving it for the next turn. `stopGeneration` now joins the cancelled job
+  before it answers Dart.
 - Verify the adapter against flutter_gemma 1.8.0 and retain migration aliases.
 - Share native model ownership across Gemma, the facade and genUI; avoid
   session ID collisions and wait for in-flight session creation on shutdown.
@@ -17,8 +37,8 @@
 ## 0.1.0
 
 A rewrite onto one architecture, and the OS-model layer under
-[flutter_gemma](https://pub.dev/packages/flutter_gemma) via the new
-`flutter_gemma_local_ai` bridge package in this repository.
+[flutter_gemma](https://pub.dev/packages/flutter_gemma) via the
+`package:flutter_local_ai/gemma.dart` entry point.
 
 ### One implementation instead of two
 

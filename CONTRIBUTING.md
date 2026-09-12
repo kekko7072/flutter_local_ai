@@ -2,16 +2,18 @@
 
 ## Layout
 
-Two published packages live here:
+One published package lives here: `flutter_local_ai`, with two entry points.
 
-| Path | Package | What it is |
-|---|---|---|
-| `.` | `flutter_local_ai` | The plugin: native hosts plus the Dart API |
-| `packages/flutter_gemma_local_ai` | `flutter_gemma_local_ai` | A flutter_gemma inference engine over the above |
+| Import | What it is |
+|---|---|
+| `package:flutter_local_ai/flutter_local_ai.dart` | The plugin: native hosts plus the Dart API |
+| `package:flutter_local_ai/gemma.dart` | A flutter_gemma inference engine over the above, plus a full re-export of the core |
 
-The bridge depends on the root package by a hosted constraint with a
-`dependency_overrides` path entry, so it builds against this checkout locally
-and against pub.dev once published.
+`lib/src/gemma/` is the only code that imports `flutter_gemma`. Dart has no
+optional dependencies and no structural typing, so implementing
+`InferenceEngineProvider` makes `flutter_gemma` a dependency of the whole
+package — which is also where the Dart >=3.12 / Flutter >=3.44 floor comes
+from.
 
 ## Architecture in one paragraph
 
@@ -54,8 +56,7 @@ remaps values rather than failing.
 ## Tests
 
 ```sh
-flutter test                                  # root package
-cd packages/flutter_gemma_local_ai && flutter test
+flutter test
 ```
 
 There is no OS model behind `flutter test` on any platform, so tests drive a
@@ -99,14 +100,9 @@ Publishing is driven by tags, and pub.dev authenticates the run by its OIDC
 identity — there is no token in this repository.
 
 ```sh
-# flutter_local_ai
 git tag v0.1.0 && git push origin v0.1.0
-
-# flutter_gemma_local_ai
-git tag flutter_gemma_local_ai-v0.1.0
-git push origin flutter_gemma_local_ai-v0.1.0
 ```
 
 The workflow refuses to publish when the tag and `pubspec.yaml` disagree.
-Both packages must have this repository and their tag pattern registered on
+The package must have this repository and the `v*` tag pattern registered on
 pub.dev under **Admin → Automated publishing** first.

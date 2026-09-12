@@ -1,7 +1,0 @@
-# When this file exists, `dart pub publish` uses it INSTEAD of .gitignore for
-# this package, so every artifact to keep out of the archive is listed here.
-
-build/
-.dart_tool/
-coverage/
-.DS_Store

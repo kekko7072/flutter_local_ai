@@ -1,0 +1,6 @@
+# The gemma engine moved here from a package that had its own lint config;
+# this keeps that coverage and extends it to the rest of lib/.
+analyzer:
+  exclude:
+    - build/**
+include: package:flutter_lints/flutter.yaml

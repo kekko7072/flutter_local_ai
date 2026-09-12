@@ -15,10 +15,9 @@ import 'local_ai_host.dart';
 class LocalAiSession {
   LocalAiSession({
     required this.sessionId,
-    required LocalAiHost host,
-    required void Function() onClose,
-  }) : _host = host,
-       _onClose = onClose;
+    required this._host,
+    required this._onClose,
+  });
 
   final int sessionId;
   final LocalAiHost _host;

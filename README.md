@@ -92,20 +92,33 @@ await model.close();
 
 ## Using this package with flutter_gemma
 
-`flutter_gemma_local_ai`, in this repository, registers flutter_local_ai as a
-flutter_gemma inference engine, so the OS built-in model appears behind the
-same `FlutterGemma` facade as any bundled checkpoint:
+A second entry point, `package:flutter_local_ai/gemma.dart`, registers this
+package as a flutter_gemma inference engine, so the OS built-in model appears
+behind the same `FlutterGemma` facade as any bundled checkpoint:
 
 ```dart
+import 'package:flutter_gemma/flutter_gemma.dart';
+import 'package:flutter_local_ai/gemma.dart';
+
 await FlutterGemma.initialize(
   inferenceEngines: const [LocalAiEngine()],
 );
 ```
 
-See the [readiness review](doc/gemma-readiness.md) for tested support, remaining
-OS API gaps, and release requirements. See [`packages/flutter_gemma_local_ai`](packages/flutter_gemma_local_ai) for
-the full guide, including how to fall back to a downloaded model when the OS
-model is unavailable, and how to migrate from `flutter_gemma_builtin_ai`.
+That import re-exports the whole core library, so the same file gives you
+`LocalAiTool`, `LocalAiSession` and the rest of the native surface —
+including the parts flutter_gemma's own interfaces do not expose. Reach them
+on a live Gemma session through `LocalAiGemmaSession.localAiSession`.
+
+`flutter_gemma` is a dependency of this package whether or not you import
+`gemma.dart`: Dart has no optional dependencies, and implementing
+flutter_gemma's `InferenceEngineProvider` requires its types. That is also
+where the Dart >=3.12 / Flutter >=3.44 floor comes from.
+
+See the [readiness review](doc/gemma-readiness.md) for tested support,
+remaining OS API gaps, and release requirements — including how to fall back
+to a downloaded model when the OS model is unavailable, and how to migrate
+from `flutter_gemma_builtin_ai`.
 
 ## Installation
 
@@ -405,7 +418,7 @@ if (module == null) {
   print(module.title);                 // e.g. "Weekend trip fund"
   print(module.blocks);                 // typed blocks: amount, progress, ...
   final json = module.toModuleJson();   // shape for your renderer
-  // final components = module.toComponents(); // A2UI tree for genui's Surface
+  // final components = module.toComponentMaps(); // A2UI tree, as plain maps
 }
 
 // The detected backend is available for labelling.
@@ -759,7 +772,9 @@ A validated genUI module produced by the local model.
 - `title`, `icon`, `tone`, `blurb` (String) - Module header fields
 - `blocks` (List<Map<String, dynamic>>) - Ordered typed blocks
 - `Map<String, dynamic> toModuleJson()` - Shape for a typed-block renderer
-- `List<Component> toComponents()` - An A2UI component tree for the `genui` `Surface`
+- `List<Map<String, dynamic>> toComponentMaps()` - An A2UI component tree as
+  plain `id`/`type`/`properties` maps. Wrap each entry in `genui`'s `Component`
+  to feed a `Surface` — see the doc comment for the three-line adaptation.
 
 ## Implementation notes
 

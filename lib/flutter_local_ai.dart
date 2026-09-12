@@ -1,4 +1,4 @@
-library flutter_local_ai;
+library;
 
 export 'src/flutter_local_ai.dart';
 export 'src/models/ai_response.dart';
@@ -8,9 +8,9 @@ export 'src/models/platform_info.dart';
 export 'src/models/tool.dart';
 
 // Session API: the multi-session, buffer-then-generate surface the
-// flutter_gemma bridge (flutter_gemma_local_ai) is built on. Usable directly
-// too — it is the fuller of the two APIs, and the only one with images,
-// concurrent sessions, cancellation and exact token counts.
+// flutter_gemma engine (package:flutter_local_ai/gemma.dart) is built on.
+// Usable directly too — it is the fuller of the two APIs, and the only one
+// with images, concurrent sessions, cancellation and exact token counts.
 export 'src/session/local_ai.dart';
 export 'src/session/local_ai_host.dart'
     show

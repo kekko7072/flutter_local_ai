@@ -13,12 +13,11 @@ import 'local_ai_session.dart';
 /// generation across them is serialized by the host.
 class LocalAiModel {
   LocalAiModel._({
-    required LocalAiHost host,
+    required this._host,
     required this.maxTokens,
     required this.supportImage,
-    required _HostModelState state,
-  }) : _host = host,
-       _state = state;
+    required this._state,
+  });
 
   static final _states = Expando<_HostModelState>();
 
@@ -136,8 +135,9 @@ class LocalAiModel {
           firstStack ??= stack;
         }
       }
-      if (firstError != null)
+      if (firstError != null) {
         Error.throwWithStackTrace(firstError, firstStack!);
+      }
     } finally {
       _sessions.clear();
       await _state.release();
@@ -157,7 +157,7 @@ class _HostModelState {
 
   Future<void> _serialize(Future<void> Function() operation) {
     final result = _tail.then((_) => operation());
-    _tail = result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    _tail = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
     return result;
   }
 

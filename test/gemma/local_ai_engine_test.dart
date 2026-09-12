@@ -8,8 +8,7 @@ import 'package:flutter_gemma/core/tool.dart' as gemma;
 import 'package:flutter_gemma/core/model_management/model_specs.dart'
     show InferenceModelSpec;
 import 'package:flutter_gemma/core/registry/runtime_config.dart';
-import 'package:flutter_gemma_local_ai/flutter_gemma_local_ai.dart';
-import 'package:flutter_local_ai/flutter_local_ai.dart';
+import 'package:flutter_local_ai/gemma.dart';
 import 'package:flutter_local_ai/testing.dart';
 import 'package:flutter_test/flutter_test.dart';
 

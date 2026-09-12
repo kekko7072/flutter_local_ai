@@ -12,27 +12,14 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # flutter_gemma 1.8.0 requires Dart >=3.12.0 / Flutter >=3.44.0, which the
-  # bridge package inherits. Anything lower cannot resolve either package.
+  # flutter_gemma 1.8.0 requires Dart >=3.12.0 / Flutter >=3.44.0, and the
+  # engine in lib/gemma.dart depends on it. Anything lower cannot resolve.
   FLUTTER_VERSION: "3.44.x"
 
 jobs:
-  # Both packages get identical treatment; the matrix is the whole reason
-  # there is one job here instead of two copies.
   check:
-    name: ${{ matrix.name }}
+    name: flutter_local_ai
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: flutter_local_ai
-            path: .
-          - name: flutter_gemma_local_ai
-            path: packages/flutter_gemma_local_ai
-    defaults:
-      run:
-        working-directory: ${{ matrix.path }}
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
@@ -43,14 +30,10 @@ jobs:
       - run: flutter pub get
 
       # `dart format` and `flutter analyze` walk the whole tree from the repo
-      # root, so the nested bridge package and the example app need their own
-      # resolution too — otherwise analysis fails on unresolved imports in
-      # directories this entry never pub-got.
-      - name: Resolve nested packages
-        if: matrix.path == '.'
-        run: |
-          flutter pub get --directory packages/flutter_gemma_local_ai
-          flutter pub get --directory example
+      # root, so the example app needs its own resolution too — otherwise
+      # analysis fails on unresolved imports in a directory this job never
+      # pub-got.
+      - run: flutter pub get --directory example
 
       - name: Verify formatting
         run: dart format --output=none --set-exit-if-changed .
@@ -64,8 +47,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: coverage-${{ matrix.name }}
-          path: ${{ matrix.path }}/coverage/lcov.info
+          name: coverage
+          path: coverage/lcov.info
           if-no-files-found: ignore
 
   # The native hosts are generated from pigeon.dart. Hand-editing the output
@@ -96,19 +79,8 @@ jobs:
   # the failure modes (an ignore rule hiding a pubspec, a missing licence) do
   # not show up in analyze or test.
   package:
-    name: Package ${{ matrix.name }}
+    name: Package
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: flutter_local_ai
-            path: .
-          - name: flutter_gemma_local_ai
-            path: packages/flutter_gemma_local_ai
-    defaults:
-      run:
-        working-directory: ${{ matrix.path }}
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2

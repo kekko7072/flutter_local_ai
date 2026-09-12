@@ -29,11 +29,11 @@ Flutter Gemma owns model selection and its chat protocol. flutter_local_ai conti
 
 ## Migrating the consumer
 
-Use `flutter_gemma_local_ai` in place of `flutter_gemma_builtin_ai`, and register **one** engine for `ModelFileType.builtIn`:
+Use `package:flutter_local_ai/gemma.dart` in place of `flutter_gemma_builtin_ai`, and register **one** engine for `ModelFileType.builtIn`:
 
 ```dart
 import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:flutter_gemma_local_ai/flutter_gemma_local_ai.dart';
+import 'package:flutter_local_ai/gemma.dart';
 
 await FlutterGemma.initialize(inferenceEngines: const [LocalAiEngine()]);
 final spec = LocalAiModels.forCurrentPlatform;
@@ -46,16 +46,16 @@ await FlutterGemma.installModel(
 final model = await FlutterGemma.getActiveModel(maxTokens: 4096);
 ```
 
-The `BuiltInAi*` migration names are also exported. Dependency replacement and registration still have to be made in the consuming Gemma app/package. This repository does not modify or publish the creator's upstream package. Publish flutter_local_ai before publishing its adapter, or configure both as local/git dependencies: a dependency override in the adapter's own pubspec is not inherited by downstream applications.
+The `BuiltInAi*` migration names are also exported. Dependency replacement and registration still have to be made in the consuming Gemma app/package. This repository does not modify or publish the creator's upstream package. The engine ships inside `flutter_local_ai` itself, so there is one package to depend on and one to publish.
 
 Models are OS-managed, not bundled checkpoints. Preparation can download system assets. An app should explain and obtain consent for sizeable downloads before calling `ensureReady`, especially the Windows GPU model. Availability does not follow from OS version alone.
 
 ## Preserving the additional capabilities
 
-Gemma's `InferenceModelSession` does not expose dynamic JSON schemas or Dart native-tool callbacks. Use the adapter's public escape hatches on the same underlying model:
+Gemma's `InferenceModelSession` does not expose dynamic JSON schemas or Dart native-tool callbacks. Use the engine's public escape hatches on the same underlying model. `gemma.dart` re-exports the whole core library, so one import covers `LocalAiGemmaModel`, `LocalAiTool` and the session API:
 
 ```dart
-import 'package:flutter_local_ai/flutter_local_ai.dart';
+import 'package:flutter_local_ai/gemma.dart';
 // model is the result of FlutterGemma.getActiveModel().
 final local = (model as LocalAiGemmaModel).localAiModel;
 final native = await local.openSession(
@@ -117,12 +117,11 @@ The directory must contain `winrt/Microsoft.Windows.AI.Text.h` and its dependenc
 
 ## Validation and release gates
 
-- Root Dart tests: 109 passed, including model coexistence and shutdown-race tests.
-- Adapter Dart tests: 26 passed against Gemma 1.8.0, including migration names, modality rejection, limits, concurrent singleton creation and native tools/schema access, and Gemma chat tool-protocol parsing.
+- Dart tests: 135 passed in one suite — model coexistence and shutdown races, plus, against Gemma 1.8.0, migration names, modality rejection, limits, concurrent singleton creation, native tools/schema access and Gemma chat tool-protocol parsing.
 - Dart analysis: no issues in the checked package sources.
 - Android: `:flutter_local_ai:compileDebugKotlin` succeeded with Kotlin 2.3.21 / ML Kit beta4. This is plugin compilation, not a complete release APK or device inference test.
 - Apple: all plugin Swift sources typecheck with Xcode 26.4 against an iOS 15 target in Swift 5 language mode. This checks guarded backward deployment; it does not compile the OS 27 branch or run inference.
-- Publish dry-runs found no validation errors; uncommitted changes and the adapter's local dependency override were flagged. The adapter must be tested against the published core version before release. No package was published.
+- The publish dry-run found no validation errors; only uncommitted changes were flagged. No package was published.
 - Not run: Windows native build/runtime; Apple OS 27 build/runtime; Android, Apple, Windows and Chrome end-to-end inference; publishing.
 
 Before announcing replacement readiness, build and run the consuming Gemma app on supported devices. Cover availability/preparation, two simultaneous chats, cancellation then another turn, image ordering, prompt tools versus native tools, schema validation, genUI during chat, and closing/recreating the active model. Unsupported devices should retain a usable fallback. Additional device tests are required for the OS 27 model and experimental Windows GPU path.

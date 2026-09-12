@@ -98,4 +98,62 @@ void main() {
       expect(LocalAiUiGenerator.parseModelOutput(raw), isNull);
     });
   });
+
+  group('GenUiModuleSpec.toComponentMaps', () {
+    // Guards the A2UI tree shape after it stopped returning genui's typed
+    // Component: the root must come first and list every child in order.
+    const spec = GenUiModuleSpec(
+      title: 'Weekend trip fund',
+      icon: 'plane',
+      tone: 'sky',
+      blurb: 'Save for the trip',
+      blocks: [
+        {'type': 'amount', 'label': 'Target'},
+        {'type': 'progress', 'label': 'Saved'},
+      ],
+    );
+
+    test('root comes first and names every child in order', () {
+      final components = spec.toComponentMaps();
+
+      expect(components.first, {
+        'id': 'root',
+        'type': 'Column',
+        'properties': {
+          'children': ['gen_header', 'gen_block_0', 'gen_block_1'],
+        },
+      });
+      expect(components.map((c) => c['id']), [
+        'root',
+        'gen_header',
+        'gen_block_0',
+        'gen_block_1',
+      ]);
+    });
+
+    test('header carries the title and every entry is a Text component', () {
+      final components = spec.toComponentMaps();
+
+      expect(components[1]['type'], 'Text');
+      expect((components[1]['properties'] as Map)['text'], 'Weekend trip fund');
+      expect(components.skip(1).every((c) => c['type'] == 'Text'), isTrue);
+    });
+
+    test('a spec with no blocks still yields a root and a header', () {
+      const empty = GenUiModuleSpec(
+        title: 'Empty',
+        icon: 'x',
+        tone: 'fern',
+        blurb: '',
+        blocks: [],
+      );
+
+      final components = empty.toComponentMaps();
+
+      expect(components.map((c) => c['id']), ['root', 'gen_header']);
+      expect((components.first['properties'] as Map)['children'], [
+        'gen_header',
+      ]);
+    });
+  });
 }
