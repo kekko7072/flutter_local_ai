@@ -3,37 +3,39 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('validateGenerationSchema (supported subset)', () {
-    test('accepts a nested object with properties, required, and description',
-        () {
-      expect(
-        () => validateGenerationSchema(const {
-          'type': 'object',
-          'description': 'A support ticket',
-          'properties': {
-            'title': {'type': 'string', 'description': 'Short headline'},
-            'priority': {
-              'enum': ['low', 'med', 'high'],
-            },
-            'tags': {
-              'type': 'array',
-              'items': {'type': 'string'},
-              'minItems': 1,
-              'maxItems': 5,
-            },
-            'meta': {
-              'type': 'object',
-              'properties': {
-                'count': {'type': 'integer'},
-                'ratio': {'type': 'number'},
-                'urgent': {'type': 'boolean'},
+    test(
+      'accepts a nested object with properties, required, and description',
+      () {
+        expect(
+          () => validateGenerationSchema(const {
+            'type': 'object',
+            'description': 'A support ticket',
+            'properties': {
+              'title': {'type': 'string', 'description': 'Short headline'},
+              'priority': {
+                'enum': ['low', 'med', 'high'],
+              },
+              'tags': {
+                'type': 'array',
+                'items': {'type': 'string'},
+                'minItems': 1,
+                'maxItems': 5,
+              },
+              'meta': {
+                'type': 'object',
+                'properties': {
+                  'count': {'type': 'integer'},
+                  'ratio': {'type': 'number'},
+                  'urgent': {'type': 'boolean'},
+                },
               },
             },
-          },
-          'required': ['title'],
-        }),
-        returnsNormally,
-      );
-    });
+            'required': ['title'],
+          }),
+          returnsNormally,
+        );
+      },
+    );
 
     test('treats an object as the default when type is omitted', () {
       expect(() => validateGenerationSchema(const {}), returnsNormally);

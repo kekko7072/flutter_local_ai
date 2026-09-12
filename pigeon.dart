@@ -135,18 +135,20 @@ class ToolSpec {
   List<ToolParameterSpec> parameters;
 }
 
-@ConfigurePigeon(PigeonOptions(
-  dartOut: 'lib/src/pigeon/local_ai_api.g.dart',
-  dartPackageName: 'flutter_local_ai',
-  kotlinOut:
-      'android/src/main/kotlin/io/vezz/flutter_local_ai/LocalAiPigeon.g.kt',
-  kotlinOptions: KotlinOptions(package: 'io.vezz.flutter_local_ai'),
-  swiftOut: 'darwin/flutter_local_ai/Classes/LocalAiPigeon.g.swift',
-  swiftOptions: SwiftOptions(),
-  cppHeaderOut: 'windows/local_ai_pigeon.g.h',
-  cppSourceOut: 'windows/local_ai_pigeon.g.cpp',
-  cppOptions: CppOptions(namespace: 'flutter_local_ai_pigeon'),
-))
+@ConfigurePigeon(
+  PigeonOptions(
+    dartOut: 'lib/src/pigeon/local_ai_api.g.dart',
+    dartPackageName: 'flutter_local_ai',
+    kotlinOut:
+        'android/src/main/kotlin/io/vezz/flutter_local_ai/LocalAiPigeon.g.kt',
+    kotlinOptions: KotlinOptions(package: 'io.vezz.flutter_local_ai'),
+    swiftOut: 'darwin/flutter_local_ai/Classes/LocalAiPigeon.g.swift',
+    swiftOptions: SwiftOptions(),
+    cppHeaderOut: 'windows/local_ai_pigeon.g.h',
+    cppSourceOut: 'windows/local_ai_pigeon.g.cpp',
+    cppOptions: CppOptions(namespace: 'flutter_local_ai_pigeon'),
+  ),
+)
 @HostApi()
 abstract class LocalAiService {
   // --- Availability -------------------------------------------------------

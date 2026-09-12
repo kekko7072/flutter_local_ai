@@ -3,6 +3,8 @@ import 'dart:typed_data';
 import 'package:flutter_gemma/core/domain/model_source.dart';
 import 'package:flutter_gemma/core/message.dart';
 import 'package:flutter_gemma/core/model.dart';
+import 'package:flutter_gemma/core/model_response.dart';
+import 'package:flutter_gemma/core/tool.dart' as gemma;
 import 'package:flutter_gemma/core/model_management/model_specs.dart'
     show InferenceModelSpec;
 import 'package:flutter_gemma/core/registry/runtime_config.dart';
@@ -34,6 +36,172 @@ void main() {
     await host.dispose();
   });
 
+  group('migration readiness', () {
+    test('exports the builtin resolver alias', () {
+      expect(
+        const BuiltInAiHuggingFaceResolver(),
+        isA<LocalAiHuggingFaceResolver>(),
+      );
+    });
+    test(
+      'rejects audio model configuration before touching the host',
+      () async {
+        await expectLater(
+          const LocalAiEngine().createModel(
+            _spec(),
+            const RuntimeConfig(
+              maxTokens: 4096,
+              modelPath: '',
+              supportAudio: true,
+            ),
+          ),
+          throwsUnsupportedError,
+        );
+        expect(host.calls, isEmpty);
+      },
+    );
+    test(
+      'rejects disabled images and audio instead of dropping them',
+      () async {
+        final model = await const LocalAiEngine().createModel(_spec(), _config);
+        final session = await model.createSession();
+        await expectLater(
+          session.addQueryChunk(
+            Message.withImage(
+              text: 'Describe',
+              imageBytes: Uint8List.fromList([1]),
+            ),
+          ),
+          throwsUnsupportedError,
+        );
+        await expectLater(
+          session.addQueryChunk(
+            Message.audioOnly(audioBytes: Uint8List.fromList([1])),
+          ),
+          throwsUnsupportedError,
+        );
+        expect(host.sessions.single.transcript.toString(), isEmpty);
+        await model.close();
+      },
+    );
+    test('enforces configured session and image limits', () async {
+      final model = await const LocalAiEngine().createModel(
+        _spec(),
+        const RuntimeConfig(
+          maxTokens: 4096,
+          modelPath: '',
+          supportImage: true,
+          maxNumImages: 1,
+          maxConcurrentSessions: 1,
+        ),
+      );
+      final session = await model.openSession();
+      await expectLater(model.openSession(), throwsStateError);
+      await expectLater(
+        session.addQueryChunk(
+          Message.withImages(
+            text: 'Compare',
+            imageBytes: [Uint8List(1), Uint8List(1)],
+          ),
+        ),
+        throwsArgumentError,
+      );
+      expect(host.sessions.single.images, isEmpty);
+      await session.close();
+      await model.openSession();
+      await model.close();
+    });
+    test(
+      'concurrent singleton creation leaves only the latest session open',
+      () async {
+        final model = await const LocalAiEngine().createModel(_spec(), _config);
+        final sessions = await Future.wait([
+          model.createSession(),
+          model.createSession(),
+        ]);
+        expect(model.session, same(sessions.last));
+        expect(model.sessions, hasLength(1));
+        expect(host.sessions.first.closed, isTrue);
+        await model.close();
+      },
+    );
+    test('Gemma chat injects and parses its prompt tool protocol', () async {
+      final model = await const LocalAiEngine().createModel(_spec(), _config);
+      final chat = await model.createChat(
+        supportsFunctionCalls: true,
+        tools: const [
+          gemma.Tool(
+            name: 'readStatus',
+            description: 'Read application status',
+          ),
+        ],
+      );
+      await chat.addQuery(const Message(text: 'Read the status', isUser: true));
+      expect(host.sessions.single.toolNames, isEmpty);
+      expect(
+        host.sessions.single.transcript.toString(),
+        contains('readStatus'),
+      );
+      host.response = '{"name":"readStatus","parameters":{}}';
+      final response = await chat.generateChatResponse();
+      expect(
+        response,
+        isA<FunctionCallResponse>().having((r) => r.name, 'name', 'readStatus'),
+      );
+      await chat.addQuery(
+        Message.toolResponse(
+          toolName: 'readStatus',
+          response: {'status': 'ready'},
+        ),
+      );
+      host.response = 'The application is ready.';
+      expect(
+        await chat.generateChatResponse(),
+        const TextResponse('The application is ready.'),
+      );
+      await model.close();
+    });
+    test(
+      'native tools and schemas remain available alongside Gemma chat',
+      () async {
+        final model =
+            await const LocalAiEngine().createModel(_spec(), _config)
+                as LocalAiGemmaModel;
+        final chat = await model.createSession();
+        final native = await model.localAiModel.openSession(
+          tools: [
+            LocalAiTool(
+              name: 'lookup',
+              description: 'Local lookup',
+              parameters: const [],
+              onCall: (_) async => 'found',
+            ),
+          ],
+        );
+        host.response = '{"value":"found"}';
+        await native.addQueryChunk('Look up the value');
+        expect(
+          await native.getStructuredResponse({
+            'type': 'object',
+            'properties': {
+              'value': {'type': 'string'},
+            },
+          }),
+          host.response,
+        );
+        expect(host.session(native.sessionId)!.toolNames, ['lookup']);
+        expect(
+          host.session(native.sessionId)!.lastSchemaJson,
+          contains('value'),
+        );
+        await native.close();
+        await chat.addQueryChunk(const Message(text: 'Continue', isUser: true));
+        expect(await chat.getResponse(), host.response);
+        await model.close();
+      },
+    );
+  });
+
   group('engine selection', () {
     test('claims builtIn specs and nothing else', () {
       const engine = LocalAiEngine();
@@ -45,22 +213,26 @@ void main() {
         ModelFileType.litertlm,
         ModelFileType.onnx,
       ]) {
-        expect(engine.canHandle(_spec(fileType: other)), isFalse,
-            reason: '$other belongs to another engine');
+        expect(
+          engine.canHandle(_spec(fileType: other)),
+          isFalse,
+          reason: '$other belongs to another engine',
+        );
       }
     });
 
     test('reserves the builtIn Hugging Face slot with a clear error', () async {
       const resolver = LocalAiHuggingFaceResolver();
 
-      expect(resolver.canResolve('any/repo', fileType: ModelFileType.builtIn),
-          isTrue);
-      expect(resolver.canResolve('any/repo', fileType: ModelFileType.task),
-          isFalse);
-      await expectLater(
-        resolver.resolve('any/repo'),
-        throwsUnsupportedError,
+      expect(
+        resolver.canResolve('any/repo', fileType: ModelFileType.builtIn),
+        isTrue,
       );
+      expect(
+        resolver.canResolve('any/repo', fileType: ModelFileType.task),
+        isFalse,
+      );
+      await expectLater(resolver.resolve('any/repo'), throwsUnsupportedError);
     });
   });
 
@@ -70,11 +242,13 @@ void main() {
 
       await expectLater(
         const LocalAiEngine().createModel(_spec(), _config),
-        throwsA(isA<LocalAiUnavailableException>().having(
-          (e) => e.status,
-          'status',
-          LocalAiAvailability.unavailableDisabled,
-        )),
+        throwsA(
+          isA<LocalAiUnavailableException>().having(
+            (e) => e.status,
+            'status',
+            LocalAiAvailability.unavailableDisabled,
+          ),
+        ),
       );
       expect(host.calls, isNot(contains('createModel')));
     });
@@ -150,28 +324,29 @@ void main() {
       expect(host.sessions.single.temperature, 0.3);
     });
 
-    test('flutter_gemma tools are not handed to the native tool runner',
-        () async {
-      final model = await newModel();
+    test(
+      'flutter_gemma tools are not handed to the native tool runner',
+      () async {
+        final model = await newModel();
 
-      // InferenceChat owns function calling for this engine: it weaves the
-      // declarations into the prompt and parses the calls back out. Passing
-      // them natively too would run two tool loops for one turn.
-      await model.createSession(tools: const []);
+        // InferenceChat owns function calling for this engine: it weaves the
+        // declarations into the prompt and parses the calls back out. Passing
+        // them natively too would run two tool loops for one turn.
+        await model.createSession(tools: const []);
 
-      expect(host.sessions.single.toolNames, isEmpty);
-    });
+        expect(host.sessions.single.toolNames, isEmpty);
+      },
+    );
   });
 
   group('message adaptation', () {
     test('a text message reaches the host transcript', () async {
-      final model = await const LocalAiEngine().createModel(_spec(), _config)
-          as LocalAiGemmaModel;
+      final model =
+          await const LocalAiEngine().createModel(_spec(), _config)
+              as LocalAiGemmaModel;
       final session = await model.createSession() as LocalAiGemmaSession;
 
-      await session.addQueryChunk(
-        const Message(text: 'Hello!', isUser: true),
-      );
+      await session.addQueryChunk(const Message(text: 'Hello!', isUser: true));
 
       expect(
         host.session(session.localAiSession.sessionId)!.transcript.toString(),
@@ -180,14 +355,16 @@ void main() {
     });
 
     test('images are sent before the text that refers to them', () async {
-      final model = await const LocalAiEngine().createModel(
-        _spec(),
-        const RuntimeConfig(
-          maxTokens: 4096,
-          modelPath: '',
-          supportImage: true,
-        ),
-      ) as LocalAiGemmaModel;
+      final model =
+          await const LocalAiEngine().createModel(
+                _spec(),
+                const RuntimeConfig(
+                  maxTokens: 4096,
+                  modelPath: '',
+                  supportImage: true,
+                ),
+              )
+              as LocalAiGemmaModel;
       final session = await model.createSession() as LocalAiGemmaSession;
       final bytes = Uint8List.fromList([9, 9, 9]);
 
@@ -205,8 +382,9 @@ void main() {
     });
 
     test('sizeInTokens and stopGeneration delegate to the session', () async {
-      final model = await const LocalAiEngine().createModel(_spec(), _config)
-          as LocalAiGemmaModel;
+      final model =
+          await const LocalAiEngine().createModel(_spec(), _config)
+              as LocalAiGemmaModel;
       final session = await model.createSession();
 
       host.countTokensResult = 11;
@@ -217,8 +395,9 @@ void main() {
     });
 
     test('a streamed response reaches flutter_gemma unchanged', () async {
-      final model = await const LocalAiEngine().createModel(_spec(), _config)
-          as LocalAiGemmaModel;
+      final model =
+          await const LocalAiEngine().createModel(_spec(), _config)
+              as LocalAiGemmaModel;
       final session = await model.createSession() as LocalAiGemmaSession;
       final id = session.localAiSession.sessionId;
 
@@ -233,8 +412,9 @@ void main() {
     });
 
     test('closing the model closes it at the host', () async {
-      final model = await const LocalAiEngine().createModel(_spec(), _config)
-          as LocalAiGemmaModel;
+      final model =
+          await const LocalAiEngine().createModel(_spec(), _config)
+              as LocalAiGemmaModel;
       await model.createSession();
 
       await model.close();
@@ -254,8 +434,9 @@ void main() {
     });
 
     test('metrics are empty rather than invented', () async {
-      final model = await const LocalAiEngine().createModel(_spec(), _config)
-          as LocalAiGemmaModel;
+      final model =
+          await const LocalAiEngine().createModel(_spec(), _config)
+              as LocalAiGemmaModel;
       final session = await model.createSession();
 
       final metrics = session.getSessionMetrics();

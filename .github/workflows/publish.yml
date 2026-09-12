@@ -41,7 +41,7 @@ jobs:
       - uses: dart-lang/setup-dart@v1
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.27.x"
+          flutter-version: "3.44.x"
           cache: true
 
       - name: Check the tag matches the pubspec version

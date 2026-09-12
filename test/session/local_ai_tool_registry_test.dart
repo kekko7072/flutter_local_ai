@@ -5,13 +5,12 @@ import 'package:flutter_test/flutter_test.dart';
 LocalAiTool _tool(
   String name, {
   Object? Function(Map<String, dynamic> arguments)? onCall,
-}) =>
-    LocalAiTool(
-      name: name,
-      description: 'test tool',
-      parameters: const [ToolParameter(name: 'city')],
-      onCall: onCall ?? (arguments) => 'called $name with $arguments',
-    );
+}) => LocalAiTool(
+  name: name,
+  description: 'test tool',
+  parameters: const [ToolParameter(name: 'city')],
+  onCall: onCall ?? (arguments) => 'called $name with $arguments',
+);
 
 void main() {
   late LocalAiToolRegistry registry;
@@ -31,10 +30,13 @@ void main() {
 
     test('awaits an asynchronous tool body', () async {
       registry.register(1, [
-        _tool('slow', onCall: (_) async {
-          await Future<void>.delayed(Duration.zero);
-          return 'done';
-        }),
+        _tool(
+          'slow',
+          onCall: (_) async {
+            await Future<void>.delayed(Duration.zero);
+            return 'done';
+          },
+        ),
       ]);
 
       expect(await registry.invoke(1, 'slow', '{}'), '"done"');
@@ -61,10 +63,13 @@ void main() {
     test('passes the decoded object through', () async {
       Map<String, dynamic>? seen;
       registry.register(1, [
-        _tool('spy', onCall: (args) {
-          seen = args;
-          return null;
-        }),
+        _tool(
+          'spy',
+          onCall: (args) {
+            seen = args;
+            return null;
+          },
+        ),
       ]);
 
       await registry.invoke(1, 'spy', '{"a":1,"b":[2,3]}');
@@ -78,10 +83,13 @@ void main() {
     test('an empty payload is an empty argument map', () async {
       Map<String, dynamic>? seen;
       registry.register(1, [
-        _tool('spy', onCall: (args) {
-          seen = args;
-          return null;
-        }),
+        _tool(
+          'spy',
+          onCall: (args) {
+            seen = args;
+            return null;
+          },
+        ),
       ]);
 
       await registry.invoke(1, 'spy', '');
@@ -93,10 +101,13 @@ void main() {
     test('malformed JSON degrades to empty arguments', () async {
       Map<String, dynamic>? seen;
       registry.register(1, [
-        _tool('spy', onCall: (args) {
-          seen = args;
-          return null;
-        }),
+        _tool(
+          'spy',
+          onCall: (args) {
+            seen = args;
+            return null;
+          },
+        ),
       ]);
 
       await registry.invoke(1, 'spy', 'not json at all');
@@ -109,10 +120,13 @@ void main() {
     test('a non-object payload degrades to empty arguments', () async {
       Map<String, dynamic>? seen;
       registry.register(1, [
-        _tool('spy', onCall: (args) {
-          seen = args;
-          return null;
-        }),
+        _tool(
+          'spy',
+          onCall: (args) {
+            seen = args;
+            return null;
+          },
+        ),
       ]);
 
       await registry.invoke(1, 'spy', '[1,2,3]');
@@ -144,16 +158,18 @@ void main() {
       );
     });
 
-    test('forget makes a late call fail instead of running a stale handler',
-        () async {
-      registry.register(1, [_tool('weather')]);
-      registry.forget(1);
+    test(
+      'forget makes a late call fail instead of running a stale handler',
+      () async {
+        registry.register(1, [_tool('weather')]);
+        registry.forget(1);
 
-      expect(
-        () => registry.invoke(1, 'weather', '{}'),
-        throwsA(isA<UnknownToolException>()),
-      );
-    });
+        expect(
+          () => registry.invoke(1, 'weather', '{}'),
+          throwsA(isA<UnknownToolException>()),
+        );
+      },
+    );
 
     test('clear drops every session, as closing the model does', () async {
       registry.register(1, [_tool('a')]);

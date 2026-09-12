@@ -37,28 +37,25 @@ class LocalAiPlatformInfo {
   /// Narrows [capabilities] to this view.
   factory LocalAiPlatformInfo.fromCapabilities(
     LocalAiBackendCapabilities capabilities,
-  ) =>
-      LocalAiPlatformInfo(
-        backend: switch (capabilities.backend) {
-          LocalAiBackendKind.androidMlKitGenAi =>
-            LocalAiBackend.androidMlKitGenAi,
-          LocalAiBackendKind.appleFoundationModels =>
-            LocalAiBackend.appleFoundationModels,
-          LocalAiBackendKind.windowsAiFoundry =>
-            LocalAiBackend.windowsAiFoundry,
-          LocalAiBackendKind.windowsAiFoundryUnconfigured =>
-            LocalAiBackend.windowsAiFoundryUnconfigured,
-          LocalAiBackendKind.chromePromptApi => LocalAiBackend.chromePromptApi,
-          LocalAiBackendKind.unsupported => LocalAiBackend.unsupported,
-        },
-        platform: capabilities.platform,
-        apiName: capabilities.apiName,
-        supportsToolCalling: capabilities.supportsToolCalling,
-        supportsModelDownload: capabilities.supportsModelDownload,
-        supportsPlayStoreRedirect: capabilities.supportsPlayStoreRedirect,
-        isConfigured: capabilities.isConfigured,
-        supportsStructuredOutput: capabilities.supportsStructuredOutput,
-      );
+  ) => LocalAiPlatformInfo(
+    backend: switch (capabilities.backend) {
+      LocalAiBackendKind.androidMlKitGenAi => LocalAiBackend.androidMlKitGenAi,
+      LocalAiBackendKind.appleFoundationModels =>
+        LocalAiBackend.appleFoundationModels,
+      LocalAiBackendKind.windowsAiFoundry => LocalAiBackend.windowsAiFoundry,
+      LocalAiBackendKind.windowsAiFoundryUnconfigured =>
+        LocalAiBackend.windowsAiFoundryUnconfigured,
+      LocalAiBackendKind.chromePromptApi => LocalAiBackend.chromePromptApi,
+      LocalAiBackendKind.unsupported => LocalAiBackend.unsupported,
+    },
+    platform: capabilities.platform,
+    apiName: capabilities.apiName,
+    supportsToolCalling: capabilities.supportsToolCalling,
+    supportsModelDownload: capabilities.supportsModelDownload,
+    supportsPlayStoreRedirect: capabilities.supportsPlayStoreRedirect,
+    isConfigured: capabilities.isConfigured,
+    supportsStructuredOutput: capabilities.supportsStructuredOutput,
+  );
 
   final LocalAiBackend backend;
   final String platform;

@@ -1,3 +1,19 @@
+## Unreleased
+
+- Verify the adapter against flutter_gemma 1.8.0 and retain migration aliases.
+- Share native model ownership across Gemma, the facade and genUI; avoid
+  session ID collisions and wait for in-flight session creation on shutdown.
+- Keep genUI instructions isolated from ongoing conversations.
+- Upgrade Android Prompt API to beta4 / Kotlin 2.3.21, with multiple images,
+  native system instructions when available, expanded output budget and
+  cancellable, serialized generation.
+- Fix Apple service access control; cancel full/structured responses and add
+  an OS 27 SDK-gated image attachment path (awaiting OS 27 validation).
+- Update Windows to the App SDK 2.0 Text namespace, readiness/preparation,
+  async generation/cancellation and explicit CMake setup (awaiting Windows
+  build/device validation).
+- Document remaining API gaps and release checks in doc/gemma-readiness.md.
+
 ## 0.1.0
 
 A rewrite onto one architecture, and the OS-model layer under
@@ -29,7 +45,7 @@ on a single pigeon-typed session host per platform.
   reported by the running host, not assumed per platform — the same binary
   answers differently across OS versions.
 * **Web.** A Chrome Prompt API arm, including schema-constrained output via
-  `responseConstraint`, which no native backend offers.
+  `responseConstraint`, alongside Apple's native schema path.
 * **Images.** `addImage` on Android. Apple needs OS 27 and reports
   `supportsVision: false` until then.
 * **Exact token counts.** Native on Android and Apple 26.4+; elsewhere

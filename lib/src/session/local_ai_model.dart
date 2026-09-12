@@ -16,7 +16,11 @@ class LocalAiModel {
     required LocalAiHost host,
     required this.maxTokens,
     required this.supportImage,
-  }) : _host = host;
+    required _HostModelState state,
+  }) : _host = host,
+       _state = state;
+
+  static final _states = Expando<_HostModelState>();
 
   /// Loads the OS model.
   ///
@@ -30,15 +34,20 @@ class LocalAiModel {
     LocalAiHost? host,
   }) async {
     final resolved = host ?? localAiHost;
-    await resolved.createModel(supportImage: supportImage);
+    final state = _states[resolved] ??= _HostModelState(resolved);
+    await state.acquire(supportImage);
     return LocalAiModel._(
       host: resolved,
       maxTokens: maxTokens,
       supportImage: supportImage,
+      state: state,
     );
   }
 
   final LocalAiHost _host;
+  final _HostModelState _state;
+  final Set<Future<void>> _pendingOpens = {};
+  Future<void>? _closing;
 
   /// Context window in tokens: input plus generated output.
   final int maxTokens;
@@ -46,10 +55,6 @@ class LocalAiModel {
   final bool supportImage;
 
   final Map<int, LocalAiSession> _sessions = {};
-
-  /// Monotonic session-id generator. Ids are never reused within a model, so
-  /// a late event from a closed session can't be misrouted to a new one.
-  int _nextSessionId = 1;
 
   bool _isClosed = false;
 
@@ -73,8 +78,8 @@ class LocalAiModel {
     if (_isClosed) {
       throw StateError('Model is closed. Create a new one to use it again.');
     }
-    final sessionId = _nextSessionId++;
-    await _host.createSession(
+    final sessionId = _state.nextSessionId++;
+    final opening = _host.createSession(
       sessionId: sessionId,
       temperature: temperature,
       topK: topK,
@@ -83,6 +88,18 @@ class LocalAiModel {
       systemInstruction: systemInstruction,
       tools: tools,
     );
+    final settled = Completer<void>();
+    _pendingOpens.add(settled.future);
+    try {
+      await opening;
+      if (_isClosed) {
+        await _host.closeSession(sessionId);
+        throw StateError('Model closed while the session was opening.');
+      }
+    } finally {
+      _pendingOpens.remove(settled.future);
+      settled.complete();
+    }
     final session = LocalAiSession(
       sessionId: sessionId,
       host: _host,
@@ -93,18 +110,75 @@ class LocalAiModel {
   }
 
   /// Closes every session, then releases the model. Idempotent.
-  Future<void> close() async {
-    if (_isClosed) return;
+  Future<void> close() => _closing ??= _close();
+
+  Future<void> _close() async {
     _isClosed = true;
     // Close the model even if a session's native close throws — otherwise the
     // OS resource leaks behind a model the app already considers gone.
     try {
+      await Future.wait(
+        _pendingOpens.map((opening) async {
+          try {
+            await opening;
+          } catch (_) {
+            /* The opener reports the error. */
+          }
+        }),
+      );
+      Object? firstError;
+      StackTrace? firstStack;
       for (final session in List.of(_sessions.values)) {
-        await session.close();
+        try {
+          await session.close();
+        } catch (error, stack) {
+          firstError ??= error;
+          firstStack ??= stack;
+        }
       }
+      if (firstError != null)
+        Error.throwWithStackTrace(firstError, firstStack!);
     } finally {
       _sessions.clear();
-      await _host.closeModel();
+      await _state.release();
     }
   }
+}
+
+/// Both Dart APIs and Gemma share one native host. Its resources must outlive
+/// every model owner, and session IDs must never collide across owners.
+class _HostModelState {
+  _HostModelState(this.host);
+  final LocalAiHost host;
+  int nextSessionId = 1;
+  int _owners = 0;
+  bool _supportsImage = false;
+  Future<void> _tail = Future.value();
+
+  Future<void> _serialize(Future<void> Function() operation) {
+    final result = _tail.then((_) => operation());
+    _tail = result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    return result;
+  }
+
+  Future<void> acquire(bool supportImage) => _serialize(() async {
+    if (supportImage && !(await host.getBackendInfo()).supportsVision) {
+      throw LocalAiUnsupportedException(
+        'vision',
+        'This backend does not support image input.',
+      );
+    }
+    if (_owners == 0 || (supportImage && !_supportsImage)) {
+      await host.createModel(supportImage: supportImage || _supportsImage);
+      _supportsImage = supportImage || _supportsImage;
+    }
+    _owners++;
+  });
+
+  Future<void> release() => _serialize(() async {
+    if (--_owners == 0) {
+      _supportsImage = false;
+      await host.closeModel();
+    }
+  });
 }

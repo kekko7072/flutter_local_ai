@@ -5,6 +5,10 @@
 # Local-only scripts
 publish.sh
 
+# Internal marketing copy — not part of the package. logo.png and
+# video.gif deliberately stay: README.md renders both.
+marketing/
+
 # NOTE: do NOT add `packages/` here. Pub reads a parent .pubignore when
 # publishing a nested package too, so excluding the directory here hides the
 # bridge package's own pubspec from its own `pub publish`. The bridge's source

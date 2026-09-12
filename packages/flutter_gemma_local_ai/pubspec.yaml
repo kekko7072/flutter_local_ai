@@ -11,13 +11,13 @@ topics:
   - foundation-models
 
 environment:
-  sdk: '>=3.6.0 <4.0.0'
-  flutter: ">=3.27.0"
+  sdk: '>=3.12.0 <4.0.0'
+  flutter: ">=3.44.0"
 
 dependencies:
   flutter:
     sdk: flutter
-  flutter_gemma: ^1.7.0
+  flutter_gemma: ^1.8.0
   # Hosted constraint so the package is publishable; the override below
   # points at this repo's copy for local development.
   flutter_local_ai: ^0.1.0

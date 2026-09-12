@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 
 #if os(OSX)
   @preconcurrency import FlutterMacOS
@@ -53,7 +54,7 @@ struct SnapshotDeltaConverter {
 /// from the iOS 13 / macOS 12 floor in Package.swift. Every use is therefore
 /// `#available`-gated and sessions are stored type-erased (`[Int64: Any]`), so
 /// this class itself compiles all the way down.
-public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
+class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
 
   #if canImport(FoundationModels)
     /// Only ever constructed inside an `#available(iOS 26.0, macOS 26.0, *)`
@@ -75,6 +76,7 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
       let topP: Double?
       let maxOutputTokens: Int?
       var pendingText: String = ""
+      var pendingImages: [(CGImage, CGImagePropertyOrientation?)] = []
       var task: Task<Void, Never>?
 
       init(
@@ -112,7 +114,7 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
 
   // MARK: - FlutterStreamHandler
 
-  public func onListen(
+  func onListen(
     withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink
   ) -> FlutterError? {
     sinkLock.lock()
@@ -121,7 +123,7 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
     return nil
   }
 
-  public func onCancel(withArguments arguments: Any?) -> FlutterError? {
+  func onCancel(withArguments arguments: Any?) -> FlutterError? {
     sinkLock.lock()
     eventSink = nil
     sinkLock.unlock()
@@ -204,7 +206,7 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
 
   // MARK: - Availability
 
-  public func checkAvailability(
+  func checkAvailability(
     completion: @escaping (Result<AvailabilityStatus, Error>) -> Void
   ) {
     #if canImport(FoundationModels)
@@ -233,7 +235,7 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
     #endif
   }
 
-  public func availabilityReason(completion: @escaping (Result<String, Error>) -> Void) {
+  func availabilityReason(completion: @escaping (Result<String, Error>) -> Void) {
     #if canImport(FoundationModels)
       guard #available(iOS 26.0, macOS 26.0, *) else {
         completion(
@@ -272,7 +274,7 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
     #endif
   }
 
-  public func getBackendInfo(
+  func getBackendInfo(
     completion: @escaping (Result<LocalAiBackendInfo, Error>) -> Void
   ) {
     #if canImport(FoundationModels)
@@ -286,9 +288,24 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
       } else {
         configured = false
       }
+      // Tools and dynamic schemas are Foundation Models features, so they
+      // need the OS that ships the framework — not merely an SDK that can
+      // see it. Reporting them unconditionally made an iOS 25 device
+      // advertise both while every call failed OS_TOO_OLD, which defeats
+      // the capability gate callers are told to check.
+      var toolCalling = false
+      var structuredOutput = false
+      if #available(iOS 26.0, macOS 26.0, *) {
+        toolCalling = true
+        structuredOutput = true
+      }
       // Exact token counts need BOTH an SDK that declares
       // SystemLanguageModel.tokenCount and an OS that has it — see
       // countTokens for why the compiler version is the usable proxy.
+      var vision = false
+      #if compiler(>=6.4)
+        if #available(iOS 27.0, macOS 27.0, *) { vision = true }
+      #endif
       var tokenCount = false
       #if compiler(>=6.3)
         if #available(iOS 26.4, macOS 26.4, *) { tokenCount = true }
@@ -299,11 +316,11 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
             backend: .appleFoundationModels,
             platform: platformName(),
             apiName: "Apple Foundation Models",
-            supportsToolCalling: true,
-            supportsStructuredOutput: true,
+            supportsToolCalling: toolCalling,
+            supportsStructuredOutput: structuredOutput,
             // Image input needs FoundationModels.Attachment, which exists
             // only on OS 27. See addImage.
-            supportsVision: false,
+            supportsVision: vision,
             supportsTokenCount: tokenCount,
             // Apple Intelligence downloads are user-driven in Settings; no
             // app-triggerable download exists.
@@ -339,11 +356,11 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
   /// Apple Intelligence in Settings, and `.modelNotReady` resolves on its own,
   /// which Dart's ensureReady polls for. Returning success immediately sends
   /// it straight to polling.
-  public func downloadFeature(completion: @escaping (Result<Void, Error>) -> Void) {
+  func downloadFeature(completion: @escaping (Result<Void, Error>) -> Void) {
     completion(.success(()))
   }
 
-  public func openAICorePlayStore(completion: @escaping (Result<Bool, Error>) -> Void) {
+  func openAICorePlayStore(completion: @escaping (Result<Bool, Error>) -> Void) {
     completion(.success(false))
   }
 
@@ -352,13 +369,13 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
   /// The OS owns the weights, so there is no model handle to allocate.
   /// Sessions are created lazily; `supportImage` is advisory because
   /// multimodality is decided per turn.
-  public func createModel(
+  func createModel(
     supportImage: Bool, completion: @escaping (Result<Void, Error>) -> Void
   ) {
     completion(.success(()))
   }
 
-  public func closeModel(completion: @escaping (Result<Void, Error>) -> Void) {
+  func closeModel(completion: @escaping (Result<Void, Error>) -> Void) {
     sessionsLock.lock()
     let boxed = Array(sessions.values)
     sessions.removeAll()
@@ -373,7 +390,7 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
 
   // MARK: - Sessions
 
-  public func createSession(
+  func createSession(
     sessionId: Int64,
     temperature: Double,
     topK: Int64,
@@ -452,7 +469,7 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
     #endif
   }
 
-  public func closeSession(
+  func closeSession(
     sessionId: Int64, completion: @escaping (Result<Void, Error>) -> Void
   ) {
     sessionsLock.lock()
@@ -469,7 +486,7 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
     completion(.success(()))
   }
 
-  public func addQueryChunk(
+  func addQueryChunk(
     sessionId: Int64, text: String, completion: @escaping (Result<Void, Error>) -> Void
   ) {
     #if canImport(FoundationModels)
@@ -486,29 +503,61 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
     #endif
   }
 
-  /// Image input needs `FoundationModels.Attachment`, which exists only on
-  /// iOS 27 / macOS 27. This package builds against the 26 SDK, where the type
-  /// is absent, so the multimodal branch cannot even be compiled. Rejecting is
-  /// the honest answer; `getBackendInfo` reports `supportsVision: false` so
-  /// callers can check before trying.
-  public func addImage(
+  /// Image attachments require both the OS 27 SDK and an OS 27 runtime.
+  func addImage(
     sessionId: Int64,
     imageBytes: FlutterStandardTypedData,
     completion: @escaping (Result<Void, Error>) -> Void
   ) {
-    completion(
-      .failure(
-        PigeonError(
-          code: "IMAGE_UNSUPPORTED_OS",
-          message:
-            "Image input for Apple Foundation Models requires iOS 27 / macOS 27; "
-            + "this build targets the 26 SDK and is text-only.",
-          details: nil)))
+    #if canImport(FoundationModels) && compiler(>=6.4)
+      if #available(iOS 27.0, macOS 27.0, *) {
+        guard let state = state(for: sessionId) else {
+          completion(.failure(Self.sessionMissingError(sessionId)))
+          return
+        }
+        guard let source = CGImageSourceCreateWithData(imageBytes.data as CFData, nil),
+          let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+          completion(.failure(PigeonError(code: "IMAGE_DECODE_FAILED",
+            message: "Could not decode the supplied image bytes.", details: nil)))
+          return
+        }
+        let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        let orientation = (properties?[kCGImagePropertyOrientation] as? UInt32)
+          .flatMap { CGImagePropertyOrientation(rawValue: $0) }
+        state.pendingImages.append((image, orientation))
+        completion(.success(()))
+        return
+      }
+    #endif
+    completion(.failure(PigeonError(code: "IMAGE_UNSUPPORTED_OS",
+      message: "Image input requires an OS 27 SDK build and iOS 27 / macOS 27.",
+      details: nil)))
   }
+
+  #if canImport(FoundationModels)
+    @available(iOS 26.0, macOS 26.0, *)
+    private static func takePrompt(_ state: SessionState) -> Prompt {
+      let text = state.pendingText
+      let images = state.pendingImages
+      state.pendingText = ""
+      state.pendingImages = []
+      #if compiler(>=6.4)
+        if #available(iOS 27.0, macOS 27.0, *) {
+          return Prompt {
+            for (image, orientation) in images {
+              Attachment(image, orientation: orientation)
+            }
+            text
+          }
+        }
+      #endif
+      return Prompt(text)
+    }
+  #endif
 
   // MARK: - Generation
 
-  public func generateResponse(
+  func generateResponse(
     sessionId: Int64,
     overrides: GenerationOverrides?,
     completion: @escaping (Result<String, Error>) -> Void
@@ -520,16 +569,14 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
         completion(.failure(Self.sessionMissingError(sessionId)))
         return
       }
-      let prompt = state.pendingText
-      // Cleared up front: the session keeps its own transcript, so the next
-      // turn starts empty whether or not this one succeeds.
-      state.pendingText = ""
+      let prompt = Self.takePrompt(state)
 
-      Task {
+      state.task = Task {
         do {
           let response = try await state.session.respond(
-            to: Prompt(prompt),
+            to: prompt,
             options: Self.options(for: state, overrides: overrides))
+          try Task.checkCancellation()
           completion(.success(response.content))
         } catch {
           completion(
@@ -545,7 +592,7 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
     #endif
   }
 
-  public func generateResponseAsync(
+  func generateResponseAsync(
     sessionId: Int64,
     overrides: GenerationOverrides?,
     completion: @escaping (Result<Void, Error>) -> Void
@@ -557,15 +604,14 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
         completion(.failure(Self.sessionMissingError(sessionId)))
         return
       }
-      let prompt = state.pendingText
-      state.pendingText = ""
+      let prompt = Self.takePrompt(state)
 
       var converter = SnapshotDeltaConverter()
       state.task = Task { [weak self] in
         guard let self = self else { return }
         do {
           let stream = state.session.streamResponse(
-            to: Prompt(prompt),
+            to: prompt,
             options: Self.options(for: state, overrides: overrides))
           for try await snapshot in stream {
             if Task.isCancelled { break }
@@ -590,7 +636,7 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
     #endif
   }
 
-  public func generateStructuredResponse(
+  func generateStructuredResponse(
     sessionId: Int64,
     schemaJson: String,
     overrides: GenerationOverrides?,
@@ -624,17 +670,17 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
         return
       }
 
-      let prompt = state.pendingText
-      state.pendingText = ""
+      let prompt = Self.takePrompt(state)
 
-      Task {
+      state.task = Task {
         do {
           let schema = try SchemaBuilder.generationSchema(
             from: schemaMap, rootName: "Output")
           let response = try await state.session.respond(
-            to: Prompt(prompt),
+            to: prompt,
             schema: schema,
             options: Self.options(for: state, overrides: overrides))
+          try Task.checkCancellation()
           completion(.success(response.content.jsonString))
         } catch {
           completion(
@@ -650,7 +696,7 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
     #endif
   }
 
-  public func stopGeneration(
+  func stopGeneration(
     sessionId: Int64, completion: @escaping (Result<Void, Error>) -> Void
   ) {
     #if canImport(FoundationModels)
@@ -664,7 +710,7 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
     completion(.success(()))
   }
 
-  public func countTokens(text: String, completion: @escaping (Result<Int64, Error>) -> Void) {
+  func countTokens(text: String, completion: @escaping (Result<Int64, Error>) -> Void) {
     #if canImport(FoundationModels)
       // `SystemLanguageModel.tokenCount(for:)` is @available(iOS 26.4,
       // macOS 26.4), stricter than the framework's own 26.0 floor.
@@ -795,7 +841,9 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
   /// handler, and the JSON result is fed back as `GeneratedContent`. Bound to
   /// one session id so a tool call can never reach another session's handler.
   @available(iOS 26.0, macOS 26.0, *)
-  private struct PigeonBackedTool: Tool {
+  // Immutable tool state; the non-Sendable messenger is accessed exclusively
+  // on DispatchQueue.main in call(arguments:).
+  private struct PigeonBackedTool: Tool, @unchecked Sendable {
     typealias Arguments = PigeonToolArguments
     typealias Output = GeneratedContent
 
@@ -838,12 +886,11 @@ public class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandl
       let argumentsJson = arguments.content.jsonString
       let name = self.name
       let sessionId = self.sessionId
-      let runner = self.runner
 
       let resultJson: String? = try await withCheckedThrowingContinuation { continuation in
         // The pigeon channel must be driven from the platform thread.
         DispatchQueue.main.async {
-          runner.onToolCall(
+          self.runner.onToolCall(
             sessionId: sessionId, toolName: name, argumentsJson: argumentsJson
           ) { result in
             switch result {

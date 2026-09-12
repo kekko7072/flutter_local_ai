@@ -25,7 +25,8 @@ void main() {
     });
 
     test('strips ```json code fences and surrounding prose', () {
-      const raw = 'Sure! Here is the module:\n```json\n'
+      const raw =
+          'Sure! Here is the module:\n```json\n'
           '{"title":"Budget","tone":"fern","blocks":'
           '[{"type":"stat","label":"Remaining","value":"\$100"}]}'
           '\n```\nHope that helps.';
@@ -38,7 +39,8 @@ void main() {
     });
 
     test('tolerates trailing commas', () {
-      const raw = '{"title":"Habit","tone":"lilac","blocks":['
+      const raw =
+          '{"title":"Habit","tone":"lilac","blocks":['
           '{"type":"week","label":"This week","days":[false,false,false],},'
           '],}';
 
@@ -52,7 +54,8 @@ void main() {
     test('repairs JSON truncated by the output cap', () {
       // Output cut off mid-way through the second block: the object never
       // closes, but the first block is complete and should be salvaged.
-      const raw = '{"title":"Reading habit","icon":"book","tone":"fern",'
+      const raw =
+          '{"title":"Reading habit","icon":"book","tone":"fern",'
           '"blurb":"Read daily.","blocks":['
           '{"type":"lessons","label":"This week","items":['
           '{"title":"Chapter 1","mins":20,"read":false}]},'
@@ -68,7 +71,8 @@ void main() {
     });
 
     test('keeps a docs block', () {
-      const raw = '{"title":"My documents","icon":"folder-open","tone":"sky",'
+      const raw =
+          '{"title":"My documents","icon":"folder-open","tone":"sky",'
           '"blurb":"Stay on top of renewals.","blocks":['
           '{"type":"docs","label":"Tracked","items":['
           '{"name":"Passport","meta":"Expires 2027","status":"ok"},'

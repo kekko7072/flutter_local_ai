@@ -52,10 +52,10 @@ After the initial setup, you can use FVM commands:
 
 To change the Flutter version for this project:
 
-1. **Update the version in `.fvm/fvm_config.json`:**
+1. **Update the version in `.fvmrc`:**
    ```json
    {
-     "flutterSdkVersion": "3.24.0"
+     "flutter": "3.44.8"
    }
    ```
 
@@ -89,14 +89,17 @@ Add to your `.vscode/settings.json`:
 
 ## Current Configuration
 
-- **Flutter SDK Version:** 3.24.0 (as specified in `.fvm/fvm_config.json`)
-- **Minimum Required:** >=3.19.0 (as per `pubspec.yaml`)
+- **Flutter SDK Version:** 3.44.8 (as specified in `.fvmrc`)
+- **Minimum Required:** >=3.38.4 for `flutter_local_ai`; >=3.44.0 for
+  `packages/flutter_gemma_local_ai`, which inherits the Dart >=3.12.0 floor
+  of `flutter_gemma` 1.8.0. The pin must satisfy the higher of the two, so
+  a version below 3.44 cannot resolve the bridge package.
 
 ## What Gets Shared vs. Not Shared
 
 ### ✅ **Shared (Committed to Git):**
-- `.fvm/fvm_config.json` - The Flutter version specification (e.g., "3.24.0")
-- `pubspec.yaml` - Flutter SDK constraints (e.g., `flutter: ">=3.19.0"`)
+- `.fvmrc` - The Flutter version specification (e.g., "3.44.8")
+- `pubspec.yaml` - Flutter SDK constraints (e.g., `flutter: ">=3.38.4"`)
 - Other project-level configs (analysis_options.yaml, etc.)
 
 **This ensures all team members use the same Flutter version.**

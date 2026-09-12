@@ -1,3 +1,6 @@
+// Preserve the public constructor parameter names.
+// ignore_for_file: prefer_initializing_formals
+
 import 'dart:async';
 import 'dart:typed_data';
 
@@ -19,14 +22,16 @@ class LocalAiGemmaSession extends InferenceModelSession {
     required this.modelType,
     required this.fileType,
     required this.supportImage,
+    this.maxNumImages,
     required void Function() onClose,
-  })  : _session = session,
-        _onClose = onClose;
+  }) : _session = session,
+       _onClose = onClose;
 
   final LocalAiSession _session;
   final ModelType modelType;
   final ModelFileType fileType;
   final bool supportImage;
+  final int? maxNumImages;
   final void Function() _onClose;
 
   /// The underlying flutter_local_ai session, for callers that want the
@@ -36,6 +41,18 @@ class LocalAiGemmaSession extends InferenceModelSession {
 
   @override
   Future<void> addQueryChunk(Message message) async {
+    if (message.hasAudio) {
+      throw UnsupportedError('Audio input is not exposed by flutter_local_ai.');
+    }
+    if (message.hasImage && !supportImage) {
+      throw UnsupportedError('Enable vision before adding an image.');
+    }
+    final imageCount = message.images.isNotEmpty
+        ? message.images.length
+        : (message.hasImage ? 1 : 0);
+    if (maxNumImages != null && imageCount > maxNumImages!) {
+      throw ArgumentError('Message exceeds maxNumImages ($maxNumImages).');
+    }
     final prompt = message.transformToChatPrompt(
       type: modelType,
       fileType: fileType,
@@ -46,8 +63,8 @@ class LocalAiGemmaSession extends InferenceModelSession {
       final images = message.images.isNotEmpty
           ? message.images
           : (message.imageBytes != null
-              ? <Uint8List>[message.imageBytes!]
-              : const <Uint8List>[]);
+                ? <Uint8List>[message.imageBytes!]
+                : const <Uint8List>[]);
       for (final image in images) {
         await _session.addImage(image);
       }

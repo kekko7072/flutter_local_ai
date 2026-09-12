@@ -12,6 +12,10 @@ import 'package:flutter_local_ai/flutter_local_ai.dart';
 
 import 'local_ai_engine.dart';
 import 'local_ai_models.dart';
+import 'local_ai_hugging_face_resolver.dart';
+
+/// Migration alias for the built-in model resolver.
+typedef BuiltInAiHuggingFaceResolver = LocalAiHuggingFaceResolver;
 
 /// Alias of [LocalAiAvailability].
 typedef BuiltInAiAvailability = LocalAiAvailability;
@@ -47,6 +51,5 @@ abstract final class BuiltInAi {
   static Future<void> ensureReady({
     void Function(int percent)? onProgress,
     Duration timeout = const Duration(minutes: 10),
-  }) =>
-      LocalAi.ensureReady(onProgress: onProgress, timeout: timeout);
+  }) => LocalAi.ensureReady(onProgress: onProgress, timeout: timeout);
 }

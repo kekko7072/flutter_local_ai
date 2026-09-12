@@ -14,7 +14,7 @@ This example app supports:
 
 ### Prerequisites
 
-- Flutter SDK (>=3.19.0)
+- Flutter SDK (>=3.38.4)
 - Dart SDK (>=3.0.0)
 
 ### Platform-Specific Requirements

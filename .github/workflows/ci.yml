@@ -12,7 +12,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  FLUTTER_VERSION: "3.27.x"
+  # flutter_gemma 1.8.0 requires Dart >=3.12.0 / Flutter >=3.44.0, which the
+  # bridge package inherits. Anything lower cannot resolve either package.
+  FLUTTER_VERSION: "3.44.x"
 
 jobs:
   # Both packages get identical treatment; the matrix is the whole reason
@@ -39,6 +41,16 @@ jobs:
           cache: true
 
       - run: flutter pub get
+
+      # `dart format` and `flutter analyze` walk the whole tree from the repo
+      # root, so the nested bridge package and the example app need their own
+      # resolution too — otherwise analysis fails on unresolved imports in
+      # directories this entry never pub-got.
+      - name: Resolve nested packages
+        if: matrix.path == '.'
+        run: |
+          flutter pub get --directory packages/flutter_gemma_local_ai
+          flutter pub get --directory example
 
       - name: Verify formatting
         run: dart format --output=none --set-exit-if-changed .

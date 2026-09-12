@@ -51,8 +51,17 @@ class FlutterLocalAi {
     await model?.close();
   }
 
-  Future<LocalAiModel> _ensureModel() async =>
-      _model ??= await LocalAiModel.create(host: _host);
+  static Future<LocalAiModel>? _openingModel;
+
+  Future<LocalAiModel> _ensureModel() async {
+    if (_model != null) return _model!;
+    final opening = _openingModel ??= LocalAiModel.create(host: _host);
+    try {
+      return _model = await opening;
+    } finally {
+      if (identical(_openingModel, opening)) _openingModel = null;
+    }
+  }
 
   /// The shared session, created on first use so callers that never call
   /// [initialize] still work.
@@ -180,9 +189,8 @@ class FlutterLocalAi {
   /// path surface an error on the stream instead, so callers can fall back to
   /// [generateText].
   ///
-  /// Schema-constrained streaming is rejected up front on every backend: no
-  /// OS model can constrain streamed output today, and returning free-form
-  /// text from a call that asked for JSON would be worse than failing.
+  /// Schema-constrained streaming is not yet exposed by this package. Apple
+  /// supports it natively, but this API currently returns text deltas only.
   Stream<String> generateTextStream({
     required String prompt,
     GenerationConfig? config,
@@ -309,10 +317,12 @@ class FlutterLocalAi {
       progress = _host.events.listen(
         (event) {
           if (event is LocalAiDownloadProgressEvent && !controller.isClosed) {
-            controller.add(ModelDownloadStatus(
-              type: ModelDownloadStatusType.progress,
-              totalBytesDownloaded: event.bytesDownloaded,
-            ));
+            controller.add(
+              ModelDownloadStatus(
+                type: ModelDownloadStatusType.progress,
+                totalBytesDownloaded: event.bytesDownloaded,
+              ),
+            );
           }
         },
         // Progress is advisory; ensureReady below owns the outcome.
@@ -324,10 +334,12 @@ class FlutterLocalAi {
           const ModelDownloadStatus(type: ModelDownloadStatusType.completed),
         );
       } catch (e) {
-        controller.add(ModelDownloadStatus(
-          type: ModelDownloadStatusType.failed,
-          errorMessage: '$e',
-        ));
+        controller.add(
+          ModelDownloadStatus(
+            type: ModelDownloadStatusType.failed,
+            errorMessage: '$e',
+          ),
+        );
       } finally {
         await progress?.cancel();
         progress = null;

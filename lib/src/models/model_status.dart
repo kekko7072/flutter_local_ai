@@ -21,13 +21,7 @@ ModelFeatureStatus modelFeatureStatusFromString(String? value) {
   }
 }
 
-enum ModelDownloadStatusType {
-  started,
-  progress,
-  completed,
-  failed,
-  unknown,
-}
+enum ModelDownloadStatusType { started, progress, completed, failed, unknown }
 
 class ModelDownloadStatus {
   final ModelDownloadStatusType type;
@@ -52,7 +46,8 @@ class ModelDownloadStatus {
         );
       case 'completed':
         return const ModelDownloadStatus(
-            type: ModelDownloadStatusType.completed);
+          type: ModelDownloadStatusType.completed,
+        );
       case 'failed':
         return ModelDownloadStatus(
           type: ModelDownloadStatusType.failed,

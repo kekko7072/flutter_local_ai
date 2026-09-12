@@ -160,21 +160,13 @@ class FakeLocalAiHost implements LocalAiHost {
 
   /// A delta on [sessionId].
   void emitToken(int sessionId, String text) => emit(
-        LocalAiTokenEvent(
-          sessionId: sessionId,
-          partialResult: text,
-          done: false,
-        ),
-      );
+    LocalAiTokenEvent(sessionId: sessionId, partialResult: text, done: false),
+  );
 
   /// The terminal event for [sessionId], optionally carrying a last delta.
   void emitDone(int sessionId, {String text = ''}) => emit(
-        LocalAiTokenEvent(
-          sessionId: sessionId,
-          partialResult: text,
-          done: true,
-        ),
-      );
+    LocalAiTokenEvent(sessionId: sessionId, partialResult: text, done: true),
+  );
 
   /// A generation failure on [sessionId].
   void emitError(int sessionId, String message) =>
@@ -183,11 +175,11 @@ class FakeLocalAiHost implements LocalAiHost {
   /// Download progress. [bytesTotal] of 0 models a host that reports no
   /// total, which is what Android does.
   void emitDownloadProgress(int bytesDownloaded, {int bytesTotal = 0}) => emit(
-        LocalAiDownloadProgressEvent(
-          bytesDownloaded: bytesDownloaded,
-          bytesTotal: bytesTotal,
-        ),
-      );
+    LocalAiDownloadProgressEvent(
+      bytesDownloaded: bytesDownloaded,
+      bytesTotal: bytesTotal,
+    ),
+  );
 
   /// Closes the event stream. Call from a tear-down.
   Future<void> dispose() => _events.close();
@@ -269,15 +261,13 @@ class FakeLocalAiHost implements LocalAiHost {
   Future<void> addQueryChunk({
     required int sessionId,
     required String text,
-  }) async =>
-      _require(sessionId).transcript.write(text);
+  }) async => _require(sessionId).transcript.write(text);
 
   @override
   Future<void> addImage({
     required int sessionId,
     required Uint8List imageBytes,
-  }) async =>
-      _require(sessionId).images.add(imageBytes);
+  }) async => _require(sessionId).images.add(imageBytes);
 
   @override
   Future<String> generateResponse(

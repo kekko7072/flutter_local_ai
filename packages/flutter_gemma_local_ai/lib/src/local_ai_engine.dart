@@ -50,6 +50,14 @@ class LocalAiEngine
     InferenceModelSpec spec,
     RuntimeConfig config,
   ) async {
+    if (config.supportAudio) {
+      throw UnsupportedError('Audio input is not exposed by flutter_local_ai.');
+    }
+    if (config.loraRanks?.isNotEmpty ?? false) {
+      throw UnsupportedError(
+        'LoRA ranks cannot be configured for the OS model.',
+      );
+    }
     // Readiness is a hard precondition here, not something to wait out: the
     // OS feature download can take minutes and belongs to app startup, where
     // it can show progress. Callers drive it with LocalAi.ensureReady().
@@ -73,6 +81,8 @@ class LocalAiEngine
       fileType: spec.fileType,
       maxTokens: config.maxTokens,
       supportImage: config.supportImage,
+      maxNumImages: config.maxNumImages,
+      maxConcurrentSessions: config.maxConcurrentSessions,
     );
   }
 }

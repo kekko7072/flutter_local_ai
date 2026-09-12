@@ -14,6 +14,11 @@
 
 #include "local_ai_pigeon.g.h"
 
+#if WINDOWS_AI_AVAILABLE
+#include <winrt/Microsoft.Windows.AI.Text.h>
+#include <winrt/Windows.Foundation.h>
+#endif
+
 namespace flutter_local_ai {
 
 // Session half of the flutter_local_ai host on Windows, over Windows AI
@@ -25,11 +30,10 @@ namespace flutter_local_ai {
 // and GetBackendInfo reports `windowsAiFoundryUnconfigured` — Dart callers see
 // an honest "this build cannot run it" rather than a silent no-op.
 //
-// Everything runs on the platform thread. Windows AI's generation call is
-// awaited synchronously, so no background thread ever touches the EventSink,
-// which the Flutter Windows embedding requires to be used from the platform
-// thread only. The cost is that GenerateResponseAsync delivers the response as
-// a single chunk followed by `done` rather than token by token.
+// The Flutter Windows runner initializes a COM STA on the platform thread.
+// WinRT coroutines resume there; inference never blocks the message loop.
+// Streaming currently delivers one final chunk. Native token progress remains
+// a follow-up until its ordering is validated on a Windows device.
 class LocalAiSessionService : public flutter_local_ai_pigeon::LocalAiService {
  public:
   LocalAiSessionService();
@@ -128,21 +132,39 @@ class LocalAiSessionService : public flutter_local_ai_pigeon::LocalAiService {
  private:
   // The Windows AI model has no server-side history, so each session replays
   // its own transcript and appends the model's turn back onto it.
+  struct RunState {
+    bool cancelled = false;
+#if WINDOWS_AI_AVAILABLE
+    winrt::Windows::Foundation::IAsyncInfo operation{nullptr};
+#endif
+  };
   struct SessionState {
     std::string transcript;
     double temperature = 0.8;
+    int64_t top_k = 1;
+    std::optional<double> top_p;
+    std::shared_ptr<RunState> active;
     int64_t max_output_tokens = 0;  // 0 means "no cap requested".
   };
 
   SessionState* Find(int64_t session_id);
 
-  // Runs one turn against Windows AI, returning the generated text. Sets
-  // `error` and returns false when the model is unreachable. `overrides`,
-  // when present, replaces the session's sampling for this call only.
-  bool Generate(SessionState* state,
-                const flutter_local_ai_pigeon::GenerationOverrides* overrides,
-                std::string* out,
-                std::string* error);
+#if WINDOWS_AI_AVAILABLE
+  winrt::fire_and_forget Generate(
+      int64_t session_id, std::string prompt, double temperature,
+      int64_t top_k, std::optional<double> top_p,
+      std::shared_ptr<RunState> run,
+      std::function<void(flutter_local_ai_pigeon::ErrorOr<std::string>)> result);
+  winrt::fire_and_forget Prepare(
+      std::function<void(std::optional<flutter_local_ai_pigeon::FlutterError>)> result);
+#endif
+  void StartGeneration(
+      int64_t session_id,
+      const flutter_local_ai_pigeon::GenerationOverrides* overrides,
+      std::function<void(flutter_local_ai_pigeon::ErrorOr<std::string>)> result);
+  static void Cancel(const std::shared_ptr<RunState>& run);
+  std::shared_ptr<int> lifetime_ = std::make_shared<int>(0);
+  bool preparing_ = false;
 
   void PostEvent(const flutter::EncodableMap& payload);
   void PostToken(int64_t session_id, const std::string& text);

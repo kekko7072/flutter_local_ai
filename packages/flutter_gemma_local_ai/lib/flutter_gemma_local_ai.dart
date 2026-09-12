@@ -3,8 +3,8 @@
 ///
 /// Gemini Nano via ML Kit GenAI on Android, Apple Foundation Models on
 /// iOS/macOS, Windows AI Foundry on Windows, and Gemini Nano via the Chrome
-/// Prompt API on the web. Nothing is downloaded or bundled — the platform
-/// already ships the weights.
+/// Prompt API on the web. No app checkpoint is bundled; the OS manages the weights
+/// and may download system assets during preparation.
 ///
 /// ```dart
 /// await FlutterGemma.initialize(

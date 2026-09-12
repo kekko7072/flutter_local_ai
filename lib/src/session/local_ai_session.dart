@@ -17,8 +17,8 @@ class LocalAiSession {
     required this.sessionId,
     required LocalAiHost host,
     required void Function() onClose,
-  })  : _host = host,
-        _onClose = onClose;
+  }) : _host = host,
+       _onClose = onClose;
 
   final int sessionId;
   final LocalAiHost _host;
@@ -117,13 +117,11 @@ class LocalAiSession {
       // is emitted — must surface here rather than hang the stream forever.
       _host
           .generateResponseAsync(sessionId, overrides: _meaningful(overrides))
-          .catchError(
-        (Object error, StackTrace stackTrace) {
-          if (!controller.isClosed) controller.addError(error, stackTrace);
-          cleanup();
-          if (!controller.isClosed) controller.close();
-        },
-      );
+          .catchError((Object error, StackTrace stackTrace) {
+            if (!controller.isClosed) controller.addError(error, stackTrace);
+            cleanup();
+            if (!controller.isClosed) controller.close();
+          });
     };
 
     controller.onCancel = cleanup;
@@ -135,8 +133,8 @@ class LocalAiSession {
   /// and returns the raw JSON text.
   ///
   /// Throws [LocalAiUnsupportedException] on hosts reporting
-  /// `supportsStructuredOutput: false` (Android ML Kit GenAI is text-out
-  /// only). [schema] is validated in Dart first, so an unsupported construct
+  /// `supportsStructuredOutput: false` (the Android typed schema API is
+  /// not bridged to this dynamic Dart schema interface). [schema] is validated in Dart first, so an unsupported construct
   /// fails with a path-qualified [ArgumentError] rather than an opaque native
   /// error after the round trip.
   Future<String> getStructuredResponse(
@@ -177,8 +175,7 @@ class LocalAiSession {
   /// flip the sampling mode off greedy.
   static LocalAiGenerationOverrides? _meaningful(
     LocalAiGenerationOverrides? overrides,
-  ) =>
-      overrides == null || overrides.isEmpty ? null : overrides;
+  ) => overrides == null || overrides.isEmpty ? null : overrides;
 
   /// Releases the native session. Idempotent.
   Future<void> close() async {

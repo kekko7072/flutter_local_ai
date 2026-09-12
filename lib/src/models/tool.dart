@@ -1,12 +1,7 @@
 import 'dart:async';
 
 /// Supported parameter types for a tool definition.
-enum ToolArgumentType {
-  string,
-  integer,
-  number,
-  boolean,
-}
+enum ToolArgumentType { string, integer, number, boolean }
 
 /// Parameter definition sent to the native tool runner.
 class ToolParameter {

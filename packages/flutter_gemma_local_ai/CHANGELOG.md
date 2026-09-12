@@ -1,3 +1,11 @@
+## Unreleased
+
+- Target flutter_gemma 1.8.0 / Flutter 3.44 / Dart 3.12.
+- Export the BuiltInAiHuggingFaceResolver migration alias.
+- Reject unsupported audio, disabled image messages and LoRA requests.
+- Enforce session/image limits and serialize singleton session replacement.
+- Add tests for native tools/schema access alongside Gemma sessions.
+
 ## 0.1.0
 
 Initial release.

@@ -40,8 +40,10 @@ void main() {
       await session.addQueryChunk('Hello ');
       await session.addQueryChunk('world');
 
-      expect(host.session(session.sessionId)!.transcript.toString(),
-          'Hello world');
+      expect(
+        host.session(session.sessionId)!.transcript.toString(),
+        'Hello world',
+      );
     });
 
     test('a closed session refuses further work', () async {
@@ -112,8 +114,10 @@ void main() {
       final session = await model.openSession();
 
       final chunks = <String>[];
-      final done =
-          session.getResponseAsync().listen(chunks.add).asFuture<void>();
+      final done = session
+          .getResponseAsync()
+          .listen(chunks.add)
+          .asFuture<void>();
       await pumpEventQueue();
 
       host.emitToken(session.sessionId, 'hi');
@@ -137,10 +141,10 @@ void main() {
       // reaching `aErrors`.
       final aDone = Completer<void>();
       a.getResponseAsync().listen(
-            (_) {},
-            onError: aErrors.add,
-            onDone: aDone.complete,
-          );
+        (_) {},
+        onError: aErrors.add,
+        onDone: aDone.complete,
+      );
       await pumpEventQueue();
 
       host.emitError(a.sessionId, 'model exploded');
@@ -310,30 +314,30 @@ void main() {
       expect(host.calls, contains('stopGeneration'));
     });
 
-    test('per-call sampling reaches the host without touching the session',
-        () async {
-      final model = await newModel();
-      final session = await model.openSession(temperature: 0.9);
+    test(
+      'per-call sampling reaches the host without touching the session',
+      () async {
+        final model = await newModel();
+        final session = await model.openSession(temperature: 0.9);
 
-      await session.getResponse(
-        overrides: const LocalAiGenerationOverrides(
-          temperature: 0.1,
-          maxOutputTokens: 32,
-        ),
-      );
+        await session.getResponse(
+          overrides: const LocalAiGenerationOverrides(
+            temperature: 0.1,
+            maxOutputTokens: 32,
+          ),
+        );
 
-      expect(host.lastOverrides?.temperature, 0.1);
-      expect(host.lastOverrides?.maxOutputTokens, 32);
-      expect(host.sessions.single.temperature, 0.9);
-    });
+        expect(host.lastOverrides?.temperature, 0.1);
+        expect(host.lastOverrides?.maxOutputTokens, 32);
+        expect(host.sessions.single.temperature, 0.9);
+      },
+    );
 
     test('an override that changes nothing is not sent', () async {
       final model = await newModel();
       final session = await model.openSession();
 
-      await session.getResponse(
-        overrides: const LocalAiGenerationOverrides(),
-      );
+      await session.getResponse(overrides: const LocalAiGenerationOverrides());
 
       // An empty override would make a host rebuild its options for no
       // reason, and on Apple that can flip the sampling mode.
@@ -344,10 +348,9 @@ void main() {
       final model = await newModel();
       final session = await model.openSession();
 
-      await session.getStructuredResponse(
-        const {'type': 'object'},
-        overrides: const LocalAiGenerationOverrides(maxOutputTokens: 16),
-      );
+      await session.getStructuredResponse(const {
+        'type': 'object',
+      }, overrides: const LocalAiGenerationOverrides(maxOutputTokens: 16));
 
       expect(host.lastOverrides?.maxOutputTokens, 16);
     });
@@ -381,30 +384,34 @@ void main() {
 
       await expectLater(
         LocalAi.ensureReady(),
-        throwsA(isA<LocalAiUnavailableException>().having(
-          (e) => e.status,
-          'status',
-          LocalAiAvailability.unavailableDeviceUnsupported,
-        )),
+        throwsA(
+          isA<LocalAiUnavailableException>().having(
+            (e) => e.status,
+            'status',
+            LocalAiAvailability.unavailableDeviceUnsupported,
+          ),
+        ),
       );
       expect(host.calls, isNot(contains('downloadFeature')));
     });
 
-    test('kicks off a download and completes when it becomes available',
-        () async {
-      host.availability = LocalAiAvailability.downloadable;
-      final percents = <int>[];
+    test(
+      'kicks off a download and completes when it becomes available',
+      () async {
+        host.availability = LocalAiAvailability.downloadable;
+        final percents = <int>[];
 
-      final ready = LocalAi.ensureReady(onProgress: percents.add);
-      await pumpEventQueue();
-      host.emitDownloadProgress(50, bytesTotal: 100);
-      await pumpEventQueue();
-      host.availability = LocalAiAvailability.available;
-      await ready;
+        final ready = LocalAi.ensureReady(onProgress: percents.add);
+        await pumpEventQueue();
+        host.emitDownloadProgress(50, bytesTotal: 100);
+        await pumpEventQueue();
+        host.availability = LocalAiAvailability.available;
+        await ready;
 
-      expect(host.calls, contains('downloadFeature'));
-      expect(percents, contains(50));
-    });
+        expect(host.calls, contains('downloadFeature'));
+        expect(percents, contains(50));
+      },
+    );
 
     test('joins an in-flight download instead of starting a second', () async {
       host.availability = LocalAiAvailability.downloading;
@@ -428,8 +435,7 @@ class _FailingStartHost extends _DelegatingHost {
   Future<void> generateResponseAsync(
     int sessionId, {
     LocalAiGenerationOverrides? overrides,
-  }) async =>
-      throw StateError('native refused');
+  }) async => throw StateError('native refused');
 }
 
 class _DelegatingHost implements LocalAiHost {

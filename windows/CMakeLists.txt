@@ -16,6 +16,22 @@ add_library(${PLUGIN_NAME} SHARED
 # C++20 is required for coroutine support (co_await)
 target_compile_features(${PLUGIN_NAME} PUBLIC cxx_std_20)
 
+# The host application owns Windows App SDK deployment/bootstrap and MSIX
+# capabilities. Enabling this requires the 2.0+ C++/WinRT projections.
+option(FLUTTER_LOCAL_AI_WINDOWS_AI "Enable Windows App SDK language model" OFF)
+set(FLUTTER_LOCAL_AI_WINRT_INCLUDE_DIR "" CACHE PATH
+  "Directory containing the generated winrt/Microsoft.Windows.AI.Text.h")
+if(FLUTTER_LOCAL_AI_WINDOWS_AI)
+  if(NOT EXISTS "${FLUTTER_LOCAL_AI_WINRT_INCLUDE_DIR}/winrt/Microsoft.Windows.AI.Text.h")
+    message(FATAL_ERROR "Set FLUTTER_LOCAL_AI_WINRT_INCLUDE_DIR to the Windows App SDK 2.0+ projection directory. See doc/gemma-readiness.md.")
+  endif()
+  target_include_directories(${PLUGIN_NAME} PRIVATE "${FLUTTER_LOCAL_AI_WINRT_INCLUDE_DIR}")
+  target_compile_definitions(${PLUGIN_NAME} PRIVATE WINDOWS_AI_AVAILABLE=1)
+  target_link_libraries(${PLUGIN_NAME} PRIVATE windowsapp runtimeobject)
+else()
+  target_compile_definitions(${PLUGIN_NAME} PRIVATE WINDOWS_AI_AVAILABLE=0)
+endif()
+
 # Link against Flutter Windows embedding
 target_link_libraries(${PLUGIN_NAME} PRIVATE flutter flutter_wrapper_plugin)
 

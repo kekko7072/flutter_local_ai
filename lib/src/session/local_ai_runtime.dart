@@ -5,7 +5,8 @@ import 'local_ai_host.dart';
 // the Flutter on-device-AI ecosystem splits: `dart.library.ffi` is true on
 // Android/iOS/macOS/Windows and false under dart2js/dart2wasm.
 import 'web/local_ai_host_web.dart'
-    if (dart.library.ffi) 'local_ai_host_native.dart' as impl;
+    if (dart.library.ffi) 'local_ai_host_native.dart'
+    as impl;
 
 LocalAiHost? _host;
 

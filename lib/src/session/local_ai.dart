@@ -24,9 +24,9 @@ abstract final class LocalAi {
   /// [LocalAiAvailability.unavailableOther] so callers can degrade.
   static Future<LocalAiAvailability> availability({LocalAiHost? host}) async {
     try {
-      return await (host ?? localAiHost)
-          .checkAvailability()
-          .timeout(debugProbeTimeout);
+      return await (host ?? localAiHost).checkAvailability().timeout(
+        debugProbeTimeout,
+      );
     } on TimeoutException {
       return LocalAiAvailability.unavailableOther;
     } catch (_) {
@@ -41,9 +41,7 @@ abstract final class LocalAi {
   /// What the running host can actually do — vision, tools, schemas, exact
   /// token counts. Gate optional features on this rather than on
   /// `Platform.isX`: the same binary answers differently across OS versions.
-  static Future<LocalAiBackendCapabilities> capabilities({
-    LocalAiHost? host,
-  }) =>
+  static Future<LocalAiBackendCapabilities> capabilities({LocalAiHost? host}) =>
       (host ?? localAiHost).getBackendInfo();
 
   /// Ensures the OS model is ready, downloading it when the OS exposes it as

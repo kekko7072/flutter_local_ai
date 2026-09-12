@@ -47,15 +47,17 @@ void main() {
       expect(host.sessions.last.systemInstruction, 'Second.');
     });
 
-    test('generateText creates a session on its own without initialize',
-        () async {
-      host.response = 'hello';
+    test(
+      'generateText creates a session on its own without initialize',
+      () async {
+        host.response = 'hello';
 
-      final response = await subject.generateText(prompt: 'hi');
+        final response = await subject.generateText(prompt: 'hi');
 
-      expect(response.text, 'hello');
-      expect(host.sessions, hasLength(1));
-    });
+        expect(response.text, 'hello');
+        expect(host.sessions, hasLength(1));
+      },
+    );
 
     test('successive calls share one conversation', () async {
       await subject.generateText(prompt: 'first');
@@ -111,16 +113,18 @@ void main() {
       expect(response.generationTimeMs, isNotNull);
     });
 
-    test('a failed token count does not fail a successful generation',
-        () async {
-      host.response = 'fine';
-      host.countTokensError = StateError('tokenizer exploded');
+    test(
+      'a failed token count does not fail a successful generation',
+      () async {
+        host.response = 'fine';
+        host.countTokensError = StateError('tokenizer exploded');
 
-      final response = await subject.generateText(prompt: 'hi');
+        final response = await subject.generateText(prompt: 'hi');
 
-      expect(response.text, 'fine');
-      expect(response.tokenCount, isNull);
-    });
+        expect(response.text, 'fine');
+        expect(response.tokenCount, isNull);
+      },
+    );
 
     test('a schema is validated before any platform call', () async {
       await expectLater(
@@ -258,8 +262,10 @@ void main() {
     test('downloadModel reports progress then completion', () async {
       host.availability = LocalAiAvailability.downloadable;
       final statuses = <ModelDownloadStatus>[];
-      final done =
-          subject.downloadModel().listen(statuses.add).asFuture<void>();
+      final done = subject
+          .downloadModel()
+          .listen(statuses.add)
+          .asFuture<void>();
       await pumpEventQueue();
 
       host.emitDownloadProgress(1024);
@@ -304,27 +310,26 @@ void main() {
     test('toMap omits null knobs and defaults to text format', () {
       const config = GenerationConfig(maxTokens: 100);
 
-      expect(config.toMap(), {
-        'maxTokens': 100,
-        'responseFormat': 'text',
-      });
+      expect(config.toMap(), {'maxTokens': 100, 'responseFormat': 'text'});
     });
 
-    test('a schema implies JSON mode even when responseFormat is left text',
-        () {
-      const config = GenerationConfig(
-        maxTokens: 100,
-        schema: {'type': 'object'},
-      );
+    test(
+      'a schema implies JSON mode even when responseFormat is left text',
+      () {
+        const config = GenerationConfig(
+          maxTokens: 100,
+          schema: {'type': 'object'},
+        );
 
-      // The field still reflects what the caller passed...
-      expect(config.responseFormat, ResponseFormat.text);
-      // ...but the effective/wire format is promoted to json so the backend
-      // never sees a schema paired with a 'text' format.
-      expect(config.effectiveResponseFormat, ResponseFormat.json);
-      expect(config.requestsStructuredOutput, isTrue);
-      expect(config.toMap()['responseFormat'], 'json');
-    });
+        // The field still reflects what the caller passed...
+        expect(config.responseFormat, ResponseFormat.text);
+        // ...but the effective/wire format is promoted to json so the backend
+        // never sees a schema paired with a 'text' format.
+        expect(config.effectiveResponseFormat, ResponseFormat.json);
+        expect(config.requestsStructuredOutput, isTrue);
+        expect(config.toMap()['responseFormat'], 'json');
+      },
+    );
 
     test('requestsStructuredOutput is false for plain text generation', () {
       const config = GenerationConfig(maxTokens: 100);

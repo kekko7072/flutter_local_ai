@@ -12,6 +12,7 @@
 
 #if WINDOWS_AI_AVAILABLE
 #include <winrt/Microsoft.Windows.AI.h>
+#include <winrt/Microsoft.Windows.AI.Text.h>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/base.h>
 #endif
@@ -52,7 +53,18 @@ FlutterError NotConfigured() {
 
 LocalAiSessionService::LocalAiSessionService() = default;
 
-LocalAiSessionService::~LocalAiSessionService() = default;
+LocalAiSessionService::~LocalAiSessionService() {
+  lifetime_.reset();
+  for (auto& [id, state] : sessions_) Cancel(state.active);
+}
+
+void LocalAiSessionService::Cancel(const std::shared_ptr<RunState>& run) {
+  if (!run) return;
+  run->cancelled = true;
+#if WINDOWS_AI_AVAILABLE
+  if (run->operation) { try { run->operation.Cancel(); } catch (...) {} }
+#endif
+}
 
 std::unique_ptr<LocalAiSessionService> LocalAiSessionService::Register(
     flutter::BinaryMessenger* messenger) {
@@ -126,18 +138,21 @@ void LocalAiSessionService::CheckAvailability(
     std::function<void(ErrorOr<AvailabilityStatus> reply)> result) {
 #if WINDOWS_AI_AVAILABLE
   try {
-    // Windows AI needs Windows 11 24H2 (build 26100) or newer.
-    OSVERSIONINFOEXW osvi = {};
-    osvi.dwOSVersionInfoSize = sizeof(osvi);
-    if (!GetVersionExW(reinterpret_cast<OSVERSIONINFO*>(&osvi)) ||
-        osvi.dwMajorVersion < 10 || osvi.dwBuildNumber < 26100) {
-      result(AvailabilityStatus::kUnavailableOsTooOld);
-      return;
+    using winrt::Microsoft::Windows::AI::AIFeatureReadyState;
+    using winrt::Microsoft::Windows::AI::Text::LanguageModel;
+    switch (LanguageModel::GetReadyState()) {
+      case AIFeatureReadyState::Ready: result(AvailabilityStatus::kAvailable); break;
+      case AIFeatureReadyState::NotReady:
+        result(preparing_ ? AvailabilityStatus::kDownloading : AvailabilityStatus::kDownloadable); break;
+      case AIFeatureReadyState::DisabledByUser:
+        result(AvailabilityStatus::kUnavailableDisabled); break;
+      case AIFeatureReadyState::OSUpdateNeeded:
+        result(AvailabilityStatus::kUnavailableOsTooOld); break;
+      case AIFeatureReadyState::NotSupportedOnCurrentSystem:
+      case AIFeatureReadyState::NotCompatibleWithSystemHardware:
+        result(AvailabilityStatus::kUnavailableDeviceUnsupported); break;
+      default: result(AvailabilityStatus::kUnavailableOther); break;
     }
-    auto model =
-        winrt::Microsoft::Windows::AI::LanguageModel::CreateAsync().get();
-    result(model != nullptr ? AvailabilityStatus::kAvailable
-                            : AvailabilityStatus::kUnavailableDeviceUnsupported);
   } catch (...) {
     // The probe's contract is to resolve, never throw.
     result(AvailabilityStatus::kUnavailableOther);
@@ -150,28 +165,21 @@ void LocalAiSessionService::CheckAvailability(
 void LocalAiSessionService::AvailabilityReason(
     std::function<void(ErrorOr<std::string> reply)> result) {
 #if WINDOWS_AI_AVAILABLE
-  OSVERSIONINFOEXW osvi = {};
-  osvi.dwOSVersionInfoSize = sizeof(osvi);
-  if (GetVersionExW(reinterpret_cast<OSVERSIONINFO*>(&osvi)) &&
-      (osvi.dwMajorVersion < 10 || osvi.dwBuildNumber < 26100)) {
-    result(std::string(
-        "Windows AI needs Windows 11 24H2 (build 26100) or newer. Update "
-        "Windows, or fall back to a downloaded model."));
-    return;
-  }
-  try {
-    auto model =
-        winrt::Microsoft::Windows::AI::LanguageModel::CreateAsync().get();
-    if (model != nullptr) {
-      result(std::string("Windows AI Foundry is ready."));
-      return;
+  CheckAvailability([result](ErrorOr<AvailabilityStatus> status) {
+    if (status.has_error()) { result(std::string("Windows AI readiness check failed.")); return; }
+    switch (status.value()) {
+      case AvailabilityStatus::kAvailable: result(std::string("Windows AI is ready.")); break;
+      case AvailabilityStatus::kDownloadable:
+      case AvailabilityStatus::kDownloading:
+        result(std::string("The Windows AI model needs preparation. Call LocalAi.ensureReady after obtaining consent for any download.")); break;
+      case AvailabilityStatus::kUnavailableDisabled:
+        result(std::string("The Windows AI model is disabled by the user.")); break;
+      case AvailabilityStatus::kUnavailableOsTooOld:
+        result(std::string("The Windows AI model requires an OS update.")); break;
+      default:
+        result(std::string("Check supported hardware, Windows App SDK runtime, and the systemAIModels package capability.")); break;
     }
-  } catch (...) {
-    // Fall through to the generic message below.
-  }
-  result(std::string(
-      "Windows AI Foundry could not start a language model on this PC. It "
-      "needs a Copilot+ device with an NPU."));
+  });
 #else
   result(std::string(
       "This build has no Windows AI SDK headers, so the OS model cannot be "
@@ -189,9 +197,7 @@ void LocalAiSessionService::GetBackendInfo(
       /*supports_structured_output=*/false,
       /*supports_vision=*/false,
       /*supports_token_count=*/false,
-      // Windows AI ships as a system component; there is nothing for an app
-      // to download.
-      /*supports_model_download=*/false,
+      /*supports_model_download=*/true,
       /*supports_play_store_redirect=*/false,
       /*is_configured=*/true);
 #else
@@ -211,9 +217,11 @@ void LocalAiSessionService::GetBackendInfo(
 
 void LocalAiSessionService::DownloadFeature(
     std::function<void(std::optional<FlutterError> reply)> result) {
-  // Nothing to download: Windows AI is a system component. Returning success
-  // sends Dart's ensureReady straight to polling availability.
-  result(std::nullopt);
+#if WINDOWS_AI_AVAILABLE
+  Prepare(std::move(result));
+#else
+  result(NotConfigured());
+#endif
 }
 
 void LocalAiSessionService::OpenAICorePlayStore(
@@ -242,6 +250,7 @@ void LocalAiSessionService::CreateModel(
 
 void LocalAiSessionService::CloseModel(
     std::function<void(std::optional<FlutterError> reply)> result) {
+  for (auto& [id, state] : sessions_) { Cancel(state.active); PostDone(id); }
   sessions_.clear();
   result(std::nullopt);
 }
@@ -267,16 +276,13 @@ void LocalAiSessionService::CreateSession(
 
   SessionState state;
   state.temperature = temperature;
+  state.top_k = top_k;
+  if (top_p) state.top_p = *top_p;
   state.max_output_tokens =
       max_output_tokens != nullptr ? *max_output_tokens : 0;
   if (system_instruction != nullptr && !system_instruction->empty()) {
     state.transcript = *system_instruction + "\n\n";
   }
-  // top_k and top_p have no Windows AI counterpart. They are accepted for
-  // cross-platform parity and deliberately not applied, rather than mapped
-  // onto something that means something else.
-  (void)top_k;
-  (void)top_p;
 
   sessions_[session_id] = std::move(state);
   result(std::nullopt);
@@ -285,6 +291,7 @@ void LocalAiSessionService::CreateSession(
 void LocalAiSessionService::CloseSession(
     int64_t session_id,
     std::function<void(std::optional<FlutterError> reply)> result) {
+  if (auto* state = Find(session_id)) Cancel(state->active);
   const bool existed = sessions_.erase(session_id) > 0;
   // Closing mid-stream must terminate that stream, or a Dart consumer hangs.
   if (existed) PostDone(session_id);
@@ -315,100 +322,117 @@ void LocalAiSessionService::AddImage(
 
 // === Generation ===
 
-bool LocalAiSessionService::Generate(
-    SessionState* state,
-    const flutter_local_ai_pigeon::GenerationOverrides* overrides,
-    std::string* out,
-    std::string* error) {
 #if WINDOWS_AI_AVAILABLE
+winrt::fire_and_forget LocalAiSessionService::Prepare(
+    std::function<void(std::optional<FlutterError>)> result) {
+  std::weak_ptr<int> lifetime = lifetime_;
+  if (preparing_) { result(std::nullopt); co_return; }
+  preparing_ = true;
+  std::optional<FlutterError> error;
   try {
-    auto model =
-        winrt::Microsoft::Windows::AI::LanguageModel::CreateAsync().get();
-    if (model == nullptr) {
-      *error = "Windows AI could not start a language model on this PC.";
-      return false;
+    const auto ready = co_await winrt::Microsoft::Windows::AI::Text::LanguageModel::EnsureReadyAsync();
+    if (ready.Status() != winrt::Microsoft::Windows::AI::AIFeatureReadyResultState::Success) {
+      error = FlutterError("MODEL_PREPARATION_FAILED", "Windows AI preparation failed; check Windows Update and model availability.");
     }
-    winrt::Microsoft::Windows::AI::LanguageModelOptions options;
-    // Windows AI's LanguageModelOptions exposes no sampling knobs in the
-    // surface this plugin targets, so per-call overrides have nowhere to go.
-    // Accepted for cross-platform parity and dropped, rather than mapped
-    // onto something that means something else.
-    (void)overrides;
-    // The generation call is awaited synchronously so the reply and every
-    // event stay on the platform thread — see the class comment.
-    auto response = model
-                        .GenerateResponseAsync(
-                            options, winrt::to_hstring(state->transcript))
-                        .get();
-    *out = winrt::to_string(response.Text());
-    return true;
   } catch (const winrt::hresult_error& e) {
-    *error = "Windows AI error: " + winrt::to_string(e.message());
-    return false;
-  } catch (const std::exception& e) {
-    *error = std::string("Windows AI error: ") + e.what();
-    return false;
+    error = FlutterError("MODEL_PREPARATION_FAILED", winrt::to_string(e.message()));
   } catch (...) {
-    *error = "Unknown Windows AI error during generation.";
-    return false;
+    error = FlutterError("MODEL_PREPARATION_FAILED", "Windows AI preparation failed.");
   }
+  if (lifetime.expired()) co_return;
+  preparing_ = false;
+  result(error);
+}
+
+winrt::fire_and_forget LocalAiSessionService::Generate(
+    int64_t session_id, std::string prompt, double temperature,
+    int64_t top_k, std::optional<double> top_p, std::shared_ptr<RunState> run,
+    std::function<void(ErrorOr<std::string>)> result) {
+  std::weak_ptr<int> lifetime = lifetime_;
+  std::string text;
+  std::optional<FlutterError> error;
+  winrt::Microsoft::Windows::AI::Text::LanguageModel model{nullptr};
+  try {
+    using namespace winrt::Microsoft::Windows::AI::Text;
+    auto creating = LanguageModel::CreateAsync();
+    run->operation = creating.as<winrt::Windows::Foundation::IAsyncInfo>();
+    model = co_await creating;
+    if (run->cancelled) throw winrt::hresult_canceled();
+    LanguageModelOptions options;
+    options.Temperature(static_cast<float>(temperature));
+    options.TopK(static_cast<uint32_t>(top_k));
+    if (top_p) options.TopP(static_cast<float>(*top_p));
+    auto generating = model.GenerateResponseAsync(winrt::to_hstring(prompt), options);
+    run->operation = generating.as<winrt::Windows::Foundation::IAsyncInfo>();
+    const auto response = co_await generating;
+    if (run->cancelled) throw winrt::hresult_canceled();
+    if (response.Status() != LanguageModelResponseStatus::Complete) {
+      error = FlutterError("GENERATION_ERROR", "Windows AI did not complete the response (status " +
+          std::to_string(static_cast<int>(response.Status())) + ").");
+    } else {
+      text = winrt::to_string(response.Text());
+    }
+  } catch (const winrt::hresult_canceled&) {
+    error = FlutterError("CANCELLED", "Generation was cancelled.");
+  } catch (const winrt::hresult_error& e) {
+    error = FlutterError("GENERATION_ERROR", winrt::to_string(e.message()));
+  } catch (...) {
+    error = FlutterError("GENERATION_ERROR", "Windows AI generation failed.");
+  }
+  run->operation = nullptr;
+  if (model) { try { model.Close(); } catch (...) {} }
+  if (lifetime.expired()) co_return;
+  if (auto* state = Find(session_id); state && state->active == run) {
+    state->active.reset();
+    if (!error && !run->cancelled) state->transcript += "\n\n" + text + "\n\n";
+  }
+  if (error) result(ErrorOr<std::string>(*error));
+  else result(text);
+}
+#endif
+
+void LocalAiSessionService::StartGeneration(
+    int64_t session_id,
+    const flutter_local_ai_pigeon::GenerationOverrides* overrides,
+    std::function<void(ErrorOr<std::string>)> result) {
+  auto* state = Find(session_id);
+  if (!state) { result(SessionMissing(session_id)); return; }
+#if WINDOWS_AI_AVAILABLE
+  if (state->active) { result(FlutterError("SESSION_BUSY", "This session is already generating.")); return; }
+  auto run = std::make_shared<RunState>();
+  state->active = run;
+  const auto temperature = overrides && overrides->temperature() ? *overrides->temperature() : state->temperature;
+  const auto top_k = overrides && overrides->top_k() ? *overrides->top_k() : state->top_k;
+  const auto top_p = overrides && overrides->top_p() ? std::optional<double>(*overrides->top_p()) : state->top_p;
+  // The current Windows LanguageModelOptions has no max-output-token field.
+  Generate(session_id, state->transcript, temperature, top_k, top_p, run, std::move(result));
 #else
-  (void)state;
   (void)overrides;
-  (void)out;
-  *error =
-      "This build has no Windows AI SDK headers, so no inference can run.";
-  return false;
+  result(NotConfigured());
 #endif
 }
 
 void LocalAiSessionService::GenerateResponse(
     int64_t session_id,
     const flutter_local_ai_pigeon::GenerationOverrides* overrides,
-    std::function<void(ErrorOr<std::string> reply)> result) {
-  SessionState* state = Find(session_id);
-  if (state == nullptr) {
-    result(ErrorOr<std::string>(SessionMissing(session_id)));
-    return;
-  }
-  std::string text;
-  std::string error;
-  if (!Generate(state, overrides, &text, &error)) {
-    result(ErrorOr<std::string>(FlutterError("GENERATION_ERROR", error)));
-    return;
-  }
-  // Windows AI keeps no history of its own, so the model's turn is appended
-  // back onto the transcript for the next turn to see.
-  state->transcript += text;
-  result(text);
+    std::function<void(ErrorOr<std::string>)> result) {
+  StartGeneration(session_id, overrides, std::move(result));
 }
 
 void LocalAiSessionService::GenerateResponseAsync(
     int64_t session_id,
     const flutter_local_ai_pigeon::GenerationOverrides* overrides,
-    std::function<void(std::optional<FlutterError> reply)> result) {
-  SessionState* state = Find(session_id);
-  if (state == nullptr) {
-    result(SessionMissing(session_id));
-    return;
-  }
-  // Acknowledge first: the Dart contract is that this call starts generation
-  // and output arrives on the event channel.
+    std::function<void(std::optional<FlutterError>)> result) {
+  if (!Find(session_id)) { result(SessionMissing(session_id)); return; }
   result(std::nullopt);
-
-  std::string text;
-  std::string error;
-  if (!Generate(state, overrides, &text, &error)) {
-    PostError(session_id, error);
-    return;
-  }
-  state->transcript += text;
-  // One chunk rather than token-by-token: Windows AI is awaited
-  // synchronously so nothing off the platform thread touches the sink.
-  if (!text.empty()) {
-    PostToken(session_id, text);
-  }
-  PostDone(session_id);
+  StartGeneration(session_id, overrides, [this, session_id](ErrorOr<std::string> response) {
+    if (response.has_error()) {
+      if (response.error().code() != "CANCELLED") PostError(session_id, response.error().message());
+      return;
+    }
+    if (!response.value().empty()) PostToken(session_id, response.value());
+    PostDone(session_id);
+  });
 }
 
 void LocalAiSessionService::GenerateStructuredResponse(
@@ -426,10 +450,7 @@ void LocalAiSessionService::GenerateStructuredResponse(
 void LocalAiSessionService::StopGeneration(
     int64_t session_id,
     std::function<void(std::optional<FlutterError> reply)> result) {
-  // Generation is synchronous on the platform thread, so by the time this
-  // call is dispatched the turn it would cancel has already finished. The
-  // completion event still goes out so a Dart stream closes cleanly either
-  // way; there is nothing left to interrupt.
+  if (auto* state = Find(session_id)) Cancel(state->active);
   PostDone(session_id);
   result(std::nullopt);
 }

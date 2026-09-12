@@ -39,8 +39,10 @@ extension type PromptSession._(JSObject _) implements JSObject {
   /// Synchronous per spec — releases the session immediately.
   external void destroy();
 
-  external JSPromise<JSNumber> measureInputUsage(JSAny input,
-      [JSObject? options]);
+  external JSPromise<JSNumber> measureInputUsage(
+    JSAny input, [
+    JSObject? options,
+  ]);
 
   external double get inputQuota;
   external double get inputUsage;
@@ -110,10 +112,7 @@ JSObject buildCreateOptions({
 
 /// Builds the `prompt()` / `promptStreaming()` options object, or null when
 /// there is nothing to pass.
-JSObject? buildPromptOptions({
-  Object? responseConstraint,
-  JSObject? signal,
-}) {
+JSObject? buildPromptOptions({Object? responseConstraint, JSObject? signal}) {
   final map = <String, Object?>{
     if (responseConstraint != null) 'responseConstraint': responseConstraint,
     if (signal != null) 'signal': signal,

@@ -46,9 +46,9 @@ class GenerationConfig {
     this.responseFormat = ResponseFormat.text,
     this.schema,
   }) : assert(
-          responseFormat == ResponseFormat.text || schema != null,
-          'ResponseFormat.json requires a non-null schema.',
-        );
+         responseFormat == ResponseFormat.text || schema != null,
+         'ResponseFormat.json requires a non-null schema.',
+       );
 
   /// Whether this config asks for schema-constrained JSON output. True when a
   /// [schema] is supplied (which implies JSON mode) or [responseFormat] is

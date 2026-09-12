@@ -89,9 +89,10 @@ class WebLocalAiHost implements LocalAiHost {
             'fetch it.',
       LocalAiAvailability.downloading =>
         'Gemini Nano is downloading. Call LocalAi.ensureReady() and wait.',
-      _ => 'The Prompt API reported the model as unavailable without a '
-          'reason. Common causes are too little free disk (~22 GB needed), '
-          'an ineligible GPU, or a missing origin-trial token.',
+      _ =>
+        'The Prompt API reported the model as unavailable without a '
+            'reason. Common causes are too little free disk (~22 GB needed), '
+            'an ineligible GPU, or a missing origin-trial token.',
     };
   }
 
@@ -129,10 +130,12 @@ class WebLocalAiHost implements LocalAiHost {
       onDownloadProgress: (loaded) {
         // `loaded` is a 0..1 fraction; scale to a byte-shaped pair so the
         // event matches what the native hosts emit.
-        _events.add(LocalAiDownloadProgressEvent(
-          bytesDownloaded: (loaded * 100).clamp(0, 100).round(),
-          bytesTotal: 100,
-        ));
+        _events.add(
+          LocalAiDownloadProgressEvent(
+            bytesDownloaded: (loaded * 100).clamp(0, 100).round(),
+            bytesTotal: 100,
+          ),
+        );
       },
     );
     final session = await LanguageModel.create(options).toDart;
@@ -249,8 +252,10 @@ class WebLocalAiHost implements LocalAiHost {
     final controller = AbortController();
     state.inFlight = controller;
     final options = buildPromptOptions(signal: controller.signal);
-    final stream =
-        state.session.promptStreaming(state.takeTranscript().toJS, options);
+    final stream = state.session.promptStreaming(
+      state.takeTranscript().toJS,
+      options,
+    );
 
     // Deliberately not awaited: the contract is that this call *starts*
     // generation and output arrives on the event stream, matching the native
@@ -259,17 +264,21 @@ class WebLocalAiHost implements LocalAiHost {
     unawaited(() async {
       try {
         await pumpTextStream(stream, (chunk) {
-          _events.add(LocalAiTokenEvent(
-            sessionId: sessionId,
-            partialResult: chunk,
-            done: false,
-          ));
+          _events.add(
+            LocalAiTokenEvent(
+              sessionId: sessionId,
+              partialResult: chunk,
+              done: false,
+            ),
+          );
         });
-        _events.add(LocalAiTokenEvent(
-          sessionId: sessionId,
-          partialResult: '',
-          done: true,
-        ));
+        _events.add(
+          LocalAiTokenEvent(
+            sessionId: sessionId,
+            partialResult: '',
+            done: true,
+          ),
+        );
       } catch (e) {
         _events.add(
           LocalAiErrorEvent(sessionId: sessionId, message: e.toString()),

@@ -6,7 +6,8 @@ Gemma checkpoint — Gemini Nano through ML Kit GenAI on Android, Apple
 Foundation Models on iOS and macOS, Windows AI Foundry on Windows, and Gemini
 Nano through the Chrome Prompt API on the web.
 
-Nothing is downloaded and nothing is bundled: the OS owns the weights.
+No checkpoint is bundled by the application: the OS manages model weights,
+and initial preparation may download system assets.
 Installing a built-in model records which one you want, and
 `LocalAi.ensureReady()` makes sure the feature itself is switched on.
 
@@ -18,9 +19,9 @@ native code for all four platforms.
 
 | Platform | Model | Minimum | Notes |
 |---|---|---|---|
-| Android | Gemini Nano (ML Kit GenAI / AICore) | Pixel 9+, Galaxy S25+ | Needs `minSdk 26` |
+| Android | Gemini Nano (ML Kit GenAI / AICore) | Supported AICore devices | Needs `minSdk 26`, Kotlin 2.3.21 |
 | iOS / macOS | Apple Foundation Models | iPhone 15 Pro+, Apple silicon Macs | Needs Apple Intelligence enabled in Settings; OS 26+ |
-| Windows | Windows AI Foundry (Phi Silica) | Windows 11 24H2, Copilot+ PC | Needs the Windows AI SDK headers — see below |
+| Windows | Windows AI Foundry (Phi Silica) | Windows 11 24H2, Copilot+ PC | Needs App SDK setup and device validation — see below |
 | Web | Gemini Nano (Chrome Prompt API) | Desktop Chrome / Chromium-Edge | Needs an origin-trial token or `chrome://flags/#prompt-api-for-gemini-nano` |
 
 Availability is a property of the device, OS and browser at runtime — never
@@ -96,9 +97,9 @@ if (await LocalAi.availability() == LocalAiAvailability.available) {
 | Feature | Android | iOS / macOS | Windows | Web |
 |---|---|---|---|---|
 | Streaming responses | ✅ | ✅ | ⚠️ one chunk | ✅ |
-| Vision (image input) | ✅ | ❌ needs OS 27 | ❌ | ❌ |
+| Vision (image input) | ✅ | ⚠️ OS 27 SDK + runtime | ❌ | ❌ |
 | Audio input | ❌ | ❌ | ❌ | ❌ |
-| Function calling | ✅ prompt-based | ✅ prompt-based | ✅ prompt-based | ✅ prompt-based |
+| Function calling | ⚠️ prompt protocol | ⚠️ prompt protocol | ⚠️ prompt protocol | ⚠️ prompt protocol |
 | Thinking mode | ❌ | ❌ | ❌ | ❌ |
 | `sizeInTokens` | ✅ native | ✅ on OS 26.4+, built with Xcode 26.4+ | ⚠️ estimate | ✅ native |
 | LoRA weights | ❌ | ❌ | ❌ | ❌ |
@@ -118,19 +119,17 @@ tool loop, and running a second loop natively for the same turn would produce
 two competing sets of calls. If you want Apple's native function calling, use
 flutter_local_ai's own API, where you own the loop.
 
-Windows streaming arrives as a single chunk followed by completion. The
-Flutter Windows embedding requires the event sink to be used from the platform
-thread, and this plugin has no task runner to marshal back through, so the
-generation call is awaited synchronously. The stream API is honest about
-finishing; it just is not incremental.
+Windows streaming currently arrives as a single final chunk. Inference runs
+asynchronously so the platform message loop can process cancellation.
+Windows still needs native build and hardware validation.
 
 ## Windows setup
 
-Windows AI is compile-gated. Until the WinRT headers are present the backend
-reports itself as `windowsAiFoundryUnconfigured` and refuses to generate,
-rather than silently doing nothing. To enable it, generate the headers with
-`cppwinrt.exe` (or install the Windows AI SDK NuGet package), add them to the
-plugin's include path, and build with `WINDOWS_AI_AVAILABLE=1`.
+The host application supplies Windows App SDK 2.0+ runtime deployment,
+C++/WinRT projections and package capabilities. Enable the plugin with
+`FLUTTER_LOCAL_AI_WINDOWS_AI` and `FLUTTER_LOCAL_AI_WINRT_INCLUDE_DIR`.
+See the [full setup and readiness review](../../doc/gemma-readiness.md).
+The default build reports `windowsAiFoundryUnconfigured`.
 
 ## Web setup
 
@@ -170,7 +169,9 @@ attempting a download: none of them can be fixed by waiting.
 
 ## Migrating from flutter_gemma_builtin_ai
 
-Change the import. The old names are exported as aliases:
+Replace the dependency and import, and register only one built-in engine.
+This adapter requires Flutter 3.44 / Dart 3.12 and targets Gemma 1.8.
+The old public names are exported as aliases:
 
 ```dart
 // import 'package:flutter_gemma_builtin_ai/flutter_gemma_builtin_ai.dart';
@@ -181,8 +182,21 @@ await BuiltInAi.ensureReady();
 ```
 
 `BuiltInAiEngine`, `BuiltInAi`, `BuiltInAiModels`, `BuiltInAiAvailability` and
-`BuiltInAiUnavailableException` all keep working. New code should use the
+`BuiltInAiUnavailableException`, plus `BuiltInAiHuggingFaceResolver`, all keep working. New code should use the
 `LocalAi*` names, which also reach Windows and the extra model specs.
+
+## Keeping flutter_local_ai features
+
+Native tools, dynamic schema output, per-call options and genUI remain in
+flutter_local_ai. Use `LocalAiGemmaModel.localAiModel` to open a native session,
+or `LocalAiGemmaSession.localAiSession` for structured output on an existing
+session. Gate optional functionality on `LocalAi.capabilities()`.
+
+`LocalAiUiGenerator` can run alongside Gemma chats without replacing their
+conversations. Its `genUiInstructions` and `parseModelOutput` also let a
+downloaded Gemma fallback produce the same UI specs. See the
+[integration review](../../doc/gemma-readiness.md) for examples, tests and
+features not yet exposed from the latest OS APIs.
 
 ## License
 

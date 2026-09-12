@@ -88,7 +88,7 @@ enum LocalAiBackendKind {
 
 /// What the *running* host can do. Every field is a runtime property of this
 /// device + OS + build: the same binary reports `supportsVision: false` on
-/// iOS 26 and `true` on iOS 27.
+/// iOS 26 and can report `true` on iOS 27 when built with its SDK.
 class LocalAiBackendCapabilities {
   const LocalAiBackendCapabilities({
     required this.backend,

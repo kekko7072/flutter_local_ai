@@ -11,17 +11,23 @@ import com.google.mlkit.genai.common.DownloadStatus
 import com.google.mlkit.genai.common.FeatureStatus
 import com.google.mlkit.genai.common.GenAiException
 import com.google.mlkit.genai.prompt.Generation
+import com.google.mlkit.genai.prompt.Content
+import com.google.mlkit.genai.prompt.SystemInstruction
 import com.google.mlkit.genai.prompt.GenerativeModel
 import com.google.mlkit.genai.prompt.ImagePart
 import com.google.mlkit.genai.prompt.TextPart
 import com.google.mlkit.genai.prompt.generateContentRequest
 import io.flutter.plugin.common.EventChannel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -46,7 +52,7 @@ internal class LocalAiSessionService(
 
     /** ML Kit rejects maxOutputTokens outside this range. */
     const val MAX_OUTPUT_TOKENS_MIN = 1
-    const val MAX_OUTPUT_TOKENS_MAX = 256
+    const val MAX_OUTPUT_TOKENS_MAX = 4096
   }
 
   private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -55,6 +61,7 @@ internal class LocalAiSessionService(
   @Volatile
   private var generativeModel: GenerativeModel? = null
   private val modelLock = Any()
+  private val generationMutex = Mutex()
 
   /** `Generation.getClient()` is cheap and idempotent; one instance serves
    *  status checks, download and every session's generation. */
@@ -66,19 +73,22 @@ internal class LocalAiSessionService(
     val temperature: Float,
     val topK: Int,
     val maxOutputTokens: Int?,
-    systemInstruction: String?,
+    val systemInstruction: String?,
   ) {
     val transcript = StringBuilder()
     val images = mutableListOf<Bitmap>()
 
+    /** Where the pending turn begins — the transcript length as of the last
+     *  committed turn. A generate that fails or is cancelled with nothing to
+     *  show rewinds here, so the abandoned prompt is not left at the tail for
+     *  the next turn to concatenate onto. */
+    @Volatile
+    var turnStart: Int = 0
+
     @Volatile
     var job: Job? = null
 
-    init {
-      if (!systemInstruction.isNullOrEmpty()) {
-        transcript.append(systemInstruction).append("\n\n")
-      }
-    }
+
   }
 
   private val sessions = mutableMapOf<Long, SessionState>()
@@ -135,7 +145,7 @@ internal class LocalAiSessionService(
 
   // === Availability ===
 
-  private fun featureStatus(): FeatureStatus = client().checkStatus()
+  private suspend fun featureStatus(): Int = client().checkStatus()
 
   override fun checkAvailability(callback: (Result<AvailabilityStatus>) -> Unit) {
     scope.launch {
@@ -223,21 +233,25 @@ internal class LocalAiSessionService(
       fun reply(result: Result<Unit>) {
         if (replied.compareAndSet(false, true)) callback(result)
       }
+      // DownloadStarted carries the total; DownloadProgress carries only the
+      // running counter. Hold the total from the opening status so Dart can
+      // report a real percentage. Stays 0 if the flow somehow starts at
+      // DownloadProgress, and Dart then reports a null percent as before.
+      var bytesTotal = 0L
       try {
         client().download().collect { status ->
           when (status) {
-            is DownloadStatus.DownloadStarted ->
-              Log.d(TAG, "Gemini Nano download started")
+            is DownloadStatus.DownloadStarted -> {
+              bytesTotal = status.bytesToDownload
+              Log.d(TAG, "Gemini Nano download started ($bytesTotal bytes)")
+            }
 
             is DownloadStatus.DownloadProgress ->
-              // ML Kit gives a running byte counter but no reliable total, so
-              // bytesTotal is 0 and Dart shows no percentage — it polls
-              // availability for the terminal signal instead.
               postEvent(
                 mapOf(
                   "code" to "DOWNLOAD_PROGRESS",
                   "bytesDownloaded" to status.totalBytesDownloaded,
-                  "bytesTotal" to 0L,
+                  "bytesTotal" to bytesTotal,
                 )
               )
 
@@ -389,7 +403,7 @@ internal class LocalAiSessionService(
     callback: (Result<Unit>) -> Unit
   ) {
     try {
-      requireSession(sessionId).transcript.append(text)
+      requireSession(sessionId).also { requireIdle(it) }.transcript.append(text)
       callback(Result.success(Unit))
     } catch (e: Exception) {
       callback(Result.failure(e))
@@ -402,14 +416,7 @@ internal class LocalAiSessionService(
     callback: (Result<Unit>) -> Unit
   ) {
     try {
-      val state = requireSession(sessionId)
-      if (state.images.isNotEmpty()) {
-        throw FlutterError(
-          "TOO_MANY_IMAGES",
-          "ML Kit GenAI accepts at most one image per turn.",
-          null
-        )
-      }
+      val state = requireSession(sessionId).also { requireIdle(it) }
       val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
         ?: throw FlutterError(
           "IMAGE_DECODE_FAILED",
@@ -420,6 +427,12 @@ internal class LocalAiSessionService(
       callback(Result.success(Unit))
     } catch (e: Exception) {
       callback(Result.failure(e))
+    }
+  }
+
+  private fun requireIdle(state: SessionState) {
+    if (state.job?.isActive == true) {
+      throw FlutterError("SESSION_BUSY", "This session is already generating.", null)
     }
   }
 
@@ -447,31 +460,40 @@ internal class LocalAiSessionService(
     // rather than mapped onto topK, which means something else.
   }
 
-  private fun buildRequest(state: SessionState, overrides: GenerationOverrides?) =
+  private suspend fun buildRequest(state: SessionState, overrides: GenerationOverrides?) =
     EffectiveOptions(state, overrides).let { options ->
-      if (state.images.isNotEmpty()) {
-        generateContentRequest(
-          ImagePart(state.images.first()),
-          TextPart(state.transcript.toString())
-        ) {
-          temperature = options.temperature
-          topK = options.topK
-          options.maxOutputTokens?.let { maxOutputTokens = it }
-        }
-      } else {
-        generateContentRequest(TextPart(state.transcript.toString())) {
-          temperature = options.temperature
-          topK = options.topK
-          options.maxOutputTokens?.let { maxOutputTokens = it }
-        }
+      val instruction = state.systemInstruction
+      val nativeSystem = !instruction.isNullOrEmpty() && client().isSystemPromptAvailable()
+      val prompt = if (!nativeSystem && !instruction.isNullOrEmpty()) {
+        instruction + "\n\n" + state.transcript.toString()
+      } else state.transcript.toString()
+      val content = Content.Builder().apply {
+        state.images.forEach { image(it) }
+        text(prompt)
+      }.build()
+      generateContentRequest(content) {
+        if (nativeSystem) systemInstruction = SystemInstruction(instruction)
+        temperature = options.temperature
+        topK = options.topK
+        options.maxOutputTokens?.let { maxOutputTokens = it }
       }
     }
 
   /** Records the model's turn and clears the consumed image, so the next
    *  turn starts from a clean multimodal slate. */
   private fun commitTurn(state: SessionState, text: String) {
-    state.transcript.append(text)
+    state.transcript.append("\n\n").append(text).append("\n\n")
     state.images.clear()
+    state.turnStart = state.transcript.length
+  }
+
+  /** Undoes the pending turn's prompt after a generate that produced nothing.
+   *  Images are deliberately kept: the caller still holds the turn and a
+   *  retry re-adds only the text. */
+  private fun rewindTurn(state: SessionState) {
+    if (state.transcript.length > state.turnStart) {
+      state.transcript.setLength(state.turnStart)
+    }
   }
 
   override fun generateResponse(
@@ -479,17 +501,34 @@ internal class LocalAiSessionService(
     overrides: GenerationOverrides?,
     callback: (Result<String>) -> Unit
   ) {
-    scope.launch {
+    val state = try {
+      requireSession(sessionId).also { requireIdle(it) }
+    } catch (e: Exception) {
+      callback(Result.failure(e))
+      return
+    }
+    state.job = scope.launch(start = CoroutineStart.LAZY) {
       try {
-        val state = requireSession(sessionId)
-        val response = client().generateContent(buildRequest(state, overrides))
-        val text = response.candidates.firstOrNull()?.text.orEmpty()
-        commitTurn(state, text)
+        val text = generationMutex.withLock {
+          try {
+            val response = client().generateContent(buildRequest(state, overrides))
+            response.candidates.firstOrNull()?.text.orEmpty().also { commitTurn(state, it) }
+          } catch (e: Exception) {
+            // Nothing was committed, so drop the prompt this turn appended
+            // rather than leaving it for the next turn to run onto. This
+            // stays inside the lock: once it is released the next turn can
+            // be reading the transcript, and rewinding under it would cut
+            // text this turn never appended.
+            rewindTurn(state)
+            throw e
+          }
+        }
         callback(Result.success(text))
       } catch (e: Exception) {
         callback(Result.failure(e))
       }
     }
+    state.job!!.start()
   }
 
   override fun generateResponseAsync(
@@ -498,32 +537,49 @@ internal class LocalAiSessionService(
     callback: (Result<Unit>) -> Unit
   ) {
     val state = try {
-      requireSession(sessionId)
+      requireSession(sessionId).also { requireIdle(it) }
     } catch (e: Exception) {
       callback(Result.failure(e))
       return
     }
 
-    state.job = scope.launch {
+    state.job = scope.launch(start = CoroutineStart.LAZY) {
       val generated = StringBuilder()
       try {
-        client().generateContentStream(buildRequest(state, overrides)).collect { chunk ->
-          val piece = chunk.candidates.firstOrNull()?.text.orEmpty()
-          if (piece.isNotEmpty()) {
-            generated.append(piece)
-            postToken(sessionId, piece)
+        generationMutex.withLock {
+          try {
+            client().generateContentStream(buildRequest(state, overrides)).collect { chunk ->
+              val piece = chunk.candidates.firstOrNull()?.text.orEmpty()
+              if (piece.isNotEmpty()) {
+                generated.append(piece)
+                postToken(sessionId, piece)
+              }
+            }
+            commitTurn(state, generated.toString())
+          } catch (e: CancellationException) {
+            // Cooperative cancellation from stopGeneration. The consumer has
+            // already seen whatever streamed, so keep it as the model's turn;
+            // with nothing streamed, drop the prompt instead. Both run inside
+            // the lock, and stopGeneration joins this job before it answers
+            // Dart, so the next turn cannot be touching the transcript yet.
+            if (generated.isNotEmpty()) commitTurn(state, generated.toString())
+            else rewindTurn(state)
+            throw e
+          } catch (e: Exception) {
+            rewindTurn(state)
+            throw e
           }
         }
-        commitTurn(state, generated.toString())
         postDone(sessionId)
       } catch (e: CancellationException) {
-        // Cooperative cancellation from stopGeneration — not a failure.
-        // stopGeneration posts the single completion event on that path.
+        // Not a failure — stopGeneration posts the single completion event
+        // on that path.
         throw e
       } catch (e: Exception) {
         postError(sessionId, e.message ?: "Generation failed")
       }
     }
+    state.job!!.start()
     callback(Result.success(Unit))
   }
 
@@ -537,8 +593,8 @@ internal class LocalAiSessionService(
       Result.failure(
         FlutterError(
           "STRUCTURED_OUTPUT_UNSUPPORTED",
-          "Schema-constrained output is not available on Android: the ML Kit " +
-            "GenAI Prompt API is text-out only. Check " +
+          "Dynamic Dart JSON schemas are not yet bridged to ML Kit's " +
+            "Kotlin typed structured-output API. Check " +
             "LocalAi.capabilities().supportsStructuredOutput first.",
           null
         )
@@ -547,14 +603,32 @@ internal class LocalAiSessionService(
   }
 
   override fun stopGeneration(sessionId: Long, callback: (Result<Unit>) -> Unit) {
-    try {
-      val state = synchronized(sessionsLock) { sessions[sessionId] }
-      state?.job?.cancel()
-      // Close the Dart stream cleanly; the cancelled job stays silent.
-      if (state != null) postDone(sessionId)
-      callback(Result.success(Unit))
+    val job = try {
+      synchronized(sessionsLock) { sessions[sessionId] }?.job
     } catch (e: Exception) {
       callback(Result.failure(e))
+      return
+    }
+    // Nothing decoding: no stream to close and no turn to settle. Safe to
+    // call, and it stays a no-op rather than posting a second DONE.
+    if (job == null || !job.isActive) {
+      callback(Result.success(Unit))
+      return
+    }
+    scope.launch {
+      try {
+        // Join, don't just cancel. A cancelled Job reports isActive == false
+        // while its handler is still settling the transcript on another
+        // dispatcher; returning to Dart before that lands would let the next
+        // addQueryChunk race it. Awaiting stopGeneration must mean the turn
+        // is finished.
+        job.cancelAndJoin()
+        // Close the Dart stream cleanly; the cancelled job stays silent.
+        postDone(sessionId)
+        callback(Result.success(Unit))
+      } catch (e: Exception) {
+        callback(Result.failure(e))
+      }
     }
   }
 

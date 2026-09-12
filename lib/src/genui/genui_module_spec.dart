@@ -74,16 +74,16 @@ class GenUiModuleSpec {
 
   /// Shape consumed by the host app's `FledgeModule.fromJson`.
   Map<String, dynamic> toModuleJson() => {
-        'id': 'gen-${DateTime.now().millisecondsSinceEpoch}',
-        'title': title,
-        'icon': icon,
-        'tone': tone,
-        'kind': 'composed',
-        'generated': true,
-        'aiGenerated': true,
-        'blurb': blurb,
-        'blocks': blocks,
-      };
+    'id': 'gen-${DateTime.now().millisecondsSinceEpoch}',
+    'title': title,
+    'icon': icon,
+    'tone': tone,
+    'kind': 'composed',
+    'generated': true,
+    'aiGenerated': true,
+    'blurb': blurb,
+    'blocks': blocks,
+  };
 
   /// An A2UI component tree for the `genui` renderer — a compact, faithful
   /// summary of the generated module that `genui`'s `Surface` can build.
@@ -91,23 +91,29 @@ class GenUiModuleSpec {
     final children = <String>['gen_header'];
     final components = <Component>[
       Component(
-          id: 'gen_header',
-          type: 'Text',
-          properties: {'text': title, 'variant': 'h4'}),
+        id: 'gen_header',
+        type: 'Text',
+        properties: {'text': title, 'variant': 'h4'},
+      ),
     ];
 
     for (var i = 0; i < blocks.length; i++) {
       final b = blocks[i];
       final id = 'gen_block_$i';
       children.add(id);
-      components.add(Component(
-          id: id, type: 'Text', properties: {'text': _describeBlock(b)}));
+      components.add(
+        Component(
+          id: id,
+          type: 'Text',
+          properties: {'text': _describeBlock(b)},
+        ),
+      );
     }
 
     components.insert(
-        0,
-        Component(
-            id: 'root', type: 'Column', properties: {'children': children}));
+      0,
+      Component(id: 'root', type: 'Column', properties: {'children': children}),
+    );
     return components;
   }
 

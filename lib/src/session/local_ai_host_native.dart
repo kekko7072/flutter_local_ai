@@ -28,51 +28,50 @@ LocalAiAvailability _availabilityFromWire(wire.AvailabilityStatus status) =>
         LocalAiAvailability.unavailableOther,
     };
 
-LocalAiBackendKind _backendFromWire(wire.LocalAiBackend backend) =>
-    switch (backend) {
-      wire.LocalAiBackend.androidMlKitGenAi =>
-        LocalAiBackendKind.androidMlKitGenAi,
-      wire.LocalAiBackend.appleFoundationModels =>
-        LocalAiBackendKind.appleFoundationModels,
-      wire.LocalAiBackend.windowsAiFoundry =>
-        LocalAiBackendKind.windowsAiFoundry,
-      wire.LocalAiBackend.windowsAiFoundryUnconfigured =>
-        LocalAiBackendKind.windowsAiFoundryUnconfigured,
-      wire.LocalAiBackend.chromePromptApi => LocalAiBackendKind.chromePromptApi,
-      wire.LocalAiBackend.unsupported => LocalAiBackendKind.unsupported,
-    };
+LocalAiBackendKind _backendFromWire(
+  wire.LocalAiBackend backend,
+) => switch (backend) {
+  wire.LocalAiBackend.androidMlKitGenAi => LocalAiBackendKind.androidMlKitGenAi,
+  wire.LocalAiBackend.appleFoundationModels =>
+    LocalAiBackendKind.appleFoundationModels,
+  wire.LocalAiBackend.windowsAiFoundry => LocalAiBackendKind.windowsAiFoundry,
+  wire.LocalAiBackend.windowsAiFoundryUnconfigured =>
+    LocalAiBackendKind.windowsAiFoundryUnconfigured,
+  wire.LocalAiBackend.chromePromptApi => LocalAiBackendKind.chromePromptApi,
+  wire.LocalAiBackend.unsupported => LocalAiBackendKind.unsupported,
+};
 
 wire.ToolArgumentKind _kindFromType(ToolArgumentType type) => switch (type) {
-      ToolArgumentType.string => wire.ToolArgumentKind.string,
-      ToolArgumentType.integer => wire.ToolArgumentKind.integer,
-      ToolArgumentType.number => wire.ToolArgumentKind.number,
-      ToolArgumentType.boolean => wire.ToolArgumentKind.boolean,
-    };
+  ToolArgumentType.string => wire.ToolArgumentKind.string,
+  ToolArgumentType.integer => wire.ToolArgumentKind.integer,
+  ToolArgumentType.number => wire.ToolArgumentKind.number,
+  ToolArgumentType.boolean => wire.ToolArgumentKind.boolean,
+};
 
 wire.GenerationOverrides? _overridesToWire(
-        LocalAiGenerationOverrides? overrides) =>
-    overrides == null || overrides.isEmpty
-        ? null
-        : wire.GenerationOverrides(
-            temperature: overrides.temperature,
-            topP: overrides.topP,
-            topK: overrides.topK,
-            maxOutputTokens: overrides.maxOutputTokens,
-          );
+  LocalAiGenerationOverrides? overrides,
+) => overrides == null || overrides.isEmpty
+    ? null
+    : wire.GenerationOverrides(
+        temperature: overrides.temperature,
+        topP: overrides.topP,
+        topK: overrides.topK,
+        maxOutputTokens: overrides.maxOutputTokens,
+      );
 
 wire.ToolSpec _toolToWire(LocalAiTool tool) => wire.ToolSpec(
-      name: tool.name,
-      description: tool.description,
-      parameters: [
-        for (final parameter in tool.parameters)
-          wire.ToolParameterSpec(
-            name: parameter.name,
-            kind: _kindFromType(parameter.type),
-            optional: parameter.optional,
-            description: parameter.description,
-          ),
-      ],
-    );
+  name: tool.name,
+  description: tool.description,
+  parameters: [
+    for (final parameter in tool.parameters)
+      wire.ToolParameterSpec(
+        name: parameter.name,
+        kind: _kindFromType(parameter.type),
+        optional: parameter.optional,
+        description: parameter.description,
+      ),
+  ],
+);
 
 /// Native host: pigeon for calls, one EventChannel for streamed output.
 ///
@@ -217,44 +216,37 @@ class NativeLocalAiHost implements LocalAiHost, wire.LocalAiToolRunner {
   }
 
   @override
-  Future<void> addQueryChunk({
-    required int sessionId,
-    required String text,
-  }) =>
+  Future<void> addQueryChunk({required int sessionId, required String text}) =>
       _service.addQueryChunk(sessionId: sessionId, text: text);
 
   @override
   Future<void> addImage({
     required int sessionId,
     required Uint8List imageBytes,
-  }) =>
-      _service.addImage(sessionId: sessionId, imageBytes: imageBytes);
+  }) => _service.addImage(sessionId: sessionId, imageBytes: imageBytes);
 
   @override
   Future<String> generateResponse(
     int sessionId, {
     LocalAiGenerationOverrides? overrides,
-  }) =>
-      _service.generateResponse(sessionId, _overridesToWire(overrides));
+  }) => _service.generateResponse(sessionId, _overridesToWire(overrides));
 
   @override
   Future<void> generateResponseAsync(
     int sessionId, {
     LocalAiGenerationOverrides? overrides,
-  }) =>
-      _service.generateResponseAsync(sessionId, _overridesToWire(overrides));
+  }) => _service.generateResponseAsync(sessionId, _overridesToWire(overrides));
 
   @override
   Future<String> generateStructuredResponse({
     required int sessionId,
     required String schemaJson,
     LocalAiGenerationOverrides? overrides,
-  }) =>
-      _service.generateStructuredResponse(
-        sessionId: sessionId,
-        schemaJson: schemaJson,
-        overrides: _overridesToWire(overrides),
-      );
+  }) => _service.generateStructuredResponse(
+    sessionId: sessionId,
+    schemaJson: schemaJson,
+    overrides: _overridesToWire(overrides),
+  );
 
   @override
   Future<void> stopGeneration(int sessionId) =>
@@ -269,7 +261,7 @@ class NativeLocalAiHost implements LocalAiHost, wire.LocalAiToolRunner {
       // plugin isn't registered, or this platform has no implementation. Those
       // are wiring bugs, so let them through rather than masking a broken
       // install as a plausible-looking token count.
-      if (e.code == 'channel-error' || e.code == 'null-error') rethrow;
+      if (e.code != 'TOKENIZER_UNAVAILABLE') rethrow;
       throw LocalAiTokenizerUnavailable(e.message ?? e.code);
     }
   }

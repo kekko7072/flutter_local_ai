@@ -1,3 +1,6 @@
+// Preserve the public constructor parameter names.
+// ignore_for_file: prefer_initializing_formals
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -25,7 +28,7 @@ void _warnThinkingIgnoredOnce() {
   if (_thinkingWarned) return;
   _thinkingWarned = true;
   gemmaLog(
-    '[LocalAI] Thinking mode is not exposed by built-in OS models; the flag '
+    '[LocalAI] Thinking mode is not exposed by this adapter; the flag '
     'is accepted for API parity and ignored.',
   );
 }
@@ -45,12 +48,18 @@ class LocalAiGemmaModel extends InferenceModel with CloseNotifier {
     required this.supportImage,
     this.fileType = ModelFileType.builtIn,
     this.systemInstruction,
+    this.maxNumImages,
+    this.maxConcurrentSessions,
   }) : _model = model;
 
   final LocalAiModel _model;
   final ModelType modelType;
   final bool supportImage;
   final String? systemInstruction;
+  final int? maxNumImages;
+  final int? maxConcurrentSessions;
+  int _openingSessions = 0;
+  Future<void> _singletonTail = Future.value();
 
   @override
   final ModelFileType fileType;
@@ -75,10 +84,8 @@ class LocalAiGemmaModel extends InferenceModel with CloseNotifier {
   InferenceModelSession? get session => _session;
 
   @override
-  List<InferenceModelSession> get sessions => List.unmodifiable([
-        if (_session != null) _session!,
-        ..._openSessions,
-      ]);
+  List<InferenceModelSession> get sessions =>
+      List.unmodifiable([?_session, ..._openSessions]);
 
   Future<LocalAiGemmaSession> _newSession({
     required double temperature,
@@ -95,8 +102,10 @@ class LocalAiGemmaModel extends InferenceModel with CloseNotifier {
       throw StateError('Model is closed. Create a new instance to use it.');
     }
     if (enableAudioModality == true) {
-      throw UnsupportedError('Audio input is not supported by built-in OS '
-          'models. Check LocalAi.capabilities() before enabling it.');
+      throw UnsupportedError(
+        'Audio input is not supported by built-in OS '
+        'models. Check LocalAi.capabilities() before enabling it.',
+      );
     }
     if (enableThinking) _warnThinkingIgnoredOnce();
 
@@ -107,23 +116,42 @@ class LocalAiGemmaModel extends InferenceModel with CloseNotifier {
     // executes them. Handing the same tools to the native runner as well
     // would produce two competing tool loops for one turn. Native tool
     // calling stays reachable through flutter_local_ai's own API.
-    final inner = await _model.openSession(
-      temperature: temperature,
-      topK: topK,
-      topP: topP,
-      maxOutputTokens: maxOutputTokens,
-      systemInstruction: systemInstruction ?? this.systemInstruction,
-    );
+    if (maxConcurrentSessions != null &&
+        _model.sessions.length + _openingSessions >= maxConcurrentSessions!) {
+      throw StateError(
+        'Maximum concurrent sessions reached ($maxConcurrentSessions).',
+      );
+    }
+    _openingSessions++;
+    try {
+      if (vision && !(await LocalAi.capabilities()).supportsVision) {
+        throw UnsupportedError('This backend does not support image input.');
+      }
+      final inner = await _model.openSession(
+        temperature: temperature,
+        topK: topK,
+        topP: topP,
+        maxOutputTokens: maxOutputTokens,
+        systemInstruction: systemInstruction ?? this.systemInstruction,
+      );
 
-    late final LocalAiGemmaSession created;
-    created = LocalAiGemmaSession(
-      session: inner,
-      modelType: modelType,
-      fileType: fileType,
-      supportImage: vision,
-      onClose: () => onClose(created),
-    );
-    return created;
+      if (_isClosed) {
+        await inner.close();
+        throw StateError('Model closed while the session was opening.');
+      }
+      late final LocalAiGemmaSession created;
+      created = LocalAiGemmaSession(
+        session: inner,
+        modelType: modelType,
+        fileType: fileType,
+        supportImage: vision,
+        maxNumImages: maxNumImages,
+        onClose: () => onClose(created),
+      );
+      return created;
+    } finally {
+      _openingSessions--;
+    }
   }
 
   @override
@@ -140,28 +168,39 @@ class LocalAiGemmaModel extends InferenceModel with CloseNotifier {
     List<Tool> tools = const [],
     int? maxOutputTokens,
   }) async {
-    // The singleton lane: a new session replaces the previous one, whose
-    // native context must be released first.
-    final previous = _session;
-    if (previous != null) await previous.close();
+    final previousCreation = _singletonTail;
+    final completed = Completer<void>();
+    _singletonTail = completed.future;
+    await previousCreation;
+    try {
+      if (loraPath != null) {
+        throw UnsupportedError('LoRA is not exposed by this engine.');
+      }
+      // The singleton lane: a new session replaces the previous one, whose
+      // native context must be released first.
+      final previous = _session;
+      if (previous != null) await previous.close();
 
-    final created = await _newSession(
-      temperature: temperature,
-      topK: topK,
-      topP: topP,
-      enableVisionModality: enableVisionModality,
-      enableAudioModality: enableAudioModality,
-      systemInstruction: systemInstruction,
-      enableThinking: enableThinking,
-      maxOutputTokens: maxOutputTokens,
-      // Identity-guarded: a late close of a superseded session must not null
-      // out a newer one.
-      onClose: (session) {
-        if (identical(_session, session)) _session = null;
-      },
-    );
-    _session = created;
-    return created;
+      final created = await _newSession(
+        temperature: temperature,
+        topK: topK,
+        topP: topP,
+        enableVisionModality: enableVisionModality,
+        enableAudioModality: enableAudioModality,
+        systemInstruction: systemInstruction,
+        enableThinking: enableThinking,
+        maxOutputTokens: maxOutputTokens,
+        // Identity-guarded: a late close of a superseded session must not null
+        // out a newer one.
+        onClose: (session) {
+          if (identical(_session, session)) _session = null;
+        },
+      );
+      _session = created;
+      return created;
+    } finally {
+      completed.complete();
+    }
   }
 
   @override
@@ -178,6 +217,9 @@ class LocalAiGemmaModel extends InferenceModel with CloseNotifier {
     List<Tool> tools = const [],
     int? maxOutputTokens,
   }) async {
+    if (loraPath != null) {
+      throw UnsupportedError('LoRA is not exposed by this engine.');
+    }
     final created = await _newSession(
       temperature: temperature,
       topK: topK,
@@ -213,8 +255,10 @@ class LocalAiGemmaModel extends InferenceModel with CloseNotifier {
     int? maxOutputTokens,
   }) async {
     if (supportAudio == true) {
-      throw UnsupportedError('Audio input is not supported by built-in OS '
-          'models.');
+      throw UnsupportedError(
+        'Audio input is not supported by built-in OS '
+        'models.',
+      );
     }
     chat = InferenceChat(
       sessionCreator: () => createSession(
