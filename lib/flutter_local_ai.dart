@@ -7,10 +7,9 @@ export 'src/models/model_status.dart';
 export 'src/models/platform_info.dart';
 export 'src/models/tool.dart';
 
-// Session API: the multi-session, buffer-then-generate surface the
-// flutter_gemma engine (package:flutter_local_ai/gemma.dart) is built on.
-// Usable directly too — it is the fuller of the two APIs, and the only one
-// with images, concurrent sessions, cancellation and exact token counts.
+// Session API: the multi-session, buffer-then-generate surface for apps and
+// adapters. It adds images, concurrent sessions, cancellation and exact token
+// counts to the one-shot facade.
 export 'src/session/local_ai.dart';
 export 'src/session/local_ai_host.dart'
     show

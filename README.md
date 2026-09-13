@@ -72,8 +72,8 @@ output, genUI specs. Unchanged and fully supported.
 **`LocalAiModel` / `LocalAiSession`** — the session API. Several independent
 conversations at once, a turn built from parts (`addQueryChunk`, `addImage`)
 and then generated, real cancellation, exact token counts, and explicit
-lifecycle. This is the fuller surface, and the one
-[flutter_gemma](https://pub.dev/packages/flutter_gemma) drives.
+lifecycle. This is the surface that adapters can use to share the same
+native implementation.
 
 ```dart
 await LocalAi.ensureReady(onProgress: (p) => debugPrint('$p%'));
@@ -90,35 +90,22 @@ await session.close();
 await model.close();
 ```
 
-## Using this package with flutter_gemma
+## Relationship to flutter_gemma
 
-A second entry point, `package:flutter_local_ai/gemma.dart`, registers this
-package as a flutter_gemma inference engine, so the OS built-in model appears
-behind the same `FlutterGemma` facade as any bundled checkpoint:
+This is a standalone plugin: it depends on no `flutter_gemma` package, and
+owns its native backends and Chrome Prompt API arm outright. The bridge that
+lets flutter_gemma treat the OS model as one of its inference engines is
+[`flutter_gemma_builtin_ai`](https://github.com/DenisovAV/flutter_gemma/tree/main/packages/flutter_gemma_builtin_ai),
+which lives in the flutter_gemma repository — so a flutter_gemma interface
+change and the bridge that follows it ship together, in one upstream PR. The
+dependency only ever points that way: the bridge may depend on this package,
+this package never depends on flutter_gemma. If you already use that package,
+nothing changes: it keeps its own name, imports and `BuiltInAi*` API. If you
+only want the OS model, depend on this package alone and skip flutter_gemma's
+plugin, downloader and SDK floor.
 
-```dart
-import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:flutter_local_ai/gemma.dart';
-
-await FlutterGemma.initialize(
-  inferenceEngines: const [LocalAiEngine()],
-);
-```
-
-That import re-exports the whole core library, so the same file gives you
-`LocalAiTool`, `LocalAiSession` and the rest of the native surface —
-including the parts flutter_gemma's own interfaces do not expose. Reach them
-on a live Gemma session through `LocalAiGemmaSession.localAiSession`.
-
-`flutter_gemma` is a dependency of this package whether or not you import
-`gemma.dart`: Dart has no optional dependencies, and implementing
-flutter_gemma's `InferenceEngineProvider` requires its types. That is also
-where the Dart >=3.12 / Flutter >=3.44 floor comes from.
-
-See the [readiness review](doc/gemma-readiness.md) for tested support,
-remaining OS API gaps, and release requirements — including how to fall back
-to a downloaded model when the OS model is unavailable, and how to migrate
-from `flutter_gemma_builtin_ai`.
+See [platform support](doc/platform-support.md) for what each backend can
+actually do, what it needs at build time, and what has been verified.
 
 ## Installation
 
@@ -177,7 +164,7 @@ Windows inference is opt-in and still requires Windows build/device
 validation. The host app must deploy/bootstrap Windows App SDK 2.0+ and
 supply its C++/WinRT projections, plus the applicable package capabilities.
 Set `FLUTTER_LOCAL_AI_WINDOWS_AI` and `FLUTTER_LOCAL_AI_WINRT_INCLUDE_DIR`
-as described in the [readiness review](doc/gemma-readiness.md#build-requirements).
+as described in the [build requirements](doc/platform-support.md#build-requirements).
 The default build reports `windowsAiFoundryUnconfigured`.
 
 Read [Microsoft's setup guide](https://learn.microsoft.com/en-us/windows/ai/apis/get-started)
@@ -778,18 +765,19 @@ A validated genUI module produced by the local model.
 
 ## Implementation notes
 
-Both public Dart APIs and the Gemma adapter use one session host per platform.
-Each conversation has a distinct ID, and the native resource remains alive
-until all model owners close. Android serializes generation over the AICore
-client; Apple keeps separate Foundation Models sessions. Windows uses
-C++/WinRT asynchronous operations from the Flutter runner's STA.
+Both public Dart APIs — and any external adapter written against them — use
+one session host per platform. Each conversation has a distinct ID, and the
+native resource remains alive until all model owners close. Android serializes
+generation over the AICore client; Apple keeps separate Foundation Models
+sessions. Windows uses C++/WinRT asynchronous operations from the Flutter
+runner's STA.
 
 Apple translates the supported dynamic JSON Schema subset to
 `GenerationSchema` and binds Dart tools at session creation. Android's newer
 Kotlin/KSP structured output is not yet a dynamic Dart-schema bridge. Windows
 and web also have different capability limits. See the
-[platform coverage and remaining gaps](doc/gemma-readiness.md#platform-coverage-and-remaining-gaps)
-for current API versions, supported features, and work needed before release.
+[platform coverage and remaining gaps](doc/platform-support.md#platform-coverage-and-remaining-gaps)
+for current API versions, supported features, and what is still unverified.
 
 ## Contributing
 

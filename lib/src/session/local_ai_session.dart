@@ -13,11 +13,16 @@ import 'local_ai_host.dart';
 /// [addImage]) accumulate the turn, then one of the generate calls consumes
 /// it.
 class LocalAiSession {
+  // Initializing formals for the private fields would need Dart 3.12's
+  // private named parameters, which would push every consumer of this
+  // package to Flutter 3.44. The spelling below costs two lines and keeps
+  // the floor at Flutter 3.32.
   LocalAiSession({
     required this.sessionId,
-    required this._host,
-    required this._onClose,
-  });
+    required LocalAiHost host,
+    required void Function() onClose,
+  }) : _host = host,
+       _onClose = onClose;
 
   final int sessionId;
   final LocalAiHost _host;

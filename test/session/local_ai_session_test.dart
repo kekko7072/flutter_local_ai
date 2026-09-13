@@ -227,6 +227,35 @@ void main() {
         contains('"properties":{"name":{"type":"string"}}'),
       );
     });
+
+    test('a schema and a bound tool reach the host together', () async {
+      final model = await newModel();
+      final session = await model.openSession(
+        tools: [
+          LocalAiTool(
+            name: 'lookup',
+            description: 'Local lookup',
+            parameters: const [],
+            onCall: (_) async => 'found',
+          ),
+        ],
+      );
+
+      await session.getStructuredResponse({
+        'type': 'object',
+        'properties': {
+          'value': {'type': 'string'},
+        },
+      });
+
+      // Tools belong to the session, the schema to the call. Apple binds tools
+      // when the session is built and cannot add them to a live one, so a
+      // structured call that dropped them to constrain the output would leave
+      // the session unable to call a tool for the rest of its life.
+      final created = host.session(session.sessionId)!;
+      expect(created.toolNames, ['lookup']);
+      expect(created.lastSchemaJson, contains('"value":{"type":"string"}'));
+    });
   });
 
   group('images', () {
@@ -247,6 +276,58 @@ void main() {
 
       // The host has to prepare a multimodal path before any session exists.
       expect(host.modelSupportsImage, isTrue);
+    });
+
+    test('a backend with no vision path refuses image support', () async {
+      // Web and Windows both report this: local_ai_host_web.dart hard-codes
+      // `supportsVision: false` because the Prompt API's multimodal path is
+      // not reachable from an ordinary page as of Chrome 151, and
+      // local_ai_session_service.cpp does the same. Set the flag explicitly
+      // rather than leaning on its default — the refusal in
+      // `_HostModelState.acquire` reads that one field, not the backend kind
+      // beside it.
+      host.capabilities = const LocalAiBackendCapabilities(
+        backend: LocalAiBackendKind.chromePromptApi,
+        platform: 'web',
+        apiName: 'Chrome Prompt API (Gemini Nano)',
+        supportsVision: false,
+      );
+
+      await expectLater(
+        newModel(supportImage: true),
+        throwsA(
+          isA<LocalAiUnsupportedException>().having(
+            (e) => e.capability,
+            'capability',
+            'vision',
+          ),
+        ),
+      );
+      // Refused before the model is created, so the caller is not left with a
+      // native handle it never received a reference to.
+      expect(host.calls, isNot(contains('createModel')));
+    });
+
+    test('an image owner upgrades the model every owner shares', () async {
+      await newModel();
+      await newModel(supportImage: true);
+
+      // One native model backs all owners, so the second one cannot get its
+      // multimodal path without re-creating the model already open.
+      expect(host.calls.where((call) => call == 'createModel'), hasLength(2));
+      expect(host.modelSupportsImage, isTrue);
+
+      host.calls.clear();
+      await newModel();
+
+      // A text-only owner arriving later must not cost the image owner its
+      // multimodal path. `_HostModelState.acquire` re-creates only when the
+      // model is unowned or when an image owner finds a text-only one, so
+      // this owner must not reach `createModel` at all. The hosts would
+      // survive a redundant create — Apple's is a no-op, Android's reuses its
+      // cached client — but reaching it would mean the guard had stopped
+      // tracking who is holding what, which is the invariant under test.
+      expect(host.calls, isNot(contains('createModel')));
     });
 
     test('closing the model releases it at the host', () async {
@@ -273,6 +354,14 @@ void main() {
         topP: 0.85,
         maxOutputTokens: 256,
         systemInstruction: 'Be brief.',
+        tools: [
+          LocalAiTool(
+            name: 'lookup',
+            description: 'Local lookup',
+            parameters: const [],
+            onCall: (_) async => 'found',
+          ),
+        ],
       );
 
       final created = host.sessions.single;
@@ -281,6 +370,10 @@ void main() {
       expect(created.topP, 0.85);
       expect(created.maxOutputTokens, 256);
       expect(created.systemInstruction, 'Be brief.');
+      // Apple binds tools when the session is built, so a `tools:` dropped on
+      // the way down cannot be handed over later in the turn — the model just
+      // never calls them.
+      expect(created.toolNames, ['lookup']);
     });
 
     test('a host that rejects the session does not leave one behind', () async {

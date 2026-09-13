@@ -1,35 +1,76 @@
 name: Publish
 
-# One package ships from this repository, tagged v1.2.3.
+# One package ships from this repository, and pushing a version tag is what
+# ships it.
 #
-# The tag pattern must also be registered on pub.dev under the package's
-# Admin -> Automated publishing tab, against this repository. Without that,
-# the token exchange below is refused and nothing is published.
+# pub.dev has to be told to expect that. On the package's Admin -> Automated
+# publishing tab, "Enable publishing from GitHub Actions" must be ticked
+# against the repository kekko7072/flutter_local_ai with the tag pattern
+# `v{{version}}`, and "Enable publishing from push events" ticked alongside
+# it. The trigger below is that pattern written as a glob — `v` followed by
+# the pubspec version, so v0.1.0 publishes 0.1.0. Without those settings the
+# OIDC exchange in the publish job is refused and nothing is published.
+#
+# pub.dev never deletes a version and never lets one be overwritten. A version
+# can be retracted, and un-retracted again, but the number stays spent and
+# every resolution that already pinned it keeps working — so a bad publish
+# costs a retraction plus a fresh version, not an undo. Nothing here reaches
+# pub.dev before the suite has passed: `publish` needs every leg of
+# `validate`.
+#
+# `validate` is matrixed over the two Flutter versions ci.yml checks — the
+# 3.32.x floor pubspec.yaml advertises and the pinned 3.44.x stable — and
+# resolves, analyzes and tests on both. Validating one version only would let
+# a tag publish a package whose advertised `flutter: ">=3.32.0"` floor is
+# already broken, with the whole release pipeline green; catching that before
+# a consumer does is the entire reason ci.yml grew a floor leg, and a release
+# is the worst place to be laxer than CI. Everything that is a property of a
+# single toolchain rather than of the package — formatting, pigeon freshness,
+# the packaging dry run — stays on the pinned leg, as do the four tag-shaped
+# guards below, which are toolchain-free and only mean anything at a tag (a
+# fifth pinned-leg check catches FLUTTER_PINNED drifting away from ci.yml's).
 on:
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+*"
 
+env:
+  # Pinned for the reason ci.yml pins it: `dart format` and the pigeon
+  # generator each own an output this repository asserts byte equality on, and
+  # neither can be held to two SDKs at once. Keep in step with ci.yml's
+  # FLUTTER_PINNED — nothing can check that across files, and a release
+  # pinning a different SDK than main would pass a check main never ran.
+  #
+  # `strategy.matrix` cannot read the `env` context, so the stable leg below
+  # repeats this literal instead of referencing it. The last guard in
+  # `validate` asserts the copy still matches the original.
+  FLUTTER_PINNED: "3.44.x"
+
 jobs:
-  publish:
+  validate:
+    name: Validate the release (Flutter ${{ matrix.flutter }})
     runs-on: ubuntu-latest
-    permissions:
-      # Required: pub.dev authenticates the run by its OIDC identity, so
-      # there is no long-lived credential in this repository to leak.
-      id-token: write
+    strategy:
+      # Both legs report, as in ci.yml. Being told only that the floor broke,
+      # while the leg that would actually have published was cancelled
+      # halfway, costs another tag to find out the rest.
+      fail-fast: false
+      matrix:
+        include:
+          - label: floor
+            flutter: "3.32.x"
+          - label: stable
+            flutter: "3.44.x"
     steps:
       - uses: actions/checkout@v4
 
-      # setup-dart performs the pub.dev OIDC exchange and writes the
-      # credentials; flutter-action follows so `flutter pub` is what actually
-      # resolves the Flutter SDK dependencies. Both read the same pub config.
-      - uses: dart-lang/setup-dart@v1
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: "3.44.x"
-          cache: true
-
+      # The tag-shaped guards come first and need no toolchain, so a mistyped
+      # tag, a forgotten changelog entry or a stale podspec fails in seconds
+      # instead of after an SDK download and a full test run. They assert
+      # properties of the repository rather than of an SDK, so one leg is
+      # enough and they are pinned alongside the other single-SDK steps.
       - name: Check the tag matches the pubspec version
+        if: matrix.label == 'stable'
         run: |
           pubspec=$(grep -m1 '^version:' pubspec.yaml | awk '{print $2}')
           tag="${GITHUB_REF_NAME#v}"
@@ -40,8 +81,186 @@ jobs:
             exit 1
           fi
 
+      - name: Check CHANGELOG.md documents this version
+        if: matrix.label == 'stable'
+        run: |
+          version=$(grep -m1 '^version:' pubspec.yaml | awk '{print $2}')
+          escaped="${version//./\\.}"
+          if ! grep -qE "^#{1,3} +v?\[?${escaped}\]?\b" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no heading for $version. pub.dev" \
+                 "scores the package down for a version it cannot find notes" \
+                 "for, and that omission has already shipped once."
+            exit 1
+          fi
+
+      # The guard above is satisfied by an empty `## 0.1.0` sitting under a
+      # `## Unreleased` that holds every actual note, which is the shape the
+      # changelog is in for most of a release cycle. pub.dev renders the
+      # version heading and its body, so that ships a version documented by
+      # nothing while the notes stay filed under a heading no release will
+      # ever carry. Folding is a manual step, so it gets an assertion.
+      - name: Check CHANGELOG.md no longer has an Unreleased heading
+        if: matrix.label == 'stable'
+        run: |
+          version=$(grep -m1 '^version:' pubspec.yaml | awk '{print $2}')
+          if grep -qiE '^#{1,6}[[:space:]]*\[?unreleased\]?\b' CHANGELOG.md; then
+            echo "::error::CHANGELOG.md still has an Unreleased heading." \
+                 "Fold its entries into the '## $version' heading and delete" \
+                 "it before tagging, or the release ships with its notes" \
+                 "under a heading pub.dev will never show for $version."
+            exit 1
+          fi
+
+      # CocoaPods resolves the iOS and macOS halves of this plugin against
+      # darwin/flutter_local_ai.podspec, not against pubspec.yaml, so the two
+      # version numbers are maintained by hand and drift the moment one is
+      # bumped alone. That is the same failure the tag and changelog guards
+      # exist to catch, and until now the podspec only stated the rule in a
+      # comment with nothing enforcing it.
+      - name: Check the podspec version matches the pubspec version
+        if: matrix.label == 'stable'
+        run: |
+          version=$(grep -m1 '^version:' pubspec.yaml | awk '{print $2}')
+          podspec=$(sed -nE "s/^[[:space:]]*s\.version[[:space:]]*=[[:space:]]*'([^']*)'.*/\1/p" \
+            darwin/flutter_local_ai.podspec | head -1)
+          if [[ -z "$podspec" ]]; then
+            echo "::error::Could not read s.version from" \
+                 "darwin/flutter_local_ai.podspec. The line moved or changed" \
+                 "quoting, and this guard now passes without asserting" \
+                 "anything — fix the pattern rather than the podspec."
+            exit 1
+          fi
+          if [[ "$podspec" != "$version" ]]; then
+            echo "::error::darwin/flutter_local_ai.podspec says $podspec," \
+                 "pubspec.yaml says $version. A stale podspec leaves a pod" \
+                 "nobody can trace back to the release it shipped in."
+            exit 1
+          fi
+
+      # `strategy.matrix` cannot read `env`, so the stable leg above repeats
+      # FLUTTER_PINNED as a literal; this asserts the copy is still the
+      # original. Drift is silent and expensive here: the single-SDK steps
+      # below run on whatever the stable leg says, while `publish` resolves on
+      # FLUTTER_PINNED, so the toolchain that validated the archive would stop
+      # being the toolchain that builds the one that ships.
+      - name: Check the stable leg matches FLUTTER_PINNED
+        if: matrix.label == 'stable'
+        env:
+          LEG: ${{ matrix.flutter }}
+        run: |
+          if [[ "$LEG" != "$FLUTTER_PINNED" ]]; then
+            echo "::error::The stable matrix leg is $LEG but FLUTTER_PINNED" \
+                 "is $FLUTTER_PINNED. They are one toolchain spelled twice" \
+                 "because matrix cannot read env; change both together."
+            exit 1
+          fi
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ matrix.flutter }}
+          cache: true
+
+      # Resolution is the first half of the compatibility claim: on the floor
+      # leg pub has to find a set of dependency versions a Dart 3.8 SDK will
+      # accept. It rewrites pubspec.lock to whatever it settles on, which is
+      # why the pigeon step below diffs named files instead of the worktree.
+      - run: flutter pub get
+
+      # `dart format` and `flutter analyze` walk the whole tree from the repo
+      # root, so the example app needs its own resolution too — otherwise
+      # analysis fails on unresolved imports in a directory this job never
+      # pub-got.
+      - run: flutter pub get --directory example
+
+      # Formatting is a property of one formatter rather than of the language,
+      # so it is asserted once, against the pinned SDK. Running it on the
+      # floor leg would only ever report that two Dart releases disagree about
+      # a line break.
+      - name: Verify formatting
+        if: matrix.label == 'stable'
+        run: dart format --output=none --set-exit-if-changed .
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      # The same assertion CI makes, for the same reason: the native hosts are
+      # generated from pigeon.dart, and a hand-edit survives review until a
+      # wire mismatch shows up on somebody's device. A release is the worst
+      # place to discover it, because the version number is then spent.
+      - name: Regenerate the pigeon output
+        if: matrix.label == 'stable'
+        run: |
+          dart run pigeon --input pigeon.dart
+          dart format .
+
+      # Scoped to pigeon's own outputs, which is where this check has to be
+      # stricter than ci.yml's copy. ci.yml runs its pigeon job on a clean
+      # worktree with only the root resolve; this job has already resolved the
+      # example app, and that rewrites tracked files pigeon has nothing to do
+      # with: pubspec.lock, example/pubspec.lock, and the generated plugin
+      # registrants under example/macos and example/windows. A whole-tree
+      # `git diff --exit-code` would fail the release on one of those while
+      # printing "run pigeon" — a false failure, on the one run that cannot be
+      # cheaply retried. Excluding just the two lock files is not enough; the
+      # registrants are tracked too and escape that list, so the check names
+      # what it wants instead of what it will tolerate.
+      #
+      # These are the paths declared in pigeon.dart's @ConfigurePigeon. Add an
+      # output there, add it here.
+      - name: Fail if the generated output differs from what is committed
+        if: matrix.label == 'stable'
+        run: |
+          if ! git diff --exit-code -- \
+            lib/src/pigeon/local_ai_api.g.dart \
+            android/src/main/kotlin/io/vezz/flutter_local_ai/LocalAiPigeon.g.kt \
+            darwin/flutter_local_ai/Classes/LocalAiPigeon.g.swift \
+            windows/local_ai_pigeon.g.h \
+            windows/local_ai_pigeon.g.cpp; then
+            echo "::error::Generated files are stale. Run:" \
+                 "dart run pigeon --input pigeon.dart && dart format ."
+            exit 1
+          fi
+
+      # Catches what analyze and test cannot: an ignore rule hiding a pubspec,
+      # a missing licence, a file the archive would ship without. The archive
+      # is built once, from the SDK that publishes it.
+      - name: Package
+        if: matrix.label == 'stable'
+        run: flutter pub publish --dry-run
+
+  publish:
+    name: Publish to pub.dev
+    # A matrixed `needs` waits for every leg, so a floor-leg failure blocks
+    # the publish exactly as a stable-leg failure does. That is the point of
+    # matrixing validate: the floor is a promise in pubspec.yaml, and a
+    # release that breaks it must not reach pub.dev.
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      # pub.dev authenticates the run by its OIDC identity, so there is no
+      # long-lived credential in this repository to leak. The permission sits
+      # on this job alone — validate runs the package's own tooling over the
+      # whole tree and has no business holding a token that can publish.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # setup-dart performs the pub.dev OIDC exchange and writes the
+      # credentials; flutter-action follows so `flutter pub` is what actually
+      # resolves the Flutter SDK dependencies. Both read the same pub config.
+      - uses: dart-lang/setup-dart@v1
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_PINNED }}
+          cache: true
+
+      # --force skips the interactive confirmation, not the validation:
+      # publish still refuses an archive that `--dry-run` would have
+      # rejected, and validate has already run that dry run.
       - name: Publish flutter_local_ai
         run: |
           flutter pub get
-          flutter pub publish --dry-run
           flutter pub publish --force

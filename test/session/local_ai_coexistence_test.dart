@@ -44,10 +44,10 @@ void main() {
   );
 
   test(
-    'genUI does not replace facade instructions or a Gemma-owned session',
+    'genUI borrows the host without disturbing the facade or another owner',
     () async {
       final model = await LocalAiModel.create();
-      final chat = await model.openSession(systemInstruction: 'Gemma chat');
+      final chat = await model.openSession(systemInstruction: 'Direct chat');
       final ai = FlutterLocalAi();
       await ai.initialize(instructions: 'Application chat');
       final shared = host.sessions.last;

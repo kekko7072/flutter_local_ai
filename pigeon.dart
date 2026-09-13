@@ -4,9 +4,9 @@
 //
 // The session half of this API (createModel/createSession/addQueryChunk/
 // generateResponse[Async]/stopGeneration/countTokens/close*) is deliberately
-// shape-compatible with flutter_gemma_builtin_ai's `BuiltInAiService`, so the
-// `lib/gemma.dart` engine is a thin adapter and this package can stand
-// in for that one under flutter_gemma. Everything past `countTokens` is a
+// shape-compatible with flutter_gemma_builtin_ai's `BuiltInAiService`, so an
+// adapter over this package's session API stays thin. That adapter lives in
+// the flutter_gemma repository, not here. Everything past `countTokens` is a
 // flutter_local_ai addition (backend introspection, native tool calling,
 // schema-constrained output).
 //

@@ -2,18 +2,29 @@
 
 ## Layout
 
-One published package lives here: `flutter_local_ai`, with two entry points.
+One standalone package lives here: `flutter_local_ai`.
 
 | Import | What it is |
 |---|---|
 | `package:flutter_local_ai/flutter_local_ai.dart` | The plugin: native hosts plus the Dart API |
-| `package:flutter_local_ai/gemma.dart` | A flutter_gemma inference engine over the above, plus a full re-export of the core |
+| `package:flutter_local_ai/testing.dart` | A fake host for tests of the public API |
 
-`lib/src/gemma/` is the only code that imports `flutter_gemma`. Dart has no
-optional dependencies and no structural typing, so implementing
-`InferenceEngineProvider` makes `flutter_gemma` a dependency of the whole
-package — which is also where the Dart >=3.12 / Flutter >=3.44 floor comes
-from.
+This package must not depend on or import `flutter_gemma`, including its
+internal paths. The inference engine, the Gemma model/session wrappers and the
+model specs live in
+[`flutter_gemma_builtin_ai`](https://github.com/DenisovAV/flutter_gemma/tree/main/packages/flutter_gemma_builtin_ai)
+in the flutter_gemma repository. The dependency arrow has one legal direction:
+the adapter depends on this package, never the reverse — a PR that adds
+`flutter_gemma` to this `pubspec.yaml` is wrong regardless of what it buys.
+Keeping the direction that way means an app that only wants the OS model never
+pulls in flutter_gemma's native plugin and downloaders, and a change to a
+flutter_gemma interface — some of which are still internal paths within 1.x —
+ships together with the adapter fix in one upstream PR. The adapter keeps its
+own package name, imports and `BuiltInAi*` API, so its users have nothing to
+migrate.
+
+What each backend supports, what it needs at build time and what is still
+unverified is in [doc/platform-support.md](doc/platform-support.md).
 
 ## Architecture in one paragraph
 
@@ -23,8 +34,9 @@ Kotlin, Swift and C++), and streams tokens over one `flutter_local_ai_events`
 channel tagged with a session id. In Dart, one arm-neutral `LocalAiHost`
 interface is implemented twice — over pigeon natively, over Chrome's Prompt
 API on the web — and everything above it (`LocalAiModel`, `LocalAiSession`,
-the `LocalAi` availability facade, the `FlutterLocalAi` prompt facade, and the
-flutter_gemma bridge) is written once against that interface.
+the `LocalAi` availability facade and the `FlutterLocalAi` prompt facade) is
+written once against that interface. External adapters use the public Dart
+API and share these backends.
 
 Two rules keep it that way:
 
@@ -79,6 +91,26 @@ writing a second double.
 
 Nothing generates tokens on its own, so a streaming test plays the platform's
 part with `host.emitToken(...)` / `emitDone(...)` / `emitError(...)`.
+
+### The web arm
+
+`test/web/` covers the Chrome Prompt API host against a fake `LanguageModel`,
+and is marked `@TestOn('browser')` — `flutter test` skips those files rather
+than running them, so they cost the default run nothing:
+
+```sh
+flutter test --platform chrome test/web
+```
+
+That command needs a checkout whose Flutter web target is configured; without
+one it stalls at `loading` instead of reporting a failure, so a stall there is
+the harness, not the suite. The web sources themselves are covered by
+`flutter analyze` and by compiling an app that depends on this package for the
+web, which is the check to fall back on:
+
+```sh
+flutter build web   # in an app with a path dependency on this package
+```
 
 ## Native code
 

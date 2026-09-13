@@ -23,7 +23,7 @@ set(FLUTTER_LOCAL_AI_WINRT_INCLUDE_DIR "" CACHE PATH
   "Directory containing the generated winrt/Microsoft.Windows.AI.Text.h")
 if(FLUTTER_LOCAL_AI_WINDOWS_AI)
   if(NOT EXISTS "${FLUTTER_LOCAL_AI_WINRT_INCLUDE_DIR}/winrt/Microsoft.Windows.AI.Text.h")
-    message(FATAL_ERROR "Set FLUTTER_LOCAL_AI_WINRT_INCLUDE_DIR to the Windows App SDK 2.0+ projection directory. See doc/gemma-readiness.md.")
+    message(FATAL_ERROR "Set FLUTTER_LOCAL_AI_WINRT_INCLUDE_DIR to the Windows App SDK 2.0+ projection directory. See doc/platform-support.md.")
   endif()
   target_include_directories(${PLUGIN_NAME} PRIVATE "${FLUTTER_LOCAL_AI_WINRT_INCLUDE_DIR}")
   target_compile_definitions(${PLUGIN_NAME} PRIVATE WINDOWS_AI_AVAILABLE=1)

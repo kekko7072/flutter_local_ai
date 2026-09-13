@@ -1,44 +1,7 @@
-## Unreleased
-
-- **Breaking:** merge `flutter_gemma_local_ai` into this package. The engine
-  now ships from `package:flutter_local_ai/gemma.dart`, which also re-exports
-  the whole core library, so `LocalAiTool` and friends no longer need a
-  second import. Replace the `flutter_gemma_local_ai` dependency with
-  `flutter_local_ai` and the import with `package:flutter_local_ai/gemma.dart`.
-- **Breaking:** `flutter_gemma` ^1.8.0 is now a dependency, raising the floor
-  to Dart >=3.12.0 / Flutter >=3.44.0.
-- **Breaking:** drop the `genui` dependency. `GenUiModuleSpec.toComponents()`
-  becomes `toComponentMaps()`, returning plain maps instead of genui's typed
-  `Component`, so the package no longer pulls a renderer — and its native
-  plugins — into apps that only generate text. The doc comment carries the
-  three-line adaptation for genui users.
-- Report Apple tool calling and structured output only on iOS/macOS 26+
-  rather than unconditionally, so the capability gate is usable.
-- Report a real Android download total from `DownloadStarted.bytesToDownload`,
-  so `ensureReady(onProgress:)` reports a percentage.
-- Settle the Android transcript when a turn fails or is cancelled: commit
-  partial streamed text, otherwise drop the abandoned prompt instead of
-  leaving it for the next turn. `stopGeneration` now joins the cancelled job
-  before it answers Dart.
-- Verify the adapter against flutter_gemma 1.8.0 and retain migration aliases.
-- Share native model ownership across Gemma, the facade and genUI; avoid
-  session ID collisions and wait for in-flight session creation on shutdown.
-- Keep genUI instructions isolated from ongoing conversations.
-- Upgrade Android Prompt API to beta4 / Kotlin 2.3.21, with multiple images,
-  native system instructions when available, expanded output budget and
-  cancellable, serialized generation.
-- Fix Apple service access control; cancel full/structured responses and add
-  an OS 27 SDK-gated image attachment path (awaiting OS 27 validation).
-- Update Windows to the App SDK 2.0 Text namespace, readiness/preparation,
-  async generation/cancellation and explicit CMake setup (awaiting Windows
-  build/device validation).
-- Document remaining API gaps and release checks in doc/gemma-readiness.md.
-
 ## 0.1.0
 
-A rewrite onto one architecture, and the OS-model layer under
-[flutter_gemma](https://pub.dev/packages/flutter_gemma) via the
-`package:flutter_local_ai/gemma.dart` entry point.
+A rewrite onto one architecture, exposing a standalone OS-model layer that
+external adapters can use through the public session API.
 
 ### One implementation instead of two
 
@@ -73,12 +36,50 @@ on a single pigeon-typed session host per platform.
   failing.
 * **Cancellation.** `stopGeneration` reaches the model, not just the Dart
   subscription.
-* **Per-call sampling on the wire.** `GenerationOverrides` lets one call vary
-  temperature or length without disturbing the conversation, which is how
-  both Apple's `respond(options:)` and ML Kit's request builder already work.
+* **Per-call sampling on the wire.** `LocalAiGenerationOverrides` lets one
+  call vary temperature or length without disturbing the conversation, which
+  is how both Apple's `respond(options:)` and ML Kit's request builder
+  already work.
+
+### Platform backends
+
+* **Android.** Prompt API beta4 / Kotlin 2.3.21, with multiple images, native
+  system instructions where AICore supports them, an expanded output budget
+  and cancellable, serialized generation.
+* **Android.** A real download total from `DownloadStarted.bytesToDownload`,
+  so `ensureReady(onProgress:)` reports a percentage rather than an unknown.
+* **Android.** The transcript is settled when a turn fails or is cancelled:
+  partial streamed text is committed, otherwise the abandoned prompt is
+  dropped instead of being left for the next turn to resend.
+  `stopGeneration` joins the cancelled job before it answers Dart.
+* **Apple.** Fixed service access control; full and structured responses are
+  cancellable; an OS 27 SDK-gated image attachment path (awaiting OS 27
+  validation).
+* **Apple.** Tool calling and structured output are reported only on
+  iOS/macOS 26+ rather than unconditionally, so the capability gate is
+  usable on an older OS instead of promising what the runtime cannot do.
+* **Windows.** The App SDK 2.0 Text namespace, readiness/preparation, async
+  generation/cancellation and explicit CMake setup (awaiting Windows
+  build/device validation).
+* Native model ownership is shared across the facade, the session API and
+  genUI: session IDs no longer collide, in-flight session creation is awaited
+  on shutdown, and closing one owner can no longer destroy another's live
+  model.
+* genUI instructions stay isolated from ongoing conversations, so generating
+  a module no longer rewrites the chat the user is in.
+
+### Documentation
+
+* Per-platform coverage, build requirements and what remains unverified are
+  documented in `doc/platform-support.md`.
 
 ### Breaking
 
+* **Drop the `genui` dependency.** `GenUiModuleSpec.toComponents()` becomes
+  `toComponentMaps()`, returning plain maps instead of genui's typed
+  `Component`, so the package no longer pulls a renderer — and its native
+  plugins — into apps that only generate text. The doc comment carries the
+  three-line adaptation for genui users.
 * `FlutterLocalAiPlatform` and `MethodChannelFlutterLocalAi` are removed. The
   platform seam is now `LocalAiHost`; tests substitute one with
   `debugLocalAiHost`.
@@ -94,8 +95,11 @@ on a single pigeon-typed session host per platform.
 * `registerTools` now restarts the shared conversation, because Apple's
   FoundationModels binds tools when a session is constructed and cannot add
   them to a live one.
-* The SDK floor moves to Dart 3.6 / Flutter 3.27, required by the
-  `extension type` and `dart:js_interop` the web arm is written against.
+* The SDK floor moves to Dart 3.8 / Flutter 3.32, set by the `flutter_lints`
+  6 development tooling, whose own pubspec declares `sdk: ^3.8.0` — 3.8 being
+  what Flutter 3.32 ships. The web arm does not push it higher: its
+  `extension type` / `dart:js_interop` interop has been stable since Dart
+  3.3, and its null-aware elements land exactly on 3.8.
 
 ### Preserved
 
@@ -104,21 +108,7 @@ validation, Windows AI Foundry, genUI module specs, AICore availability
 reasons and the Play Store redirect all carry over unchanged, and are now
 reachable from the session API as well.
 
-## 0.0.15
-
-### Structured (JSON-schema) outputs
-
-* **Apple (iOS 26 / macOS 26):** native schema-constrained generation. A JSON
-  Schema passed through `GenerationConfig.schema` is translated into a
-  FoundationModels `GenerationSchema`, so the model is forced to emit matching
-  JSON. Supported constructs: nested objects (with `required`), arrays (with
-  `minItems` / `maxItems`), string enums, and the scalar types. Read the result
-  with `AiResponse.json` (object roots) or `AiResponse.decodedJson` (any root).
-* **Android / Windows:** unchanged — these backends are text-out only and report
-  `supportsStructuredOutput: false`. Passing a `schema` (or
-  `ResponseFormat.json`) throws `STRUCTURED_OUTPUT_UNSUPPORTED`. The ML Kit GenAI
-  on-device Prompt API does not currently expose a `responseSchema` /
-  `responseMimeType`; gate on `getPlatformInfo().supportsStructuredOutput`.
+## 0.0.16
 
 ### Hardening of the structured-output API
 
@@ -135,6 +125,22 @@ reachable from the session API as well.
   backend can constrain streamed output yet) instead of silently returning
   free-form text — the returned stream errors immediately. Use `generateText`
   for structured output.
+
+## 0.0.15
+
+### Structured (JSON-schema) outputs
+
+* **Apple (iOS 26 / macOS 26):** native schema-constrained generation. A JSON
+  Schema passed through `GenerationConfig.schema` is translated into a
+  FoundationModels `GenerationSchema`, so the model is forced to emit matching
+  JSON. Supported constructs: nested objects (with `required`), arrays (with
+  `minItems` / `maxItems`), string enums, and the scalar types. Read the result
+  with `AiResponse.json` (object roots) or `AiResponse.decodedJson` (any root).
+* **Android / Windows:** unchanged — these backends are text-out only and report
+  `supportsStructuredOutput: false`. Passing a `schema` (or
+  `ResponseFormat.json`) throws `STRUCTURED_OUTPUT_UNSUPPORTED`. The ML Kit GenAI
+  on-device Prompt API does not currently expose a `responseSchema` /
+  `responseMimeType`; gate on `getPlatformInfo().supportsStructuredOutput`.
 
 ## 0.0.14
 

@@ -1,8 +1,9 @@
 name: flutter_local_ai
+# pub.dev truncates past ~180 characters, and scores a longer one down.
 description: >-
-  On-device AI for Flutter — Apple Foundation Models, Android ML Kit GenAI
-  (Gemini Nano) and Windows AI APIs. Text generation, streaming, tool calling
-  and generative UI specs for the genui renderer.
+  On-device AI for Flutter: Apple Foundation Models, Android Gemini Nano,
+  Windows AI Foundry, Chrome Prompt API. Text, streaming, tool calling, JSON
+  schemas, genUI specs.
 version: 0.1.0
 homepage: https://github.com/kekko7072/flutter_local_ai
 topics:
@@ -13,10 +14,10 @@ topics:
   - foundation-models
 
 environment:
-  # flutter_gemma 1.8.0 requires Dart 3.12 / Flutter 3.44; keep the advertised
-  # floor honest.
-  sdk: '>=3.12.0 <4.0.0'
-  flutter: ">=3.44.0"
+  # Keep the package and its flutter_lints 6 development tooling usable on
+  # Dart 3.8, which ships with Flutter 3.32.
+  sdk: '>=3.8.0 <4.0.0'
+  flutter: ">=3.32.0"
 
 dependencies:
   flutter:
@@ -24,10 +25,6 @@ dependencies:
   plugin_platform_interface: ^2.1.8
   flutter_web_plugins:
     sdk: flutter
-  # The flutter_gemma engine ships from `package:flutter_local_ai/gemma.dart`.
-  # Dart has no optional dependencies and no structural typing, so
-  # implementing InferenceEngineProvider means depending on flutter_gemma.
-  flutter_gemma: ^1.8.0
 
 dev_dependencies:
   flutter_test:
