@@ -5,8 +5,9 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
-  flutter: ">=3.19.0"
+  # Must not sit below the plugin it consumes via `path: ../`.
+  sdk: '>=3.8.0 <4.0.0'
+  flutter: ">=3.32.0"
 
 dependencies:
   flutter:

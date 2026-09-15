@@ -14,6 +14,43 @@ void main() {
 /// native session is a singleton, so we re-initialize when switching modes.
 enum _SessionMode { none, text, genui }
 
+/// One of the two independent conversations on the Sessions tab.
+///
+/// Each slot owns its own [LocalAiSession], transcript and pending turn —
+/// nothing here is shared between the two, which is the whole point of the
+/// session API.
+class _SessionSlot {
+  _SessionSlot(this.label);
+
+  /// 'A' or 'B'. Shown in the UI and baked into the session's instructions.
+  final String label;
+
+  final TextEditingController promptController = TextEditingController();
+  final List<_SessionTurn> transcript = <_SessionTurn>[];
+
+  /// Text already buffered into the turn with `addQueryChunk` but not yet
+  /// consumed by a generate call.
+  final List<String> pendingParts = <String>[];
+
+  LocalAiSession? session;
+  StreamSubscription<String>? subscription;
+
+  /// Deltas received so far for the generation in flight.
+  String streamingText = '';
+  bool isBusy = false;
+  bool isStreaming = false;
+  bool isCounting = false;
+  int? pendingTokens;
+}
+
+/// One line of a session transcript.
+class _SessionTurn {
+  const _SessionTurn({required this.fromUser, required this.text});
+
+  final bool fromUser;
+  final String text;
+}
+
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -51,7 +88,6 @@ class _MyHomePageState extends State<MyHomePage> {
   bool _isAvailable = false;
   bool _isInitialized = false;
   bool _isInitializing = false;
-  bool _toolsRegistered = false;
   bool _toolsEnabled = false;
   ModelFeatureStatus _modelStatus = ModelFeatureStatus.unknown;
   bool _isDownloading = false;
@@ -78,10 +114,31 @@ class _MyHomePageState extends State<MyHomePage> {
     'Track my monthly budget',
   ];
 
+  // --- Sessions tab state ---
+  // The session API surface: one LocalAiModel, two LocalAiSessions on it.
+  final List<_SessionSlot> _sessionSlots = [
+    _SessionSlot('A'),
+    _SessionSlot('B'),
+  ];
+  LocalAiModel? _sessionModel;
+  LocalAiBackendCapabilities? _sessionCaps;
+  bool _sessionModelOpening = false;
+  bool _sessionModelClosing = false;
+  String _sessionError = '';
+
+  /// Context window asked of the model on the Sessions tab.
+  static const _sessionMaxTokens = 4096;
+
+  /// The two halves of the "context is not shared" test: give A the fact,
+  /// then ask B for it.
+  static const _sessionFactPrompt = 'Remember this: my lucky number is 47.';
+  static const _sessionRecallPrompt = 'What is my lucky number?';
+
   @override
   void initState() {
     super.initState();
     _checkAvailability();
+    _loadSessionCapabilities();
   }
 
   Future<void> _checkAvailability() async {
@@ -96,7 +153,9 @@ class _MyHomePageState extends State<MyHomePage> {
       try {
         final info = await _aiEngine.getPlatformInfo();
         if (mounted) setState(() => _backend = info.backend);
-      } catch (_) {/* keep unsupported */}
+      } catch (_) {
+        /* keep unsupported */
+      }
 
       if (Platform.isAndroid) {
         await _refreshModelStatus();
@@ -228,7 +287,6 @@ class _MyHomePageState extends State<MyHomePage> {
       final tools = enable ? _buildSampleTools() : <LocalAiTool>[];
       await _aiEngine.registerTools(tools);
       setState(() {
-        _toolsRegistered = enable;
         _toolsEnabled = enable;
       });
     } catch (e) {
@@ -236,7 +294,9 @@ class _MyHomePageState extends State<MyHomePage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to ${enable ? "enable" : "disable"} tools: $e'),
+            content: Text(
+              'Failed to ${enable ? "enable" : "disable"} tools: $e',
+            ),
             backgroundColor: Colors.red,
           ),
         );
@@ -251,26 +311,26 @@ class _MyHomePageState extends State<MyHomePage> {
         description: 'Searches a local database for bread recipes.',
         parameters: const [
           ToolParameter(
-              name: 'searchTerm',
-              type: ToolArgumentType.string,
-              description: 'Type of bread to search for',
-            ),
-            ToolParameter(
-              name: 'limit',
-              type: ToolArgumentType.integer,
-              description: 'Number of recipes to return',
-            ),
-          ],
-          onCall: (arguments) async {
-            final term = arguments['searchTerm']?.toString() ?? '';
-            final limit = (arguments['limit'] as num?)?.toInt() ?? 2;
-            // Replace with your own data lookup
-            return List.generate(
-              limit,
-              (index) => 'Recipe ${index + 1} for "$term"',
-            );
-          },
-        ),
+            name: 'searchTerm',
+            type: ToolArgumentType.string,
+            description: 'Type of bread to search for',
+          ),
+          ToolParameter(
+            name: 'limit',
+            type: ToolArgumentType.integer,
+            description: 'Number of recipes to return',
+          ),
+        ],
+        onCall: (arguments) async {
+          final term = arguments['searchTerm']?.toString() ?? '';
+          final limit = (arguments['limit'] as num?)?.toInt() ?? 2;
+          // Replace with your own data lookup
+          return List.generate(
+            limit,
+            (index) => 'Recipe ${index + 1} for "$term"',
+          );
+        },
+      ),
       LocalAiTool(
         name: 'quickMath',
         description: 'Performs a basic arithmetic operation on two numbers.',
@@ -407,9 +467,9 @@ class _MyHomePageState extends State<MyHomePage> {
   Future<void> _generateText() async {
     if (_promptController.text.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please enter a prompt')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Please enter a prompt')));
       }
       return;
     }
@@ -441,17 +501,21 @@ class _MyHomePageState extends State<MyHomePage> {
         return;
       }
 
-      debugPrint('[LocalAI] request: "${_promptController.text}" '
-          '(instructions: "${_instructionsController.text}", '
-          'tools: ${_toolsEnabled ? "on" : "off"}, maxTokens: 200)');
+      debugPrint(
+        '[LocalAI] request: "${_promptController.text}" '
+        '(instructions: "${_instructionsController.text}", '
+        'tools: ${_toolsEnabled ? "on" : "off"}, maxTokens: 200)',
+      );
 
       final response = await _aiEngine.generateText(
         prompt: _promptController.text,
         config: const GenerationConfig(maxTokens: 200),
       );
 
-      debugPrint('[LocalAI] response (${response.generationTimeMs} ms, '
-          '~${response.tokenCount} tokens): ${response.text}');
+      debugPrint(
+        '[LocalAI] response (${response.generationTimeMs} ms, '
+        '~${response.tokenCount} tokens): ${response.text}',
+      );
 
       setState(() {
         _response = response.text;
@@ -510,8 +574,10 @@ class _MyHomePageState extends State<MyHomePage> {
     final generator = _uiGenerator!;
 
     final principles = _principlesController.text.trim();
-    debugPrint('[LocalAI][genUI] request goal: "$goal"'
-        '${principles.isEmpty ? '' : ' principles: "$principles"'}');
+    debugPrint(
+      '[LocalAI][genUI] request goal: "$goal"'
+      '${principles.isEmpty ? '' : ' principles: "$principles"'}',
+    );
 
     // onText receives the cumulative raw model output, so the last value is
     // the complete response — printable even when module parsing fails.
@@ -523,7 +589,9 @@ class _MyHomePageState extends State<MyHomePage> {
     );
     debugPrint('[LocalAI][genUI] raw response: ${rawOutput ?? '(no output)'}');
     if (spec == null) {
-      debugPrint('[LocalAI][genUI] module parse failed: ${generator.lastError}');
+      debugPrint(
+        '[LocalAI][genUI] module parse failed: ${generator.lastError}',
+      );
     }
 
     setState(() {
@@ -540,6 +608,414 @@ class _MyHomePageState extends State<MyHomePage> {
       } else {
         _module = spec;
         _genUiError = '';
+      }
+    });
+  }
+
+  // --- Sessions tab: the LocalAiModel / LocalAiSession surface ---
+
+  /// Capabilities are a property of this device + OS + build, not of the
+  /// platform, so the token-count wording is gated on them rather than on
+  /// `Platform.isX`. Best-effort: a failure leaves the neutral wording.
+  Future<void> _loadSessionCapabilities() async {
+    try {
+      final caps = await LocalAi.capabilities();
+      if (mounted) setState(() => _sessionCaps = caps);
+    } catch (_) {
+      /* keep null */
+    }
+  }
+
+  String _sessionInstructions(_SessionSlot slot) =>
+      'You are assistant ${slot.label}. Keep answers to one or two short '
+      'sentences. Only use what this conversation told you, and say you do '
+      'not know when it told you nothing.';
+
+  /// The turn that will be generated next: the chunks already buffered plus
+  /// whatever is still sitting in the field.
+  String _pendingTurnText(_SessionSlot slot) => [
+    ...slot.pendingParts,
+    slot.promptController.text.trim(),
+  ].where((part) => part.isNotEmpty).join('\n');
+
+  String get _tokenCountNote {
+    final caps = _sessionCaps;
+    if (caps == null) {
+      return 'Token counts are exact where the backend has a tokenizer.';
+    }
+    return caps.supportsTokenCount
+        ? 'Token counts are exact: ${caps.apiName} exposes a tokenizer.'
+        : 'Token counts are estimates (length / 4): this backend exposes no '
+              'tokenizer.';
+  }
+
+  String get _tokenCountQualifier {
+    final caps = _sessionCaps;
+    if (caps == null) return 'reported';
+    return caps.supportsTokenCount ? 'exact' : 'estimated';
+  }
+
+  /// Loads the OS model and opens two independent sessions on it.
+  Future<void> _openSessionModel() async {
+    if (_sessionModel != null || _sessionModelOpening) return;
+
+    setState(() {
+      _sessionModelOpening = true;
+      _sessionError = '';
+    });
+
+    LocalAiModel? model;
+    try {
+      // Degrade rather than throw on a device with no OS model.
+      final availability = await LocalAi.availability();
+      if (availability != LocalAiAvailability.available) {
+        final reason = await LocalAi.availabilityReason();
+        if (!mounted) return;
+        setState(() {
+          _sessionModelOpening = false;
+          _sessionError = reason;
+        });
+        return;
+      }
+
+      final created = await LocalAiModel.create(maxTokens: _sessionMaxTokens);
+      model = created;
+      final opened = <LocalAiSession>[];
+      for (final slot in _sessionSlots) {
+        opened.add(
+          await created.openSession(
+            systemInstruction: _sessionInstructions(slot),
+          ),
+        );
+      }
+
+      // Disposed while the model was loading: nothing else will ever close
+      // it, so close it here instead of leaking the native handle.
+      if (!mounted) {
+        await created.close();
+        return;
+      }
+
+      setState(() {
+        _sessionModel = created;
+        for (var i = 0; i < _sessionSlots.length; i++) {
+          final slot = _sessionSlots[i];
+          slot.session = opened[i];
+          slot.transcript.clear();
+          slot.pendingParts.clear();
+          slot.streamingText = '';
+          slot.pendingTokens = null;
+        }
+        _sessionModelOpening = false;
+      });
+    } catch (e) {
+      debugPrint('[LocalAI][sessions] open model failed: $e');
+      try {
+        await model?.close();
+      } catch (_) {
+        /* already reporting the first failure */
+      }
+      if (!mounted) return;
+      setState(() {
+        _sessionModelOpening = false;
+        _sessionError = 'Could not open the model: $e';
+      });
+    }
+  }
+
+  /// Closes the model, which closes every session it opened.
+  Future<void> _closeSessionModel() async {
+    if (_sessionModel == null || _sessionModelClosing) return;
+
+    setState(() {
+      _sessionModelClosing = true;
+      _sessionError = '';
+    });
+
+    await _teardownSessionModel();
+
+    if (!mounted) return;
+    setState(() {
+      _sessionModelClosing = false;
+      for (final slot in _sessionSlots) {
+        slot.isBusy = false;
+        slot.isStreaming = false;
+        slot.isCounting = false;
+        slot.streamingText = '';
+        slot.pendingParts.clear();
+        slot.pendingTokens = null;
+      }
+    });
+  }
+
+  /// Cancels both stream subscriptions and closes the model. Touches no
+  /// widget state, so [dispose] can call it too.
+  Future<void> _teardownSessionModel() async {
+    final model = _sessionModel;
+    _sessionModel = null;
+    for (final slot in _sessionSlots) {
+      // Stop the model before detaching, for the same reason
+      // [_stopSessionGeneration] does: cancelling the subscription alone
+      // leaves the backend decoding a turn nobody is reading. Safe to call
+      // with nothing in flight.
+      if (slot.isStreaming) {
+        try {
+          await slot.session?.stopGeneration();
+        } catch (e) {
+          debugPrint('[LocalAI][sessions] stop ${slot.label} failed: $e');
+        }
+      }
+      final subscription = slot.subscription;
+      slot.subscription = null;
+      await subscription?.cancel();
+      // The model closes the sessions themselves.
+      slot.session = null;
+    }
+    try {
+      await model?.close();
+    } catch (e) {
+      debugPrint('[LocalAI][sessions] close model failed: $e');
+    }
+  }
+
+  /// Re-opens one conversation on the model that is already loaded.
+  Future<void> _openSessionSlot(_SessionSlot slot) async {
+    final model = _sessionModel;
+    if (model == null || slot.session != null || slot.isBusy) return;
+
+    setState(() {
+      slot.isBusy = true;
+      _sessionError = '';
+    });
+
+    try {
+      final session = await model.openSession(
+        systemInstruction: _sessionInstructions(slot),
+      );
+      if (!mounted) {
+        await session.close();
+        return;
+      }
+      setState(() {
+        slot.session = session;
+        slot.isBusy = false;
+        slot.transcript.clear();
+        slot.pendingParts.clear();
+        slot.pendingTokens = null;
+      });
+    } catch (e) {
+      debugPrint('[LocalAI][sessions] open ${slot.label} failed: $e');
+      if (!mounted) return;
+      setState(() {
+        slot.isBusy = false;
+        _sessionError = 'Session ${slot.label}: $e';
+      });
+    }
+  }
+
+  /// Closes one conversation and leaves the other one — and the model —
+  /// running.
+  Future<void> _closeSessionSlot(_SessionSlot slot) async {
+    final session = slot.session;
+    if (session == null) return;
+
+    final subscription = slot.subscription;
+    slot.subscription = null;
+    try {
+      if (slot.isStreaming) await session.stopGeneration();
+      await subscription?.cancel();
+      await session.close();
+    } catch (e) {
+      debugPrint('[LocalAI][sessions] close ${slot.label} failed: $e');
+    }
+
+    if (!mounted) return;
+    setState(() {
+      slot.session = null;
+      slot.isBusy = false;
+      slot.isStreaming = false;
+      slot.isCounting = false;
+      slot.streamingText = '';
+      slot.pendingParts.clear();
+      slot.pendingTokens = null;
+    });
+  }
+
+  /// Buffers the field into the pending turn without generating — the half of
+  /// buffer-then-generate the one-shot facade cannot express.
+  Future<void> _addSessionPart(_SessionSlot slot) async {
+    final session = slot.session;
+    final part = slot.promptController.text.trim();
+    if (session == null || part.isEmpty || slot.isBusy) return;
+
+    setState(() {
+      slot.isBusy = true;
+      _sessionError = '';
+    });
+
+    try {
+      await session.addQueryChunk(part);
+      if (!mounted) return;
+      slot.promptController.clear();
+      setState(() {
+        slot.pendingParts.add(part);
+        slot.pendingTokens = null;
+        slot.isBusy = false;
+      });
+    } catch (e) {
+      debugPrint('[LocalAI][sessions] addQueryChunk ${slot.label} failed: $e');
+      if (!mounted) return;
+      setState(() {
+        slot.isBusy = false;
+        _sessionError = 'Session ${slot.label}: $e';
+      });
+    }
+  }
+
+  /// Streams one turn. The subscription is kept so [_stopSessionGeneration]
+  /// can detach it once the model itself has been stopped.
+  Future<void> _sendToSession(_SessionSlot slot) async {
+    final session = slot.session;
+    if (session == null || slot.isBusy) return;
+
+    final tail = slot.promptController.text.trim();
+    final turn = _pendingTurnText(slot);
+    if (turn.isEmpty) return;
+
+    // `isBusy` goes up before the await so nothing else starts on this
+    // session; `isStreaming` waits until the subscription actually exists.
+    // Enabling Stop any earlier offers a button that cannot stop anything:
+    // `stopGeneration` is a no-op with nothing generating, and the generation
+    // would then start anyway, unstoppable and committing a second turn.
+    setState(() {
+      slot.isBusy = true;
+      slot.streamingText = '';
+      slot.transcript.add(_SessionTurn(fromUser: true, text: turn));
+      _sessionError = '';
+    });
+    slot.promptController.clear();
+
+    try {
+      if (tail.isNotEmpty) await session.addQueryChunk(tail);
+      if (!mounted) return;
+      setState(() {
+        slot.pendingParts.clear();
+        slot.pendingTokens = null;
+        slot.isStreaming = true;
+      });
+
+      slot.subscription = session
+          .getResponseAsync(
+            overrides: const LocalAiGenerationOverrides(maxOutputTokens: 200),
+          )
+          .listen(
+            (delta) {
+              if (!mounted) return;
+              // Each event is a delta, not the running total.
+              setState(() => slot.streamingText += delta);
+            },
+            onError: (Object e) {
+              debugPrint('[LocalAI][sessions] ${slot.label} stream failed: $e');
+              if (!mounted) return;
+              setState(() {
+                _sessionError = 'Session ${slot.label}: $e';
+                _commitStreamedTurn(slot);
+              });
+            },
+            onDone: () {
+              if (!mounted) return;
+              setState(() => _commitStreamedTurn(slot));
+            },
+            cancelOnError: true,
+          );
+    } catch (e) {
+      debugPrint('[LocalAI][sessions] send to ${slot.label} failed: $e');
+      if (!mounted) return;
+      setState(() {
+        slot.isBusy = false;
+        slot.isStreaming = false;
+        _sessionError = 'Session ${slot.label}: $e';
+      });
+    }
+  }
+
+  /// Stops the model, not just the Dart subscription: cancelling the
+  /// subscription alone would leave the backend decoding. What was produced
+  /// before the stop is kept.
+  Future<void> _stopSessionGeneration(_SessionSlot slot) async {
+    final session = slot.session;
+    if (session == null || !slot.isStreaming) return;
+
+    try {
+      await session.stopGeneration();
+    } catch (e) {
+      debugPrint('[LocalAI][sessions] stop ${slot.label} failed: $e');
+    }
+    final subscription = slot.subscription;
+    slot.subscription = null;
+    await subscription?.cancel();
+
+    // The generation may have finished on its own while we were stopping it,
+    // in which case onDone already committed the turn.
+    if (!mounted || !slot.isStreaming) return;
+    setState(() => _commitStreamedTurn(slot, suffix: ' … (stopped)'));
+  }
+
+  /// Moves the streamed deltas into the transcript and clears the in-flight
+  /// state. Call from inside a [setState].
+  void _commitStreamedTurn(_SessionSlot slot, {String suffix = ''}) {
+    final text = slot.streamingText.trim();
+    slot.transcript.add(
+      _SessionTurn(
+        fromUser: false,
+        text: text.isEmpty ? '(no output)$suffix' : '$text$suffix',
+      ),
+    );
+    slot.streamingText = '';
+    slot.subscription = null;
+    slot.isStreaming = false;
+    slot.isBusy = false;
+  }
+
+  /// Counts the pending turn. Exact where the backend has a tokenizer, an
+  /// estimate where it does not — see [_tokenCountNote].
+  Future<void> _countSessionTokens(_SessionSlot slot) async {
+    final session = slot.session;
+    final turn = _pendingTurnText(slot);
+    if (session == null || turn.isEmpty || slot.isCounting) return;
+
+    setState(() {
+      slot.isCounting = true;
+      _sessionError = '';
+    });
+
+    try {
+      final tokens = await session.sizeInTokens(turn);
+      if (!mounted) return;
+      setState(() {
+        slot.pendingTokens = tokens;
+        slot.isCounting = false;
+      });
+    } catch (e) {
+      debugPrint('[LocalAI][sessions] sizeInTokens ${slot.label} failed: $e');
+      if (!mounted) return;
+      setState(() {
+        slot.isCounting = false;
+        _sessionError = 'Session ${slot.label}: $e';
+      });
+    }
+  }
+
+  /// Fills both fields with the two halves of the shared-context test.
+  void _loadSessionDemoPrompts() {
+    setState(() {
+      _sessionSlots[0].promptController.text = _sessionFactPrompt;
+      _sessionSlots[1].promptController.text = _sessionRecallPrompt;
+      for (final slot in _sessionSlots) {
+        slot.promptController.selection = TextSelection.fromPosition(
+          TextPosition(offset: slot.promptController.text.length),
+        );
+        slot.pendingTokens = null;
       }
     });
   }
@@ -570,18 +1046,20 @@ class _MyHomePageState extends State<MyHomePage> {
             ),
             ElevatedButton.icon(
               onPressed: () async {
+                // Resolved before the await: this `context` is the dialog's
+                // and is gone by the time the future completes, so looking
+                // the messenger up afterwards would read a dead element.
+                final messenger = ScaffoldMessenger.of(context);
                 Navigator.of(context).pop();
                 try {
                   await _aiEngine.openAICorePlayStore();
                 } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Could not open Play Store: $e'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                  }
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text('Could not open Play Store: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
                 }
               },
               icon: const Icon(Icons.store),
@@ -633,6 +1111,12 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   void dispose() {
     _downloadSub?.cancel();
+    // Cancel the session streams and close the model: a native model left
+    // open outlives this widget and leaks the OS resource behind it.
+    unawaited(_teardownSessionModel());
+    for (final slot in _sessionSlots) {
+      slot.promptController.dispose();
+    }
     _promptController.dispose();
     _instructionsController.dispose();
     _goalController.dispose();
@@ -641,7 +1125,7 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   String _formatBytes(int bytes) {
-    if (bytes < 1024) return '${bytes} B';
+    if (bytes < 1024) return '$bytes B';
     final kb = bytes / 1024;
     if (kb < 1024) return '${kb.toStringAsFixed(1)} KB';
     final mb = kb / 1024;
@@ -661,7 +1145,6 @@ class _MyHomePageState extends State<MyHomePage> {
       case ModelFeatureStatus.unavailable:
         return 'Model unavailable';
       case ModelFeatureStatus.unknown:
-      default:
         return 'Unknown status';
     }
   }
@@ -676,8 +1159,9 @@ class _MyHomePageState extends State<MyHomePage> {
         return 'Windows AI Foundry';
       case LocalAiBackend.windowsAiFoundryUnconfigured:
         return 'Windows AI (unconfigured)';
+      case LocalAiBackend.chromePromptApi:
+        return 'Chrome Prompt API (Gemini Nano)';
       case LocalAiBackend.unsupported:
-      default:
         return 'Unsupported';
     }
   }
@@ -685,7 +1169,7 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           backgroundColor: Theme.of(context).colorScheme.inversePrimary,
@@ -694,6 +1178,7 @@ class _MyHomePageState extends State<MyHomePage> {
             tabs: [
               Tab(icon: Icon(Icons.auto_awesome), text: 'Generative UI'),
               Tab(icon: Icon(Icons.chat_bubble_outline), text: 'Text'),
+              Tab(icon: Icon(Icons.forum_outlined), text: 'Sessions'),
             ],
           ),
         ),
@@ -701,6 +1186,7 @@ class _MyHomePageState extends State<MyHomePage> {
           children: [
             _buildGenUiTab(context),
             _buildTextTab(context),
+            _buildSessionsTab(context),
           ],
         ),
       ),
@@ -744,18 +1230,14 @@ class _MyHomePageState extends State<MyHomePage> {
                                 Platform.isWindows
                                     ? 'Windows'
                                     : Platform.isAndroid
-                                        ? 'Android'
-                                        : Platform.isIOS
-                                            ? 'iOS'
-                                            : Platform.isMacOS
-                                                ? 'macOS'
-                                                : 'Unknown',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(
-                                      color: Colors.grey,
-                                    ),
+                                    ? 'Android'
+                                    : Platform.isIOS
+                                    ? 'iOS'
+                                    : Platform.isMacOS
+                                    ? 'macOS'
+                                    : 'Unknown',
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: Colors.grey),
                               ),
                           ],
                         ),
@@ -768,8 +1250,7 @@ class _MyHomePageState extends State<MyHomePage> {
                       children: [
                         Icon(
                           _isInitialized ? Icons.check_circle : Icons.pending,
-                          color:
-                              _isInitialized ? Colors.green : Colors.orange,
+                          color: _isInitialized ? Colors.green : Colors.orange,
                           size: 20,
                         ),
                         const SizedBox(width: 8),
@@ -777,8 +1258,8 @@ class _MyHomePageState extends State<MyHomePage> {
                           _isInitialized
                               ? 'Model initialized'
                               : _isInitializing
-                                  ? 'Initializing...'
-                                  : 'Model not initialized',
+                              ? 'Initializing...'
+                              : 'Model not initialized',
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
                       ],
@@ -790,9 +1271,9 @@ class _MyHomePageState extends State<MyHomePage> {
                               _errorMessage.contains('cppwinrt')
                           ? 'Windows AI headers not configured'
                           : 'Error: ${_errorMessage.length > 100 ? "${_errorMessage.substring(0, 100)}..." : _errorMessage}',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Colors.orange,
-                          ),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: Colors.orange),
                     ),
                   ],
                 ],
@@ -813,22 +1294,18 @@ class _MyHomePageState extends State<MyHomePage> {
                         Icon(
                           _modelStatus == ModelFeatureStatus.available
                               ? Icons.check_circle
-                              : _modelStatus ==
-                                      ModelFeatureStatus.downloadable
-                                  ? Icons.download
-                                  : _modelStatus ==
-                                          ModelFeatureStatus.downloading
-                                      ? Icons.downloading
-                                      : Icons.info,
+                              : _modelStatus == ModelFeatureStatus.downloadable
+                              ? Icons.download
+                              : _modelStatus == ModelFeatureStatus.downloading
+                              ? Icons.downloading
+                              : Icons.info,
                           color: _modelStatus == ModelFeatureStatus.available
                               ? Colors.green
-                              : _modelStatus ==
-                                      ModelFeatureStatus.downloadable
-                                  ? Colors.orange
-                                  : _modelStatus ==
-                                          ModelFeatureStatus.downloading
-                                      ? Colors.blue
-                                      : Colors.grey,
+                              : _modelStatus == ModelFeatureStatus.downloadable
+                              ? Colors.orange
+                              : _modelStatus == ModelFeatureStatus.downloading
+                              ? Colors.blue
+                              : Colors.grey,
                         ),
                         const SizedBox(width: 8),
                         Expanded(
@@ -839,7 +1316,8 @@ class _MyHomePageState extends State<MyHomePage> {
                         ),
                       ],
                     ),
-                    if (_isDownloading || _modelStatus == ModelFeatureStatus.downloading) ...[
+                    if (_isDownloading ||
+                        _modelStatus == ModelFeatureStatus.downloading) ...[
                       const SizedBox(height: 8),
                       Row(
                         children: [
@@ -862,16 +1340,15 @@ class _MyHomePageState extends State<MyHomePage> {
                       const SizedBox(height: 8),
                       Text(
                         _downloadError,
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: Colors.red),
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodySmall?.copyWith(color: Colors.red),
                       ),
                     ],
                     const SizedBox(height: 8),
                     ElevatedButton.icon(
-                      onPressed: (_modelStatus ==
-                                  ModelFeatureStatus.downloadable &&
+                      onPressed:
+                          (_modelStatus == ModelFeatureStatus.downloadable &&
                               !_isDownloading)
                           ? _downloadModel
                           : null,
@@ -929,10 +1406,9 @@ class _MyHomePageState extends State<MyHomePage> {
                 padding: const EdgeInsets.only(bottom: 8.0),
                 child: Text(
                   'Try: "Use quickMath to add 4 and 9" or "Find 2 sourdough recipes with searchBreadDatabase".',
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: Colors.grey[700]),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: Colors.grey[700]),
                 ),
               ),
           ],
@@ -949,7 +1425,8 @@ class _MyHomePageState extends State<MyHomePage> {
                     )
                   : const Icon(Icons.settings),
               label: Text(
-                  _isInitializing ? 'Initializing...' : 'Initialize Model'),
+                _isInitializing ? 'Initializing...' : 'Initialize Model',
+              ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.blue,
                 foregroundColor: Colors.white,
@@ -1085,12 +1562,12 @@ class _MyHomePageState extends State<MyHomePage> {
                   label: Text(example),
                   onPressed: _isAvailable
                       ? () => setState(() {
-                            _goalController.text = example;
-                            _goalController.selection =
-                                TextSelection.fromPosition(
-                              TextPosition(offset: example.length),
-                            );
-                          })
+                          _goalController.text = example;
+                          _goalController.selection =
+                              TextSelection.fromPosition(
+                                TextPosition(offset: example.length),
+                              );
+                        })
                       : null,
                 ),
             ],
@@ -1161,6 +1638,496 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
+  Widget _buildSessionsTab(BuildContext context) {
+    final model = _sessionModel;
+    // `_teardownSessionModel` nulls the model before its first await, so
+    // without the closing guard this button re-enables mid-close and the new
+    // model inherits the old close's trailing setState.
+    final canOpenModel =
+        _isAvailable &&
+        model == null &&
+        !_sessionModelOpening &&
+        !_sessionModelClosing;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Intro / status card
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.forum_outlined,
+                        color: Colors.deepPurple,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Two conversations on one model. Same weights, '
+                          'separate contexts — tell session A a fact and '
+                          'session B still will not know it.',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(
+                        _isAvailable ? Icons.check_circle : Icons.error,
+                        size: 18,
+                        color: _isAvailable ? Colors.green : Colors.red,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          _isAvailable
+                              ? 'Backend: ${_sessionCaps?.apiName ?? _backendLabel(_backend)}'
+                              : 'Local AI is not available',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Icon(Icons.numbers, size: 18, color: Colors.grey[600]),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          _tokenCountNote,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Lifecycle card
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        model != null ? Icons.check_circle : Icons.pending,
+                        color: model != null ? Colors.green : Colors.orange,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          model != null
+                              ? 'Model open · ${model.sessions.length} live session(s) · ${model.maxTokens}-token window'
+                              : _sessionModelOpening
+                              ? 'Opening model...'
+                              : 'Model not open',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'LocalAiModel.create() loads the OS model once; '
+                    'openSession() gives each conversation its own context. '
+                    'Closing the model closes every session it opened.',
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: Colors.grey[700]),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: canOpenModel ? _openSessionModel : null,
+                        icon: _sessionModelOpening
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.play_arrow),
+                        label: Text(
+                          _sessionModelOpening ? 'Opening...' : 'Open model',
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.deepPurple,
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                      ElevatedButton.icon(
+                        onPressed: (model != null && !_sessionModelClosing)
+                            ? _closeSessionModel
+                            : null,
+                        icon: _sessionModelClosing
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.power_settings_new),
+                        label: Text(
+                          _sessionModelClosing ? 'Closing...' : 'Close model',
+                        ),
+                      ),
+                      TextButton.icon(
+                        // Buffered parts are already committed natively and
+                        // cannot be taken back, so they would silently prefix
+                        // the demo prompt and muddy the very result this
+                        // button exists to show. Send or reopen first.
+                        onPressed:
+                            model != null &&
+                                _sessionSlots.every(
+                                  (slot) =>
+                                      !slot.isBusy && slot.pendingParts.isEmpty,
+                                )
+                            ? _loadSessionDemoPrompts
+                            : null,
+                        icon: const Icon(Icons.science_outlined),
+                        label: const Text('Load the A/B test'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          if (_sessionError.isNotEmpty) ...[
+            Card(
+              color: Colors.red.shade50,
+              child: Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning_amber, color: Colors.red),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _sessionError,
+                        style: const TextStyle(color: Colors.red),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          for (final slot in _sessionSlots) ...[
+            _buildSessionSlot(context, slot),
+            const SizedBox(height: 16),
+          ],
+
+          ExpansionTile(
+            title: const Text('What this tab shows'),
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: const EdgeInsets.only(bottom: 8),
+            children: [
+              _sessionNote(
+                context,
+                'Independent contexts. Send the fact to A, then ask B — B has '
+                'never seen it, even though both run on the same model.',
+              ),
+              _sessionNote(
+                context,
+                'A turn built from parts. "Add to turn" calls addQueryChunk '
+                'without generating; "Send" appends the rest and consumes the '
+                'whole buffered turn.',
+              ),
+              _sessionNote(
+                context,
+                'Real cancellation. "Stop" calls stopGeneration(), which stops '
+                'the model itself rather than only detaching this stream; the '
+                'partial text is kept.',
+              ),
+              _sessionNote(
+                context,
+                'Explicit lifecycle. Sessions and the model are closed when '
+                'you say so — and always when this screen is disposed.',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sessionNote(BuildContext context, String text) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.check, size: 16, color: Colors.grey[700]),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(text, style: Theme.of(context).textTheme.bodySmall),
+        ),
+      ],
+    ),
+  );
+
+  Widget _buildSessionSlot(BuildContext context, _SessionSlot slot) {
+    final model = _sessionModel;
+    final session = slot.session;
+    final isOpen = session != null && !session.isClosed;
+    final hasTurn = _pendingTurnText(slot).isNotEmpty;
+    final canSend = isOpen && !slot.isBusy && hasTurn;
+    // Not `canSend`: that stays true on buffered parts alone, which would
+    // leave "Add to turn" enabled with an empty field and nothing to add.
+    final canAddPart =
+        isOpen && !slot.isBusy && slot.promptController.text.trim().isNotEmpty;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: Colors.deepPurple.withValues(alpha: 0.15),
+                  child: Text(
+                    slot.label,
+                    style: const TextStyle(
+                      color: Colors.deepPurple,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Session ${slot.label}',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      Text(
+                        isOpen
+                            ? 'Open · native session #${session.sessionId}'
+                            : model == null
+                            ? 'Closed with the model'
+                            : 'Closed',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _buildSessionTranscript(context, slot),
+            const SizedBox(height: 12),
+            TextField(
+              controller: slot.promptController,
+              decoration: InputDecoration(
+                labelText: 'Prompt for session ${slot.label}',
+                border: const OutlineInputBorder(),
+                hintText: slot.label == 'A'
+                    ? _sessionFactPrompt
+                    : _sessionRecallPrompt,
+              ),
+              maxLines: 2,
+              enabled: isOpen && !slot.isBusy,
+              // Rebuild so the buttons track whether there is a turn to send,
+              // and drop a count that no longer matches the text.
+              onChanged: (_) => setState(() => slot.pendingTokens = null),
+            ),
+            if (slot.pendingParts.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                '${slot.pendingParts.length} part(s) buffered into this turn: '
+                '${slot.pendingParts.join(' / ')}',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: Colors.grey[700]),
+              ),
+            ],
+            if (slot.pendingTokens != null) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(Icons.numbers, size: 16, color: Colors.grey[600]),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Pending turn: ${slot.pendingTokens} tokens '
+                      '($_tokenCountQualifier)',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: canSend ? () => _sendToSession(slot) : null,
+                  icon: slot.isBusy
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.send),
+                  label: Text(slot.isStreaming ? 'Streaming...' : 'Send'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.deepPurple,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+                ElevatedButton.icon(
+                  onPressed: slot.isStreaming
+                      ? () => _stopSessionGeneration(slot)
+                      : null,
+                  icon: const Icon(Icons.stop),
+                  label: const Text('Stop'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: canAddPart ? () => _addSessionPart(slot) : null,
+                  icon: const Icon(Icons.add),
+                  label: const Text('Add to turn'),
+                ),
+                TextButton.icon(
+                  onPressed: (isOpen && !slot.isCounting && hasTurn)
+                      ? () => _countSessionTokens(slot)
+                      : null,
+                  icon: slot.isCounting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.numbers),
+                  label: const Text('Count tokens'),
+                ),
+                TextButton.icon(
+                  onPressed: model == null || (slot.isBusy && !slot.isStreaming)
+                      ? null
+                      : isOpen
+                      ? () => _closeSessionSlot(slot)
+                      : () => _openSessionSlot(slot),
+                  icon: Icon(isOpen ? Icons.logout : Icons.login),
+                  label: Text(isOpen ? 'Close session' : 'Reopen session'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSessionTranscript(BuildContext context, _SessionSlot slot) {
+    final streaming = slot.streamingText;
+
+    if (slot.transcript.isEmpty && streaming.isEmpty) {
+      return Text(
+        'No turns yet. Whatever you send here stays in this session only.',
+        style: Theme.of(
+          context,
+        ).textTheme.bodySmall?.copyWith(color: Colors.grey[700]),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final turn in slot.transcript)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    turn.fromUser
+                        ? Icons.person_outline
+                        : Icons.smart_toy_outlined,
+                    size: 16,
+                    color: Colors.grey[700],
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      turn.text,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (streaming.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      streaming,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   // --- Generated module rendering ---
 
   Widget _buildModule(BuildContext context, GenUiModuleSpec module) {
@@ -1189,9 +2156,7 @@ class _MyHomePageState extends State<MyHomePage> {
                       if (module.blurb.isNotEmpty)
                         Text(
                           module.blurb,
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
+                          style: Theme.of(context).textTheme.bodySmall
                               ?.copyWith(color: Colors.grey[700]),
                         ),
                     ],
@@ -1217,8 +2182,9 @@ class _MyHomePageState extends State<MyHomePage> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: SelectableText(
-                    const JsonEncoder.withIndent('  ')
-                        .convert(module.toModuleJson()),
+                    const JsonEncoder.withIndent(
+                      '  ',
+                    ).convert(module.toModuleJson()),
                     style: const TextStyle(
                       fontFamily: 'monospace',
                       fontSize: 12,
@@ -1287,12 +2253,11 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Widget _blockLabel(BuildContext context, String label) => Text(
-        label,
-        style: Theme.of(context)
-            .textTheme
-            .labelMedium
-            ?.copyWith(color: Colors.grey[700]),
-      );
+    label,
+    style: Theme.of(
+      context,
+    ).textTheme.labelMedium?.copyWith(color: Colors.grey[700]),
+  );
 
   Widget _amountBlock(BuildContext context, Map<String, dynamic> b) {
     final prefix = (b['prefix'] ?? '').toString();
@@ -1303,17 +2268,19 @@ class _MyHomePageState extends State<MyHomePage> {
         const SizedBox(height: 4),
         Text(
           '$prefix${b['value'] ?? 0}',
-          style: Theme.of(context)
-              .textTheme
-              .headlineSmall
-              ?.copyWith(fontWeight: FontWeight.bold),
+          style: Theme.of(
+            context,
+          ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
         ),
       ],
     );
   }
 
   Widget _progressBlock(
-      BuildContext context, Map<String, dynamic> b, Color tone) {
+    BuildContext context,
+    Map<String, dynamic> b,
+    Color tone,
+  ) {
     final prefix = (b['prefix'] ?? '').toString();
     final value = _toDouble(b['value']);
     final target = _toDouble(b['target']);
@@ -1339,7 +2306,10 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Widget _checklistBlock(
-      BuildContext context, Map<String, dynamic> b, Color tone) {
+    BuildContext context,
+    Map<String, dynamic> b,
+    Color tone,
+  ) {
     final items = (b['items'] as List?) ?? const [];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1369,9 +2339,7 @@ class _MyHomePageState extends State<MyHomePage> {
                         if ((raw['meta'] ?? '').toString().isNotEmpty)
                           Text(
                             raw['meta'].toString(),
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
+                            style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(color: Colors.grey[600]),
                           ),
                       ],
@@ -1418,7 +2386,8 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Widget _statBlock(BuildContext context, Map<String, dynamic> b) {
-    final value = b['value']?.toString() ??
+    final value =
+        b['value']?.toString() ??
         (b['dynamic'] != null ? '(${b['dynamic']})' : '—');
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1426,10 +2395,9 @@ class _MyHomePageState extends State<MyHomePage> {
         _blockLabel(context, (b['label'] ?? 'Stat').toString()),
         Text(
           value,
-          style: Theme.of(context)
-              .textTheme
-              .titleMedium
-              ?.copyWith(fontWeight: FontWeight.bold),
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
         ),
       ],
     );
@@ -1460,7 +2428,10 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Widget _lessonsBlock(
-      BuildContext context, Map<String, dynamic> b, Color tone) {
+    BuildContext context,
+    Map<String, dynamic> b,
+    Color tone,
+  ) {
     final items = (b['items'] as List?) ?? const [];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1495,7 +2466,10 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Widget _reminderBlock(
-      BuildContext context, Map<String, dynamic> b, Color tone) {
+    BuildContext context,
+    Map<String, dynamic> b,
+    Color tone,
+  ) {
     final parts = <String>[
       if ((b['date'] ?? '').toString().isNotEmpty) b['date'].toString(),
       if ((b['time'] ?? '').toString().isNotEmpty) b['time'].toString(),
@@ -1511,10 +2485,9 @@ class _MyHomePageState extends State<MyHomePage> {
             children: [
               Text(
                 (b['title'] ?? 'Reminder').toString(),
-                style: Theme.of(context)
-                    .textTheme
-                    .titleSmall
-                    ?.copyWith(fontWeight: FontWeight.bold),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
               ),
               if (parts.isNotEmpty)
                 Text(
@@ -1557,10 +2530,9 @@ class _MyHomePageState extends State<MyHomePage> {
           const SizedBox(height: 4),
           Text(
             '→ ${b['resultLabel']}',
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(fontStyle: FontStyle.italic),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic),
           ),
         ],
       ],

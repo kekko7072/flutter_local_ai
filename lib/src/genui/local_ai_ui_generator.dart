@@ -12,9 +12,8 @@ import 'genui_module_spec.dart';
 ///
 /// This is the genUI brain: the user types what they want, the local model
 /// decides which typed blocks best express it, and the result is rendered by
-/// `genui` / the host app. The schema/system instructions are passed via
-/// [FlutterLocalAi.initialize]; on Android they are prepended to every prompt
-/// natively, so genUI works identically on Pixel as on Apple devices. If the
+/// `genui` / the host app. The schema/system instructions accompany each one-shot generation. On Android,
+/// native system instructions are used when available, with a prompt fallback. If the
 /// model is unavailable or its generation is blocked by the platform,
 /// [generateModule] returns null so the caller can fall back to a
 /// deterministic composer.
@@ -36,12 +35,8 @@ class LocalAiUiGenerator {
   /// The detected on-device backend (Apple FoundationModels, Android ML Kit…).
   LocalAiBackend get backend => _backend;
 
-  /// Output-token budget tuned per backend. Android's ML Kit GenAI prompt API
-  /// (genai-prompt alpha, Gemini Nano) hard-caps maxOutputTokens at 256 and
-  /// throws IllegalArgumentException above it, so we pin to that ceiling.
-  /// Apple's FoundationModels has a much larger window.
-  int get _maxTokens =>
-      _backend == LocalAiBackend.androidMlKitGenAi ? 256 : 900;
+  /// A bounded budget for a small module on either native backend.
+  int get _maxTokens => 900;
 
   /// The genUI system instructions (the module/block schema). Public so other
   /// on-device backends (e.g. a downloaded Gemma model via `flutter_gemma`)
@@ -100,14 +95,17 @@ Keep copy warm, plain and encouraging. Never use emoji.
       // Detect the backend so we can tune the generation budget (best-effort).
       try {
         _backend = (await _ai.getPlatformInfo()).backend;
-      } catch (_) {/* keep unsupported */}
+      } catch (_) {
+        /* keep unsupported */
+      }
       _available = await _ai.isAvailable();
       if (_available != true) {
         _lastError = await _ai.availabilityReason();
         return false;
       }
-      _ready = await _ai.initialize(instructions: _systemInstructions);
-      if (!_ready) _lastError = 'initialize returned false';
+      // Every generation carries its own instructions. Initializing the
+      // shared facade here would erase the application's active chat.
+      _ready = true;
       return _ready;
     } catch (e) {
       _lastError = e.toString();
@@ -127,10 +125,12 @@ Keep copy warm, plain and encouraging. Never use emoji.
   /// receives the cumulative raw model output as it decodes (for live
   /// progress/preview UI). Falls back silently to the blocking call on
   /// platforms without a streaming implementation.
-  Future<GenUiModuleSpec?> generateModule(String goal,
-      {String? principles,
-      String? language,
-      void Function(String text)? onText}) async {
+  Future<GenUiModuleSpec?> generateModule(
+    String goal, {
+    String? principles,
+    String? language,
+    void Function(String text)? onText,
+  }) async {
     final clean = goal.trim();
     if (clean.isEmpty) return null;
     if (!await ensureReady()) return null;
@@ -140,16 +140,14 @@ Keep copy warm, plain and encouraging. Never use emoji.
         : '';
     final languageLine = (language != null && language.isNotEmpty)
         ? '\nWrite ALL user-facing text (title, blurb, and every label, item '
-            'and note) in $language.'
+              'and note) in $language.'
         : '';
-    // Gemini Nano (ML Kit GenAI) caps output at 256 tokens, so a verbose module
-    // gets truncated mid-JSON. Ask the small model for compact output and fewer
-    // blocks so the whole object fits inside the budget.
+    // Keep the small on-device model's output compact for reliable JSON.
     final isAndroid = _backend == LocalAiBackend.androidMlKitGenAi;
     final sizeHint = isAndroid
         ? ' Use at most 3 blocks. Keep every string under 8 words. '
-            'Output minified JSON on a single line with no spaces after colons '
-            'or commas, and no trailing commas.'
+              'Output minified JSON on a single line with no spaces after colons '
+              'or commas, and no trailing commas.'
         : '';
     final prompt =
         'Design the Fledge module for this goal: "$clean".$principleLine'
@@ -188,15 +186,19 @@ Keep copy warm, plain and encouraging. Never use emoji.
   /// every prompt + response of its transcript counting toward the 4096-token
   /// context window — riding one cached session kills generation after a
   /// handful of modules.
-  Future<String> _readText(String prompt, GenerationConfig config,
-      void Function(String text)? onText) async {
+  Future<String> _readText(
+    String prompt,
+    GenerationConfig config,
+    void Function(String text)? onText,
+  ) async {
     if (onText != null) {
       final buf = StringBuffer();
       try {
         await for (final chunk in _ai.generateTextStream(
-            prompt: prompt,
-            config: config,
-            instructions: _systemInstructions)) {
+          prompt: prompt,
+          config: config,
+          instructions: _systemInstructions,
+        )) {
           buf.write(chunk);
           onText(buf.toString());
         }
@@ -206,15 +208,17 @@ Keep copy warm, plain and encouraging. Never use emoji.
       }
     }
     return (await _ai.generateText(
-            prompt: prompt, config: config, instructions: _systemInstructions))
-        .text;
+      prompt: prompt,
+      config: config,
+      instructions: _systemInstructions,
+    )).text;
   }
 
   /// Extract the first balanced top-level JSON object from arbitrary text
   /// (handles code fences and leading/trailing prose defensively).
   ///
-  /// On-device models with a small output budget (e.g. Gemini Nano's 256-token
-  /// cap) often get cut off mid-JSON. When the object never balances, we salvage
+  /// On-device models with a small output budget (or an app-selected short
+  /// budget) often get cut off mid-JSON. When the object never balances, we salvage
   /// it: cut at the last completed sub-structure and append the brackets that
   /// were still open there, so a partially-generated module still renders.
   static Map<String, dynamic>? _extractJsonObject(String text) {
@@ -275,7 +279,9 @@ Keep copy warm, plain and encouraging. Never use emoji.
     try {
       final decoded = jsonDecode(candidate);
       return decoded is Map ? Map<String, dynamic>.from(decoded) : null;
-    } catch (_) {/* fall through to lenient retry */}
+    } catch (_) {
+      /* fall through to lenient retry */
+    }
     try {
       // NB: String.replaceAll does not expand `$1`, so use replaceAllMapped.
       final cleaned = candidate.replaceAllMapped(

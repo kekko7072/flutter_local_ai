@@ -15,10 +15,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
 
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_11.toString()
-    }
-
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.example.flutter_local_ai_example"
@@ -43,8 +39,8 @@ flutter {
     source = "../.."
 }
 
-dependencies {
-    implementation("com.google.mlkit:genai-prompt:1.0.0-beta1")
-
-    implementation("com.google.android.gms:play-services-tasks:18.0.2")
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+    }
 }

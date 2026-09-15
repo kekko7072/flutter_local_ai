@@ -1,10 +1,16 @@
 #
 # To learn more about a Podspec see http://guides.cocoapods.org/syntax/podspec.html.
-# Run `pod lib lint sign_in_with_apple.podspec' to validate before publishing.
+# Run `pod lib lint flutter_local_ai.podspec' to validate before publishing.
 #
 Pod::Spec.new do |s|
   s.name             = 'flutter_local_ai'
-  s.version          = '0.0.1'
+  # Must track pubspec.yaml's version. CocoaPods resolves the iOS and macOS
+  # halves of this plugin against the podspec, not the pubspec, so a stale
+  # number leaves a pod nobody can trace back to the release it shipped in.
+  # The "Check the podspec version matches the pubspec version" guard in
+  # .github/workflows/publish.yml enforces this at the tag, by parsing the
+  # line below: keep it one single-quoted literal on its own line.
+  s.version          = '0.1.0'
   s.summary          = 'Flutter plugin for handling Flutter Local AI'
   s.description      = <<-DESC
 Flutter plugin for handling Flutter Local AI.

@@ -1,0 +1,154 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A superseded run on the same branch has nothing left to tell us.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The toolchain that owns every output this repository asserts byte
+  # equality on: the pigeon generator and `dart format`. Neither can be held
+  # to two SDKs at once — a generator and a formatter are both entitled to
+  # change their output between releases, and one tree cannot satisfy both —
+  # so they are pinned here, and the question of which SDKs the package
+  # actually supports is asked separately, by the check job's matrix.
+  FLUTTER_PINNED: "3.44.x"
+
+jobs:
+  # pubspec.yaml advertises flutter >=3.32.0 / Dart >=3.8.0. A floor nothing
+  # ever builds against is a guess, and it breaks silently: a dependency bump
+  # or one piece of newer syntax raises the real floor while the published
+  # constraint keeps promising the old one, and the consumer sitting on
+  # Flutter 3.32 is the one who finds out. So the floor gets a matrix leg of
+  # its own and has to resolve, analyze and pass the suite like any other.
+  #
+  # `strategy.matrix` cannot read the `env` context, so FLUTTER_PINNED is
+  # spelled out again below instead of referenced. Change the two together —
+  # the first step of the stable leg asserts that they still agree, which is
+  # as far as the deduplication can be taken inside one file. Keeping this
+  # file's FLUTTER_PINNED in step with publish.yml's stays a matter of
+  # remembering; nothing in a workflow can read another one.
+  check:
+    name: flutter_local_ai (Flutter ${{ matrix.flutter }})
+    runs-on: ubuntu-latest
+    strategy:
+      # Both legs report. Being told only that the floor broke, while the
+      # stable leg was cancelled halfway through, costs another round trip.
+      fail-fast: false
+      matrix:
+        include:
+          - label: floor
+            flutter: "3.32.x"
+          - label: stable
+            flutter: "3.44.x"
+    steps:
+      - uses: actions/checkout@v4
+
+      # The stable leg repeats FLUTTER_PINNED as a literal because matrix
+      # cannot read env; this asserts the copy is still the original, before
+      # anything spends an SDK download on it. Drift is silent and misleading:
+      # the pigeon and package jobs below would go on pinning one toolchain
+      # while the leg that verifies formatting ran another, so main would be
+      # asserting byte equality against an SDK nothing else here uses.
+      - name: Check the stable leg matches FLUTTER_PINNED
+        if: matrix.label == 'stable'
+        env:
+          LEG: ${{ matrix.flutter }}
+        run: |
+          if [[ "$LEG" != "$FLUTTER_PINNED" ]]; then
+            echo "::error::The stable matrix leg is $LEG but FLUTTER_PINNED" \
+                 "is $FLUTTER_PINNED. They are one toolchain spelled twice" \
+                 "because matrix cannot read env; change both together."
+            exit 1
+          fi
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ matrix.flutter }}
+          cache: true
+
+      # Resolution is the first half of the compatibility claim: on the floor
+      # leg pub has to find a set of dependency versions a Dart 3.8 SDK will
+      # accept, and it rewrites pubspec.lock to whatever it settles on.
+      # Nothing in this job diffs the tree, so that rewrite is harmless here.
+      # It is exactly why the pigeon job below stays on a single version.
+      - run: flutter pub get
+
+      # `dart format` and `flutter analyze` walk the whole tree from the repo
+      # root, so the example app needs its own resolution too — otherwise
+      # analysis fails on unresolved imports in a directory this job never
+      # pub-got.
+      - run: flutter pub get --directory example
+
+      # Formatting is a property of one formatter rather than of the
+      # language, so it is asserted once, against the pinned SDK. Running it
+      # on the floor leg as well would only ever report that two Dart
+      # releases disagree about a line break.
+      - name: Verify formatting
+        if: matrix.label == 'stable'
+        run: dart format --output=none --set-exit-if-changed .
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test --coverage
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          # upload-artifact@v4 fails outright on a name that already exists,
+          # so the legs cannot share one.
+          name: coverage-${{ matrix.label }}
+          path: coverage/lcov.info
+          if-no-files-found: ignore
+
+  # The native hosts are generated from pigeon.dart. Hand-editing the output
+  # is easy and silently survives review until a wire mismatch shows up on a
+  # device, so the build refuses a diff between what is committed and what
+  # the generator produces.
+  #
+  # Pinned, and deliberately not matrixed: this job diffs the whole worktree,
+  # and `flutter pub get` rewrites pubspec.lock when it runs under a
+  # different SDK. Matrixed, the floor leg would fail on the lock file rather
+  # than on stale generated code, which is the opposite of informative.
+  pigeon:
+    name: Generated code is current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_PINNED }}
+          cache: true
+      - run: flutter pub get
+      - run: dart run pigeon --input pigeon.dart
+      - run: dart format .
+      - name: Fail if the generated output differs from what is committed
+        run: |
+          if ! git diff --exit-code; then
+            echo "::error::Generated files are stale. Run:" \
+                 "dart run pigeon --input pigeon.dart && dart format ."
+            exit 1
+          fi
+
+  # A plugin that cannot be packaged is broken for everyone downstream, and
+  # the failure modes (an ignore rule hiding a pubspec, a missing licence) do
+  # not show up in analyze or test.
+  package:
+    name: Package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_PINNED }}
+          cache: true
+      - run: flutter pub get
+      - run: flutter pub publish --dry-run

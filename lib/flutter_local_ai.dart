@@ -1,12 +1,35 @@
-library flutter_local_ai;
+library;
 
 export 'src/flutter_local_ai.dart';
-export 'src/flutter_local_ai_platform_interface.dart';
 export 'src/models/ai_response.dart';
 export 'src/models/generation_config.dart';
 export 'src/models/model_status.dart';
 export 'src/models/platform_info.dart';
 export 'src/models/tool.dart';
+
+// Session API: the multi-session, buffer-then-generate surface for apps and
+// adapters. It adds images, concurrent sessions, cancellation and exact token
+// counts to the one-shot facade.
+export 'src/session/local_ai.dart';
+export 'src/session/local_ai_host.dart'
+    show
+        LocalAiAvailability,
+        LocalAiBackendCapabilities,
+        LocalAiBackendKind,
+        LocalAiGenerationOverrides,
+        LocalAiHost,
+        LocalAiHostEvent,
+        LocalAiTokenEvent,
+        LocalAiErrorEvent,
+        LocalAiDownloadProgressEvent,
+        LocalAiTokenizerUnavailable,
+        LocalAiUnavailableException,
+        LocalAiUnsupportedException;
+export 'src/session/local_ai_model.dart';
+// `debugLocalAiHost` lets tests (and the bridge package's tests) swap in a
+// fake host without reaching into src/.
+export 'src/session/local_ai_runtime.dart';
+export 'src/session/local_ai_session.dart';
 
 // genUI integration: turn a user goal into a genui-renderable module spec.
 export 'src/genui/genui_module_spec.dart';

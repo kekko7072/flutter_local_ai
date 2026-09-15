@@ -1,9 +1,10 @@
 name: flutter_local_ai
+# pub.dev truncates past ~180 characters, and scores a longer one down.
 description: >-
-  On-device AI for Flutter — Apple Foundation Models, Android ML Kit GenAI
-  (Gemini Nano) and Windows AI APIs. Text generation, streaming, tool calling
-  and generative UI specs for the genui renderer.
-version: 0.0.16
+  On-device AI for Flutter: Apple Foundation Models, Android Gemini Nano,
+  Windows AI Foundry, Chrome Prompt API. Text, streaming, tool calling, JSON
+  schemas, genUI specs.
+version: 0.1.0
 homepage: https://github.com/kekko7072/flutter_local_ai
 topics:
   - ai
@@ -13,20 +14,24 @@ topics:
   - foundation-models
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
-  flutter: ">=3.19.0"
+  # Keep the package and its flutter_lints 6 development tooling usable on
+  # Dart 3.8, which ships with Flutter 3.32.
+  sdk: '>=3.8.0 <4.0.0'
+  flutter: ">=3.32.0"
 
 dependencies:
   flutter:
     sdk: flutter
   plugin_platform_interface: ^2.1.8
-  # genUI integration: lets the package emit specs the genui renderer can build.
-  genui: ^0.9.2
+  flutter_web_plugins:
+    sdk: flutter
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  # Regenerates the native wire contract: dart run pigeon --input pigeon.dart
+  pigeon: ^25.5.0
 
 flutter:
   plugin:
@@ -42,3 +47,6 @@ flutter:
         sharedDarwinSource: true
       windows:
         pluginClass: FlutterLocalAiPlugin
+      web:
+        pluginClass: FlutterLocalAiWeb
+        fileName: flutter_local_ai_web.dart
