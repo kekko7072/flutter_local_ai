@@ -1,4 +1,4 @@
-## Unreleased
+## 0.1.1
 
 ### Tool declarations carry their schema
 
@@ -34,15 +34,20 @@
   their `toolSchemas`, and a fake configured without `supportsToolCalling`
   rejects a session that binds tools, as a real host does.
 
-### Breaking
+### Behaviour and wire changes
 
-* `LocalAiTool.parameters` is no longer required: a zero-argument tool omits
-  it. Existing declarations are unaffected.
+No source change is needed to move from 0.1.0: `LocalAiTool.parameters` is
+now optional rather than required, and `ToolParameter` / `ToolArgumentType`
+are untouched. Two things behind the API did change.
+
+* A tool body that throws used to fail the turn and now answers the model
+  instead. Code relying on an exception to abort generation should call
+  `stopGeneration()` explicitly.
 * Wire: `ToolSpec` carries `parametersSchemaJson` instead of a
   `List<ToolParameterSpec>`, and `ToolParameterSpec` / `ToolArgumentKind` are
-  gone from `pigeon.dart`. Dart-side `ToolParameter` and `ToolArgumentType`
-  are unchanged. Nothing outside this package's own native hosts reads the
-  wire, but a hot restart across this change needs a full rebuild.
+  gone from `pigeon.dart`. Nothing outside this package's own native hosts
+  reads the wire, but a hot restart across this upgrade needs a full rebuild
+  rather than a reload.
 
 ## 0.1.0
 
