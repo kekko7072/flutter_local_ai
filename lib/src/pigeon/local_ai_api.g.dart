@@ -77,8 +77,6 @@ enum LocalAiBackend {
   unsupported,
 }
 
-enum ToolArgumentKind { string, integer, number, boolean }
-
 /// What the *running* host can actually do. Every field is a runtime property
 /// of this device + OS + build, never a compile-time assumption: the same
 /// binary reports `supportsVision: false` on iOS 26 and `true` on iOS 27.
@@ -175,57 +173,6 @@ class LocalAiBackendInfo {
   int get hashCode => Object.hashAll(_toList());
 }
 
-class ToolParameterSpec {
-  ToolParameterSpec({
-    required this.name,
-    required this.kind,
-    required this.optional,
-    this.description,
-  });
-
-  String name;
-
-  ToolArgumentKind kind;
-
-  bool optional;
-
-  String? description;
-
-  List<Object?> _toList() {
-    return <Object?>[name, kind, optional, description];
-  }
-
-  Object encode() {
-    return _toList();
-  }
-
-  static ToolParameterSpec decode(Object result) {
-    result as List<Object?>;
-    return ToolParameterSpec(
-      name: result[0]! as String,
-      kind: result[1]! as ToolArgumentKind,
-      optional: result[2]! as bool,
-      description: result[3] as String?,
-    );
-  }
-
-  @override
-  // ignore: avoid_equals_and_hash_code_on_mutable_classes
-  bool operator ==(Object other) {
-    if (other is! ToolParameterSpec || other.runtimeType != runtimeType) {
-      return false;
-    }
-    if (identical(this, other)) {
-      return true;
-    }
-    return _deepEquals(encode(), other.encode());
-  }
-
-  @override
-  // ignore: avoid_equals_and_hash_code_on_mutable_classes
-  int get hashCode => Object.hashAll(_toList());
-}
-
 /// Per-call sampling overrides.
 ///
 /// A session fixes its sampling at creation, which is what flutter_gemma's
@@ -289,17 +236,25 @@ class ToolSpec {
   ToolSpec({
     required this.name,
     required this.description,
-    required this.parameters,
+    required this.parametersSchemaJson,
   });
 
   String name;
 
   String description;
 
-  List<ToolParameterSpec> parameters;
+  /// The tool's parameters as a JSON Schema object, in the same subset
+  /// `generateStructuredResponse` accepts. A declaration is carried whole —
+  /// nested objects, arrays and string enums included — so the host can
+  /// translate it with the one schema builder it already has, and the model
+  /// is constrained to the declaration rather than asked to respect it.
+  ///
+  /// `{"type":"object","properties":{},"required":[]}` is how a
+  /// zero-argument tool is spelled.
+  String parametersSchemaJson;
 
   List<Object?> _toList() {
-    return <Object?>[name, description, parameters];
+    return <Object?>[name, description, parametersSchemaJson];
   }
 
   Object encode() {
@@ -311,7 +266,7 @@ class ToolSpec {
     return ToolSpec(
       name: result[0]! as String,
       description: result[1]! as String,
-      parameters: (result[2] as List<Object?>?)!.cast<ToolParameterSpec>(),
+      parametersSchemaJson: result[2]! as String,
     );
   }
 
@@ -345,20 +300,14 @@ class _PigeonCodec extends StandardMessageCodec {
     } else if (value is LocalAiBackend) {
       buffer.putUint8(130);
       writeValue(buffer, value.index);
-    } else if (value is ToolArgumentKind) {
-      buffer.putUint8(131);
-      writeValue(buffer, value.index);
     } else if (value is LocalAiBackendInfo) {
-      buffer.putUint8(132);
-      writeValue(buffer, value.encode());
-    } else if (value is ToolParameterSpec) {
-      buffer.putUint8(133);
+      buffer.putUint8(131);
       writeValue(buffer, value.encode());
     } else if (value is GenerationOverrides) {
-      buffer.putUint8(134);
+      buffer.putUint8(132);
       writeValue(buffer, value.encode());
     } else if (value is ToolSpec) {
-      buffer.putUint8(135);
+      buffer.putUint8(133);
       writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
@@ -375,15 +324,10 @@ class _PigeonCodec extends StandardMessageCodec {
         final int? value = readValue(buffer) as int?;
         return value == null ? null : LocalAiBackend.values[value];
       case 131:
-        final int? value = readValue(buffer) as int?;
-        return value == null ? null : ToolArgumentKind.values[value];
-      case 132:
         return LocalAiBackendInfo.decode(readValue(buffer)!);
-      case 133:
-        return ToolParameterSpec.decode(readValue(buffer)!);
-      case 134:
+      case 132:
         return GenerationOverrides.decode(readValue(buffer)!);
-      case 135:
+      case 133:
         return ToolSpec.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);

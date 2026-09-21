@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_local_ai/flutter_local_ai.dart';
 import 'package:flutter_local_ai/src/session/local_ai_tool_registry.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -50,12 +52,80 @@ void main() {
       expect(await registry.invoke(1, 'noop', '{}'), isNull);
     });
 
-    test('propagates a failure from the tool body', () async {
+    test(
+      'a tool body that throws answers the model instead of the app',
+      () async {
+        registry.register(1, [
+          _tool('broken', onCall: (_) => throw StateError('tool exploded')),
+        ]);
+
+        // A failed tool is a normal outcome of an agent loop, and the caller
+        // here is a native callback with nowhere to report to. The model reads
+        // the error and can answer it; the turn survives.
+        expect(
+          await registry.invoke(1, 'broken', '{}'),
+          '{"error":"Bad state: tool exploded"}',
+        );
+      },
+    );
+
+    test(
+      'LocalAiToolException carries its message and details across',
+      () async {
+        registry.register(1, [
+          _tool(
+            'guarded',
+            onCall: (_) => throw const LocalAiToolException(
+              'The user declined this action.',
+              details: {'reason': 'denied'},
+            ),
+          ),
+        ]);
+
+        expect(
+          await registry.invoke(1, 'guarded', '{}'),
+          '{"error":"The user declined this action.",'
+          '"details":{"reason":"denied"}}',
+        );
+      },
+    );
+
+    test('details that will not encode are dropped, not the message', () async {
       registry.register(1, [
-        _tool('broken', onCall: (_) => throw StateError('tool exploded')),
+        _tool(
+          'guarded',
+          onCall: (_) =>
+              throw LocalAiToolException('Refused.', details: Object()),
+        ),
       ]);
 
-      expect(() => registry.invoke(1, 'broken', '{}'), throwsStateError);
+      expect(await registry.invoke(1, 'guarded', '{}'), '{"error":"Refused."}');
+    });
+
+    test('a result that will not encode is reported as a tool error', () async {
+      registry.register(1, [_tool('odd', onCall: (_) => Object())]);
+
+      final result = await registry.invoke(1, 'odd', '{}');
+
+      expect(result, contains('not JSON-serializable'));
+      expect(jsonDecode(result!), isA<Map<String, dynamic>>());
+    });
+
+    test('an async tool body that throws is caught too', () async {
+      registry.register(1, [
+        _tool(
+          'slowFail',
+          onCall: (_) async {
+            await Future<void>.delayed(Duration.zero);
+            throw StateError('late');
+          },
+        ),
+      ]);
+
+      expect(
+        await registry.invoke(1, 'slowFail', '{}'),
+        '{"error":"Bad state: late"}',
+      );
     });
   });
 

@@ -69,7 +69,10 @@ class LocalAiModel {
   /// [tools] are bound at construction because Apple's FoundationModels
   /// cannot add tools to a live session; hosts reporting
   /// `supportsToolCalling: false` throw [LocalAiUnsupportedException] when
-  /// tools are supplied.
+  /// tools are supplied. A tool declaring its parameters as a JSON Schema has
+  /// that schema validated here, so an unsupported construct fails with a
+  /// path-qualified [ArgumentError] naming the tool rather than opaquely
+  /// inside the native session.
   Future<LocalAiSession> openSession({
     double temperature = 0.8,
     int topK = 1,
@@ -80,6 +83,9 @@ class LocalAiModel {
   }) async {
     if (_isClosed) {
       throw StateError('Model is closed. Create a new one to use it again.');
+    }
+    for (final tool in tools ?? const <LocalAiTool>[]) {
+      tool.validateParameterSchema();
     }
     final sessionId = _state.nextSessionId++;
     final opening = _host.createSession(

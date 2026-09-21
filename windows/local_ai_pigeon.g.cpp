@@ -173,88 +173,6 @@ LocalAiBackendInfo LocalAiBackendInfo::FromEncodableList(const EncodableList& li
   return decoded;
 }
 
-// ToolParameterSpec
-
-ToolParameterSpec::ToolParameterSpec(
-  const std::string& name,
-  const ToolArgumentKind& kind,
-  bool optional)
- : name_(name),
-    kind_(kind),
-    optional_(optional) {}
-
-ToolParameterSpec::ToolParameterSpec(
-  const std::string& name,
-  const ToolArgumentKind& kind,
-  bool optional,
-  const std::string* description)
- : name_(name),
-    kind_(kind),
-    optional_(optional),
-    description_(description ? std::optional<std::string>(*description) : std::nullopt) {}
-
-const std::string& ToolParameterSpec::name() const {
-  return name_;
-}
-
-void ToolParameterSpec::set_name(std::string_view value_arg) {
-  name_ = value_arg;
-}
-
-
-const ToolArgumentKind& ToolParameterSpec::kind() const {
-  return kind_;
-}
-
-void ToolParameterSpec::set_kind(const ToolArgumentKind& value_arg) {
-  kind_ = value_arg;
-}
-
-
-bool ToolParameterSpec::optional() const {
-  return optional_;
-}
-
-void ToolParameterSpec::set_optional(bool value_arg) {
-  optional_ = value_arg;
-}
-
-
-const std::string* ToolParameterSpec::description() const {
-  return description_ ? &(*description_) : nullptr;
-}
-
-void ToolParameterSpec::set_description(const std::string_view* value_arg) {
-  description_ = value_arg ? std::optional<std::string>(*value_arg) : std::nullopt;
-}
-
-void ToolParameterSpec::set_description(std::string_view value_arg) {
-  description_ = value_arg;
-}
-
-
-EncodableList ToolParameterSpec::ToEncodableList() const {
-  EncodableList list;
-  list.reserve(4);
-  list.push_back(EncodableValue(name_));
-  list.push_back(CustomEncodableValue(kind_));
-  list.push_back(EncodableValue(optional_));
-  list.push_back(description_ ? EncodableValue(*description_) : EncodableValue());
-  return list;
-}
-
-ToolParameterSpec ToolParameterSpec::FromEncodableList(const EncodableList& list) {
-  ToolParameterSpec decoded(
-    std::get<std::string>(list[0]),
-    std::any_cast<const ToolArgumentKind&>(std::get<CustomEncodableValue>(list[1])),
-    std::get<bool>(list[2]));
-  auto& encodable_description = list[3];
-  if (!encodable_description.IsNull()) {
-    decoded.set_description(std::get<std::string>(encodable_description));
-  }
-  return decoded;
-}
-
 // GenerationOverrides
 
 GenerationOverrides::GenerationOverrides() {}
@@ -357,10 +275,10 @@ GenerationOverrides GenerationOverrides::FromEncodableList(const EncodableList& 
 ToolSpec::ToolSpec(
   const std::string& name,
   const std::string& description,
-  const EncodableList& parameters)
+  const std::string& parameters_schema_json)
  : name_(name),
     description_(description),
-    parameters_(parameters) {}
+    parameters_schema_json_(parameters_schema_json) {}
 
 const std::string& ToolSpec::name() const {
   return name_;
@@ -380,12 +298,12 @@ void ToolSpec::set_description(std::string_view value_arg) {
 }
 
 
-const EncodableList& ToolSpec::parameters() const {
-  return parameters_;
+const std::string& ToolSpec::parameters_schema_json() const {
+  return parameters_schema_json_;
 }
 
-void ToolSpec::set_parameters(const EncodableList& value_arg) {
-  parameters_ = value_arg;
+void ToolSpec::set_parameters_schema_json(std::string_view value_arg) {
+  parameters_schema_json_ = value_arg;
 }
 
 
@@ -394,7 +312,7 @@ EncodableList ToolSpec::ToEncodableList() const {
   list.reserve(3);
   list.push_back(EncodableValue(name_));
   list.push_back(EncodableValue(description_));
-  list.push_back(EncodableValue(parameters_));
+  list.push_back(EncodableValue(parameters_schema_json_));
   return list;
 }
 
@@ -402,7 +320,7 @@ ToolSpec ToolSpec::FromEncodableList(const EncodableList& list) {
   ToolSpec decoded(
     std::get<std::string>(list[0]),
     std::get<std::string>(list[1]),
-    std::get<EncodableList>(list[2]));
+    std::get<std::string>(list[2]));
   return decoded;
 }
 
@@ -424,20 +342,12 @@ EncodableValue PigeonInternalCodecSerializer::ReadValueOfType(
         return encodable_enum_arg.IsNull() ? EncodableValue() : CustomEncodableValue(static_cast<LocalAiBackend>(enum_arg_value));
       }
     case 131: {
-        const auto& encodable_enum_arg = ReadValue(stream);
-        const int64_t enum_arg_value = encodable_enum_arg.IsNull() ? 0 : encodable_enum_arg.LongValue();
-        return encodable_enum_arg.IsNull() ? EncodableValue() : CustomEncodableValue(static_cast<ToolArgumentKind>(enum_arg_value));
-      }
-    case 132: {
         return CustomEncodableValue(LocalAiBackendInfo::FromEncodableList(std::get<EncodableList>(ReadValue(stream))));
       }
-    case 133: {
-        return CustomEncodableValue(ToolParameterSpec::FromEncodableList(std::get<EncodableList>(ReadValue(stream))));
-      }
-    case 134: {
+    case 132: {
         return CustomEncodableValue(GenerationOverrides::FromEncodableList(std::get<EncodableList>(ReadValue(stream))));
       }
-    case 135: {
+    case 133: {
         return CustomEncodableValue(ToolSpec::FromEncodableList(std::get<EncodableList>(ReadValue(stream))));
       }
     default:
@@ -459,28 +369,18 @@ void PigeonInternalCodecSerializer::WriteValue(
       WriteValue(EncodableValue(static_cast<int>(std::any_cast<LocalAiBackend>(*custom_value))), stream);
       return;
     }
-    if (custom_value->type() == typeid(ToolArgumentKind)) {
-      stream->WriteByte(131);
-      WriteValue(EncodableValue(static_cast<int>(std::any_cast<ToolArgumentKind>(*custom_value))), stream);
-      return;
-    }
     if (custom_value->type() == typeid(LocalAiBackendInfo)) {
-      stream->WriteByte(132);
+      stream->WriteByte(131);
       WriteValue(EncodableValue(std::any_cast<LocalAiBackendInfo>(*custom_value).ToEncodableList()), stream);
       return;
     }
-    if (custom_value->type() == typeid(ToolParameterSpec)) {
-      stream->WriteByte(133);
-      WriteValue(EncodableValue(std::any_cast<ToolParameterSpec>(*custom_value).ToEncodableList()), stream);
-      return;
-    }
     if (custom_value->type() == typeid(GenerationOverrides)) {
-      stream->WriteByte(134);
+      stream->WriteByte(132);
       WriteValue(EncodableValue(std::any_cast<GenerationOverrides>(*custom_value).ToEncodableList()), stream);
       return;
     }
     if (custom_value->type() == typeid(ToolSpec)) {
-      stream->WriteByte(135);
+      stream->WriteByte(133);
       WriteValue(EncodableValue(std::any_cast<ToolSpec>(*custom_value).ToEncodableList()), stream);
       return;
     }

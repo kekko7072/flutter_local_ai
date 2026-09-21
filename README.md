@@ -335,7 +335,69 @@ final response = await aiEngine.generateText(
 print(response.text);
 ```
 
-### Structured Outputs (Apple platforms, Windows, Chrome)
+#### Declarations that need more than a scalar
+
+The flat `parameters` list covers scalars. When a parameter is a set of named
+choices, a list, or a nested object, declare the whole thing as JSON Schema
+with `parameterSchema` instead — the same subset `GenerationConfig.schema`
+accepts, translated by the same native builder, so on Apple the model is
+*constrained* to the declaration rather than asked to respect it:
+
+```dart
+LocalAiTool(
+  name: 'paintWall',
+  description: 'Paints a wall in one of the stocked colours.',
+  parameterSchema: const {
+    'type': 'object',
+    'properties': {
+      'colour': {
+        'description': 'One of the stocked colours',
+        'enum': ['red', 'green', 'blue', 'white', 'black', 'teal'],
+      },
+      'coats': {'type': 'integer'},
+      'trim': {
+        'type': 'object',
+        'properties': {
+          'colour': {'type': 'string'},
+          'gloss': {'type': 'boolean'},
+        },
+        'required': ['colour'],
+      },
+    },
+    'required': ['colour'],
+  },
+  onCall: (arguments) async => {'ok': true},
+);
+```
+
+Supply `parameters` or `parameterSchema`, never both. The schema is validated
+in Dart before the platform channel, so an unsupported construct fails with a
+path-qualified `ArgumentError` naming the tool.
+
+#### What `onCall` may do
+
+- **Take as long as it needs.** The native host suspends the turn for the
+  whole of `onCall` and imposes no timeout, so waiting on a human to approve
+  an action is supported. A confirm-before-acting flow is written by returning
+  a `Future` that completes when the user answers.
+- **Be cancelled.** `session.stopGeneration()` unwinds a suspended tool call
+  instead of waiting for it; the `Future` is abandoned, so a tool holding a
+  resource releases it itself.
+- **Refuse.** Throwing `LocalAiToolException` — or any exception — hands the
+  model a readable `{"error": "..."}` tool result rather than failing the
+  turn, which is what a declined confirmation or a permission error should
+  look like in an agent loop:
+
+  ```dart
+  onCall: (arguments) async {
+    if (!await confirmWithUser()) {
+      throw const LocalAiToolException('The user declined this action.');
+    }
+    return {'ok': true};
+  }
+  ```
+
+### Structured Outputs (Apple platforms)
 
 Pass a JSON Schema through `GenerationConfig` to *constrain* generation to valid
 JSON instead of free-form text. On Apple FoundationModels this uses the same
@@ -775,8 +837,11 @@ Main class for interacting with local AI.
 
 A Dart-defined tool the on-device model can invoke (see Tool Calls above).
 
-- `LocalAiTool({required name, required description, required parameters, required onCall})` - `onCall` receives the model's arguments as a `Map<String, dynamic>` and returns JSON-serializable data fed back to the model
-- `ToolParameter({required name, type, description, optional})` - typed parameter (`ToolArgumentType.string/integer/number/boolean`)
+- `LocalAiTool({required name, required description, parameters, parameterSchema, required onCall})` - `onCall` receives the model's arguments as a `Map<String, dynamic>` and returns JSON-serializable data fed back to the model. Declare parameters as either a flat `parameters` list or a `parameterSchema`, not both
+- `ToolParameter({required name, type, description, optional})` - typed scalar parameter (`ToolArgumentType.string/integer/number/boolean`)
+- `parameterSchema` (`Map<String, dynamic>?`) - the parameters as a JSON Schema object, for nested objects, arrays and string enums. Validated in Dart, then translated natively by the same builder that backs structured output
+- `resolvedParameterSchema` - the declaration actually sent: `parameterSchema`, or the object schema the flat list describes
+- `LocalAiToolException(message, {details})` - thrown from `onCall` to hand the model a readable tool error instead of failing the turn. Any other exception is reported the same way
 
 ### `GenerationConfig`
 

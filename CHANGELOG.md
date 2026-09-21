@@ -1,8 +1,5 @@
 ## 0.1.1
 
-Windows builds itself, and gains native structured output. Closes
-[#17](https://github.com/kekko7072/flutter_local_ai/issues/17).
-
 ### Windows
 
 * **Zero-config build.** `flutter build windows` now resolves the Windows
@@ -48,6 +45,55 @@ Windows builds itself, and gains native structured output. Closes
   requirements, instead of a generic CMake/NuGet recipe.
 * The example's "Windows AI setup required" dialog no longer describes steps
   that stopped existing in 0.1.0.
+
+### Tool declarations carry their schema
+
+* **`LocalAiTool.parameterSchema`.** A tool can now declare its parameters as
+  a JSON Schema object instead of a flat list of scalars, so a constraint the
+  flat form cannot express — a string enum, a list, a nested object — reaches
+  the model intact. It is the same subset `GenerationConfig.schema` accepts,
+  validated in Dart with a path-qualified error and translated on Apple by
+  the same `SchemaBuilder` that backs structured output, so the model is
+  *constrained* to the declaration rather than asked to respect it. The flat
+  `parameters` list still works and now lowers to the same schema; supply one
+  or the other, not both.
+
+### Tool errors are an answer, not a failed turn
+
+* A tool body that throws no longer aborts generation. The error is encoded
+  as a `{"error": "..."}` tool result the model reads and can respond to,
+  which is what a declined confirmation or a denied permission looks like in
+  an agent loop. `LocalAiToolException(message, {details})` is the deliberate
+  spelling; any other exception is reported the same way, as is a result that
+  will not JSON-encode.
+* **A suspended tool call is cancellable.** `stopGeneration()` now unwinds a
+  turn waiting on `onCall` instead of waiting for it to answer. There is no
+  timeout on the native side, by design: a tool may sit for as long as a
+  person takes to approve an action.
+
+### Testing
+
+* **`FakeLocalAiHost.invokeTool`** plays the model's half of a tool call,
+  through the same registry the native host dispatches with — so an adapter's
+  tool loop, including its refusal and suspension paths, is testable off
+  device. `FakeLocalAiSession` now exposes the `tools` it was opened with and
+  their `toolSchemas`, and a fake configured without `supportsToolCalling`
+  rejects a session that binds tools, as a real host does.
+
+### Behaviour and wire changes
+
+No source change is needed to move from 0.1.0: `LocalAiTool.parameters` is
+now optional rather than required, and `ToolParameter` / `ToolArgumentType`
+are untouched. Two things behind the API did change.
+
+* A tool body that throws used to fail the turn and now answers the model
+  instead. Code relying on an exception to abort generation should call
+  `stopGeneration()` explicitly.
+* Wire: `ToolSpec` carries `parametersSchemaJson` instead of a
+  `List<ToolParameterSpec>`, and `ToolParameterSpec` / `ToolArgumentKind` are
+  gone from `pigeon.dart`. Nothing outside this package's own native hosts
+  reads the wire, but a hot restart across this upgrade needs a full rebuild
+  rather than a reload.
 
 ## 0.1.0
 
