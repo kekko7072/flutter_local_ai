@@ -6,8 +6,8 @@ enum LocalAiBackend {
   appleFoundationModels,
   windowsAiFoundry,
 
-  /// Windows AI Foundry is present but the build lacks the Windows AI SDK
-  /// headers, so no inference can run.
+  /// Windows AI Foundry is present but the build could not resolve the
+  /// Windows App SDK projection, so no inference can run.
   windowsAiFoundryUnconfigured,
 
   /// Gemini Nano through the Chrome Prompt API.

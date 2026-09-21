@@ -109,6 +109,42 @@ jobs:
           path: coverage/lcov.info
           if-no-files-found: ignore
 
+  # The Windows arm is C++ that nothing above compiles: analyze and test never
+  # touch it, so without this job a projection or coroutine change reaches
+  # every consumer's `flutter build windows` untested. Two legs, because the
+  # plugin has two builds: one where it resolves the Windows App SDK
+  # projection itself (NuGet download, cppwinrt.exe, the WINDOWS_AI_AVAILABLE=1
+  # arm — forced ON so a resolution failure fails the job instead of quietly
+  # degrading), and the unconfigured fallback an offline machine gets. This
+  # is compilation, not inference: the runner is not a Copilot+ PC.
+  windows:
+    name: Windows build (${{ matrix.label }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: windows-ai
+            mode: "ON"
+          - label: unconfigured
+            mode: "OFF"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_PINNED }}
+          cache: true
+      - run: flutter pub get
+        working-directory: example
+      # Verbose, because the point of this job is what CMake and MSVC say:
+      # the plugin's `flutter_local_ai:` resolution lines and every compiler
+      # warning are otherwise swallowed by the Flutter tool on success.
+      - name: Build the example (FLUTTER_LOCAL_AI_WINDOWS_AI=${{ matrix.mode }})
+        env:
+          FLUTTER_LOCAL_AI_WINDOWS_AI: ${{ matrix.mode }}
+        run: flutter build windows --debug --verbose
+        working-directory: example
+
   # The native hosts are generated from pigeon.dart. Hand-editing the output
   # is easy and silently survives review until a wire mismatch shows up on a
   # device, so the build refuses a diff between what is committed and what

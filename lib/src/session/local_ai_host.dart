@@ -79,8 +79,8 @@ enum LocalAiBackendKind {
   appleFoundationModels,
   windowsAiFoundry,
 
-  /// Windows AI Foundry is present but this build lacks the Windows AI SDK
-  /// headers, so no inference can run.
+  /// Windows AI Foundry is present but this build could not resolve the
+  /// Windows App SDK projection, so no inference can run.
   windowsAiFoundryUnconfigured,
   chromePromptApi,
   unsupported,
