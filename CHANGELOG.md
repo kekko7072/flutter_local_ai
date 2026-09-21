@@ -1,3 +1,49 @@
+## Unreleased
+
+### Tool declarations carry their schema
+
+* **`LocalAiTool.parameterSchema`.** A tool can now declare its parameters as
+  a JSON Schema object instead of a flat list of scalars, so a constraint the
+  flat form cannot express — a string enum, a list, a nested object — reaches
+  the model intact. It is the same subset `GenerationConfig.schema` accepts,
+  validated in Dart with a path-qualified error and translated on Apple by
+  the same `SchemaBuilder` that backs structured output, so the model is
+  *constrained* to the declaration rather than asked to respect it. The flat
+  `parameters` list still works and now lowers to the same schema; supply one
+  or the other, not both.
+
+### Tool errors are an answer, not a failed turn
+
+* A tool body that throws no longer aborts generation. The error is encoded
+  as a `{"error": "..."}` tool result the model reads and can respond to,
+  which is what a declined confirmation or a denied permission looks like in
+  an agent loop. `LocalAiToolException(message, {details})` is the deliberate
+  spelling; any other exception is reported the same way, as is a result that
+  will not JSON-encode.
+* **A suspended tool call is cancellable.** `stopGeneration()` now unwinds a
+  turn waiting on `onCall` instead of waiting for it to answer. There is no
+  timeout on the native side, by design: a tool may sit for as long as a
+  person takes to approve an action.
+
+### Testing
+
+* **`FakeLocalAiHost.invokeTool`** plays the model's half of a tool call,
+  through the same registry the native host dispatches with — so an adapter's
+  tool loop, including its refusal and suspension paths, is testable off
+  device. `FakeLocalAiSession` now exposes the `tools` it was opened with and
+  their `toolSchemas`, and a fake configured without `supportsToolCalling`
+  rejects a session that binds tools, as a real host does.
+
+### Breaking
+
+* `LocalAiTool.parameters` is no longer required: a zero-argument tool omits
+  it. Existing declarations are unaffected.
+* Wire: `ToolSpec` carries `parametersSchemaJson` instead of a
+  `List<ToolParameterSpec>`, and `ToolParameterSpec` / `ToolArgumentKind` are
+  gone from `pigeon.dart`. Dart-side `ToolParameter` and `ToolArgumentType`
+  are unchanged. Nothing outside this package's own native hosts reads the
+  wire, but a hot restart across this change needs a full rebuild.
+
 ## 0.1.0
 
 A rewrite onto one architecture, exposing a standalone OS-model layer that

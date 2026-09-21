@@ -26,6 +26,9 @@ export 'src/session/local_ai_host.dart'
         LocalAiUnavailableException,
         LocalAiUnsupportedException;
 export 'src/session/local_ai_model.dart';
+// `UnknownToolException` escapes into app-visible code: a tool call the
+// session never offered, replayed through `FakeLocalAiHost.invokeTool`.
+export 'src/session/local_ai_tool_registry.dart' show UnknownToolException;
 // `debugLocalAiHost` lets tests (and the bridge package's tests) swap in a
 // fake host without reaching into src/.
 export 'src/session/local_ai_runtime.dart';

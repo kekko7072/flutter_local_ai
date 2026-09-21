@@ -627,6 +627,11 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
         } catch is CancellationError {
           return
         } catch {
+          // A cancelled turn can also surface as whatever the framework wraps
+          // the cancellation in — a tool call unwinding on `stopGeneration`
+          // is the common case. Stopping is not a generation failure, and
+          // `stopGeneration` has already posted the one completion.
+          if Task.isCancelled { return }
           self.postError(sessionId, Self.describeGenerationError(error))
         }
       }
@@ -826,6 +831,46 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
 
 #if canImport(FoundationModels)
 
+  /// The one continuation a suspended tool call is waiting on, resumed exactly
+  /// once — by Dart answering, or by the turn being cancelled, whichever comes
+  /// first. The loser is dropped rather than resuming a spent continuation,
+  /// which would trap.
+  private final class PendingToolCall: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<String?, Error>?
+    private var isCancelled = false
+
+    func attach(_ continuation: CheckedContinuation<String?, Error>) {
+      lock.lock()
+      // Cancellation can land before the continuation exists: the handler runs
+      // immediately when the task is already cancelled.
+      if isCancelled {
+        lock.unlock()
+        continuation.resume(throwing: CancellationError())
+        return
+      }
+      self.continuation = continuation
+      lock.unlock()
+    }
+
+    func finish(_ result: Result<String?, Error>) {
+      lock.lock()
+      let continuation = self.continuation
+      self.continuation = nil
+      lock.unlock()
+      continuation?.resume(with: result)
+    }
+
+    func cancel() {
+      lock.lock()
+      isCancelled = true
+      let continuation = self.continuation
+      self.continuation = nil
+      lock.unlock()
+      continuation?.resume(throwing: CancellationError())
+    }
+  }
+
   @available(iOS 26.0, macOS 26.0, *)
   private struct PigeonToolArguments: ConvertibleFromGeneratedContent {
     let content: GeneratedContent
@@ -859,27 +904,25 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
       self.sessionId = sessionId
       self.runner = runner
 
-      let properties = spec.parameters.map { parameter in
-        DynamicGenerationSchema.Property(
-          name: parameter.name,
-          description: parameter.description,
-          schema: PigeonBackedTool.schema(for: parameter.kind),
-          isOptional: parameter.optional)
+      // The declaration arrives whole, as JSON Schema, and goes through the
+      // same builder structured output uses — so a nested object, a list or a
+      // string enum constrains the model here exactly as it does there,
+      // instead of being flattened to a scalar on the way down.
+      var json = try PigeonBackedTool.parametersObject(from: spec.parametersSchemaJson)
+      if json["description"] == nil, !spec.description.isEmpty {
+        json["description"] = spec.description
       }
-      let root = DynamicGenerationSchema(
-        name: spec.name,
-        description: spec.description.isEmpty ? nil : spec.description,
-        properties: properties)
-      self.parameters = try GenerationSchema(root: root, dependencies: [])
+      self.parameters = try SchemaBuilder.generationSchema(from: json, rootName: spec.name)
     }
 
-    private static func schema(for kind: ToolArgumentKind) -> DynamicGenerationSchema {
-      switch kind {
-      case .string: return DynamicGenerationSchema(type: String.self)
-      case .integer: return DynamicGenerationSchema(type: Int.self)
-      case .number: return DynamicGenerationSchema(type: Double.self)
-      case .boolean: return DynamicGenerationSchema(type: Bool.self)
+    private static func parametersObject(from schemaJson: String) throws -> [String: Any] {
+      guard let data = schemaJson.data(using: .utf8),
+        let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+      else {
+        throw SchemaBuilder.SchemaError.unsupported(
+          "A tool's parameters must be a JSON Schema object.")
       }
+      return object
     }
 
     func call(arguments: PigeonToolArguments) async throws -> GeneratedContent {
@@ -887,20 +930,31 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
       let name = self.name
       let sessionId = self.sessionId
 
-      let resultJson: String? = try await withCheckedThrowingContinuation { continuation in
-        // The pigeon channel must be driven from the platform thread.
-        DispatchQueue.main.async {
-          self.runner.onToolCall(
-            sessionId: sessionId, toolName: name, argumentsJson: argumentsJson
-          ) { result in
-            switch result {
-            case .success(let json):
-              continuation.resume(returning: json)
-            case .failure(let error):
-              continuation.resume(throwing: error)
+      // No timeout: a tool body may legitimately sit for as long as it takes a
+      // person to approve the action. Cancellation is the way out, and it has
+      // to be wired explicitly — a task suspended on a continuation does not
+      // unwind on its own, so without this handler `stopGeneration` would wait
+      // for a tool call that may never be answered.
+      let pending = PendingToolCall()
+      let resultJson: String? = try await withTaskCancellationHandler {
+        try await withCheckedThrowingContinuation { continuation in
+          pending.attach(continuation)
+          // The pigeon channel must be driven from the platform thread.
+          DispatchQueue.main.async {
+            self.runner.onToolCall(
+              sessionId: sessionId, toolName: name, argumentsJson: argumentsJson
+            ) { result in
+              switch result {
+              case .success(let json):
+                pending.finish(.success(json))
+              case .failure(let error):
+                pending.finish(.failure(error))
+              }
             }
           }
         }
+      } onCancel: {
+        pending.cancel()
       }
 
       // A tool that yields nothing still has to answer the model with

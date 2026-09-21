@@ -85,22 +85,6 @@ class LocalAiBackendInfo {
   bool isConfigured;
 }
 
-enum ToolArgumentKind { string, integer, number, boolean }
-
-class ToolParameterSpec {
-  ToolParameterSpec({
-    required this.name,
-    required this.kind,
-    required this.optional,
-    this.description,
-  });
-
-  String name;
-  ToolArgumentKind kind;
-  bool optional;
-  String? description;
-}
-
 /// Per-call sampling overrides.
 ///
 /// A session fixes its sampling at creation, which is what flutter_gemma's
@@ -127,12 +111,21 @@ class ToolSpec {
   ToolSpec({
     required this.name,
     required this.description,
-    required this.parameters,
+    required this.parametersSchemaJson,
   });
 
   String name;
   String description;
-  List<ToolParameterSpec> parameters;
+
+  /// The tool's parameters as a JSON Schema object, in the same subset
+  /// `generateStructuredResponse` accepts. A declaration is carried whole —
+  /// nested objects, arrays and string enums included — so the host can
+  /// translate it with the one schema builder it already has, and the model
+  /// is constrained to the declaration rather than asked to respect it.
+  ///
+  /// `{"type":"object","properties":{},"required":[]}` is how a
+  /// zero-argument tool is spelled.
+  String parametersSchemaJson;
 }
 
 @ConfigurePigeon(

@@ -85,13 +85,6 @@ enum class LocalAiBackend {
   kUnsupported = 5
 };
 
-enum class ToolArgumentKind {
-  kString = 0,
-  kInteger = 1,
-  kNumber = 2,
-  kBoolean = 3
-};
-
 
 // What the *running* host can actually do. Every field is a runtime property
 // of this device + OS + build, never a compile-time assumption: the same
@@ -169,48 +162,6 @@ class LocalAiBackendInfo {
 };
 
 
-// Generated class from Pigeon that represents data sent in messages.
-class ToolParameterSpec {
- public:
-  // Constructs an object setting all non-nullable fields.
-  explicit ToolParameterSpec(
-    const std::string& name,
-    const ToolArgumentKind& kind,
-    bool optional);
-
-  // Constructs an object setting all fields.
-  explicit ToolParameterSpec(
-    const std::string& name,
-    const ToolArgumentKind& kind,
-    bool optional,
-    const std::string* description);
-
-  const std::string& name() const;
-  void set_name(std::string_view value_arg);
-
-  const ToolArgumentKind& kind() const;
-  void set_kind(const ToolArgumentKind& value_arg);
-
-  bool optional() const;
-  void set_optional(bool value_arg);
-
-  const std::string* description() const;
-  void set_description(const std::string_view* value_arg);
-  void set_description(std::string_view value_arg);
-
- private:
-  static ToolParameterSpec FromEncodableList(const flutter::EncodableList& list);
-  flutter::EncodableList ToEncodableList() const;
-  friend class LocalAiService;
-  friend class LocalAiToolRunner;
-  friend class PigeonInternalCodecSerializer;
-  std::string name_;
-  ToolArgumentKind kind_;
-  bool optional_;
-  std::optional<std::string> description_;
-};
-
-
 // Per-call sampling overrides.
 //
 // A session fixes its sampling at creation, which is what flutter_gemma's
@@ -269,7 +220,7 @@ class ToolSpec {
   explicit ToolSpec(
     const std::string& name,
     const std::string& description,
-    const flutter::EncodableList& parameters);
+    const std::string& parameters_schema_json);
 
   const std::string& name() const;
   void set_name(std::string_view value_arg);
@@ -277,8 +228,16 @@ class ToolSpec {
   const std::string& description() const;
   void set_description(std::string_view value_arg);
 
-  const flutter::EncodableList& parameters() const;
-  void set_parameters(const flutter::EncodableList& value_arg);
+  // The tool's parameters as a JSON Schema object, in the same subset
+  // `generateStructuredResponse` accepts. A declaration is carried whole —
+  // nested objects, arrays and string enums included — so the host can
+  // translate it with the one schema builder it already has, and the model
+  // is constrained to the declaration rather than asked to respect it.
+  //
+  // `{"type":"object","properties":{},"required":[]}` is how a
+  // zero-argument tool is spelled.
+  const std::string& parameters_schema_json() const;
+  void set_parameters_schema_json(std::string_view value_arg);
 
  private:
   static ToolSpec FromEncodableList(const flutter::EncodableList& list);
@@ -288,7 +247,7 @@ class ToolSpec {
   friend class PigeonInternalCodecSerializer;
   std::string name_;
   std::string description_;
-  flutter::EncodableList parameters_;
+  std::string parameters_schema_json_;
 };
 
 

@@ -160,13 +160,23 @@ supporting tools *and* schemas, which today means Apple Foundation Models.
 Hosts reporting `supportsToolCalling: false` throw when tools are supplied, and
 `getStructuredResponse` throws where `supportsStructuredOutput` is false.
 
-Native tools in this package describe primitive arguments only — string,
-integer, number, boolean. A tool that wants a nested object has to accept a
-JSON string and parse it itself. There is no prompt-woven fallback: a host
+A tool declares its parameters either as a flat list of scalars
+(`ToolParameter`) or, when that is not enough, as a JSON Schema object
+(`parameterSchema`) — the same subset `getStructuredResponse` accepts, so
+nested objects, arrays and string enums survive the declaration and constrain
+the model on Apple rather than being described to it in prose. Both forms
+travel the wire as one schema. There is no prompt-woven fallback: a host
 without native tool calling throws rather than emulating one, because a
 prompt-based function-call protocol is not equivalent to a constrained native
 call and proved unreliable enough on Gemini Nano that the model answered in
 prose instead of performing the call.
+
+A tool body may run for as long as it needs — the native host suspends the
+turn for the whole of `onCall` and sets no timeout, so a confirm-before-acting
+flow is a supported shape. `stopGeneration()` unwinds a suspended tool call
+instead of waiting for it. A body that throws does not fail the turn: the
+error becomes a `{"error": ...}` tool result the model can read and answer,
+which is what `LocalAiToolException` is for.
 
 `LocalAiUiGenerator`'s `genUiInstructions` and `parseModelOutput` are public
 statics, so a different on-device backend — a downloaded model, for example —

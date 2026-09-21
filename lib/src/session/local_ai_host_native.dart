@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/services.dart';
 
@@ -41,13 +42,6 @@ LocalAiBackendKind _backendFromWire(
   wire.LocalAiBackend.unsupported => LocalAiBackendKind.unsupported,
 };
 
-wire.ToolArgumentKind _kindFromType(ToolArgumentType type) => switch (type) {
-  ToolArgumentType.string => wire.ToolArgumentKind.string,
-  ToolArgumentType.integer => wire.ToolArgumentKind.integer,
-  ToolArgumentType.number => wire.ToolArgumentKind.number,
-  ToolArgumentType.boolean => wire.ToolArgumentKind.boolean,
-};
-
 wire.GenerationOverrides? _overridesToWire(
   LocalAiGenerationOverrides? overrides,
 ) => overrides == null || overrides.isEmpty
@@ -62,15 +56,11 @@ wire.GenerationOverrides? _overridesToWire(
 wire.ToolSpec _toolToWire(LocalAiTool tool) => wire.ToolSpec(
   name: tool.name,
   description: tool.description,
-  parameters: [
-    for (final parameter in tool.parameters)
-      wire.ToolParameterSpec(
-        name: parameter.name,
-        kind: _kindFromType(parameter.type),
-        optional: parameter.optional,
-        description: parameter.description,
-      ),
-  ],
+  // The whole declaration, as JSON Schema: the host builds the tool's
+  // parameter schema with the same builder it uses for structured output, so
+  // a nested object, a list or a string enum survives the trip instead of
+  // flattening to a bare scalar.
+  parametersSchemaJson: jsonEncode(tool.resolvedParameterSchema),
 );
 
 /// Native host: pigeon for calls, one EventChannel for streamed output.
