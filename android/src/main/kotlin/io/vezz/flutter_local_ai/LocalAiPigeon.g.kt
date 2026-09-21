@@ -129,19 +129,6 @@ enum class LocalAiBackend(val raw: Int) {
   }
 }
 
-enum class ToolArgumentKind(val raw: Int) {
-  STRING(0),
-  INTEGER(1),
-  NUMBER(2),
-  BOOLEAN(3);
-
-  companion object {
-    fun ofRaw(raw: Int): ToolArgumentKind? {
-      return values().firstOrNull { it.raw == raw }
-    }
-  }
-}
-
 /**
  * What the *running* host can actually do. Every field is a runtime property
  * of this device + OS + build, never a compile-time assumption: the same
@@ -216,43 +203,6 @@ data class LocalAiBackendInfo (
   override fun hashCode(): Int = toList().hashCode()
 }
 
-/** Generated class from Pigeon that represents data sent in messages. */
-data class ToolParameterSpec (
-  val name: String,
-  val kind: ToolArgumentKind,
-  val optional: Boolean,
-  val description: String? = null
-)
- {
-  companion object {
-    fun fromList(pigeonVar_list: List<Any?>): ToolParameterSpec {
-      val name = pigeonVar_list[0] as String
-      val kind = pigeonVar_list[1] as ToolArgumentKind
-      val optional = pigeonVar_list[2] as Boolean
-      val description = pigeonVar_list[3] as String?
-      return ToolParameterSpec(name, kind, optional, description)
-    }
-  }
-  fun toList(): List<Any?> {
-    return listOf(
-      name,
-      kind,
-      optional,
-      description,
-    )
-  }
-  override fun equals(other: Any?): Boolean {
-    if (other !is ToolParameterSpec) {
-      return false
-    }
-    if (this === other) {
-      return true
-    }
-    return LocalAiPigeonPigeonUtils.deepEquals(toList(), other.toList())  }
-
-  override fun hashCode(): Int = toList().hashCode()
-}
-
 /**
  * Per-call sampling overrides.
  *
@@ -305,22 +255,32 @@ data class GenerationOverrides (
 data class ToolSpec (
   val name: String,
   val description: String,
-  val parameters: List<ToolParameterSpec>
+  /**
+   * The tool's parameters as a JSON Schema object, in the same subset
+   * `generateStructuredResponse` accepts. A declaration is carried whole —
+   * nested objects, arrays and string enums included — so the host can
+   * translate it with the one schema builder it already has, and the model
+   * is constrained to the declaration rather than asked to respect it.
+   *
+   * `{"type":"object","properties":{},"required":[]}` is how a
+   * zero-argument tool is spelled.
+   */
+  val parametersSchemaJson: String
 )
  {
   companion object {
     fun fromList(pigeonVar_list: List<Any?>): ToolSpec {
       val name = pigeonVar_list[0] as String
       val description = pigeonVar_list[1] as String
-      val parameters = pigeonVar_list[2] as List<ToolParameterSpec>
-      return ToolSpec(name, description, parameters)
+      val parametersSchemaJson = pigeonVar_list[2] as String
+      return ToolSpec(name, description, parametersSchemaJson)
     }
   }
   fun toList(): List<Any?> {
     return listOf(
       name,
       description,
-      parameters,
+      parametersSchemaJson,
     )
   }
   override fun equals(other: Any?): Boolean {
@@ -348,26 +308,16 @@ private open class LocalAiPigeonPigeonCodec : StandardMessageCodec() {
         }
       }
       131.toByte() -> {
-        return (readValue(buffer) as Long?)?.let {
-          ToolArgumentKind.ofRaw(it.toInt())
-        }
-      }
-      132.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
           LocalAiBackendInfo.fromList(it)
         }
       }
-      133.toByte() -> {
-        return (readValue(buffer) as? List<Any?>)?.let {
-          ToolParameterSpec.fromList(it)
-        }
-      }
-      134.toByte() -> {
+      132.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
           GenerationOverrides.fromList(it)
         }
       }
-      135.toByte() -> {
+      133.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
           ToolSpec.fromList(it)
         }
@@ -385,24 +335,16 @@ private open class LocalAiPigeonPigeonCodec : StandardMessageCodec() {
         stream.write(130)
         writeValue(stream, value.raw)
       }
-      is ToolArgumentKind -> {
-        stream.write(131)
-        writeValue(stream, value.raw)
-      }
       is LocalAiBackendInfo -> {
-        stream.write(132)
-        writeValue(stream, value.toList())
-      }
-      is ToolParameterSpec -> {
-        stream.write(133)
+        stream.write(131)
         writeValue(stream, value.toList())
       }
       is GenerationOverrides -> {
-        stream.write(134)
+        stream.write(132)
         writeValue(stream, value.toList())
       }
       is ToolSpec -> {
-        stream.write(135)
+        stream.write(133)
         writeValue(stream, value.toList())
       }
       else -> super.writeValue(stream, value)

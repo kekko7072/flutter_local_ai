@@ -334,23 +334,21 @@ class _MyHomePageState extends State<MyHomePage> {
       LocalAiTool(
         name: 'quickMath',
         description: 'Performs a basic arithmetic operation on two numbers.',
-        parameters: const [
-          ToolParameter(
-            name: 'a',
-            type: ToolArgumentType.number,
-            description: 'First number',
-          ),
-          ToolParameter(
-            name: 'b',
-            type: ToolArgumentType.number,
-            description: 'Second number',
-          ),
-          ToolParameter(
-            name: 'operation',
-            type: ToolArgumentType.string,
-            description: 'One of add, subtract, multiply, divide',
-          ),
-        ],
+        // A JSON Schema declaration rather than a flat parameter list: the
+        // four operations are an enum, so on Apple the model is constrained
+        // to one of them instead of being asked in prose to pick one.
+        parameterSchema: const {
+          'type': 'object',
+          'properties': {
+            'a': {'type': 'number', 'description': 'First number'},
+            'b': {'type': 'number', 'description': 'Second number'},
+            'operation': {
+              'description': 'The arithmetic to perform',
+              'enum': ['add', 'subtract', 'multiply', 'divide'],
+            },
+          },
+          'required': ['a', 'b', 'operation'],
+        },
         onCall: (arguments) async {
           final a = (arguments['a'] as num?)?.toDouble() ?? 0;
           final b = (arguments['b'] as num?)?.toDouble() ?? 0;
@@ -365,11 +363,16 @@ class _MyHomePageState extends State<MyHomePage> {
               return a * b;
             case 'divide':
               if (b == 0) {
-                return 'Cannot divide by zero';
+                // A refusal the model can read and answer, rather than a
+                // failed turn: it will explain itself instead of stopping.
+                throw const LocalAiToolException('Cannot divide by zero.');
               }
               return a / b;
             default:
-              return 'Unsupported operation "$op". Try add, subtract, multiply, or divide.';
+              throw LocalAiToolException(
+                'Unsupported operation "$op". Try add, subtract, multiply, '
+                'or divide.',
+              );
           }
         },
       ),

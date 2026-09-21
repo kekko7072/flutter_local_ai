@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import '../models/tool.dart';
 import '../session/local_ai_host.dart';
+import '../session/local_ai_tool_registry.dart';
 
 /// One session the fake was asked to create, and everything sent to it.
 ///
@@ -16,7 +18,7 @@ class FakeLocalAiSession {
     this.topP,
     this.maxOutputTokens,
     this.systemInstruction,
-    this.toolNames = const [],
+    this.tools = const [],
   });
 
   final int id;
@@ -25,7 +27,20 @@ class FakeLocalAiSession {
   final double? topP;
   final int? maxOutputTokens;
   final String? systemInstruction;
-  final List<String> toolNames;
+
+  /// The tools this session was opened with, as the caller declared them.
+  final List<LocalAiTool> tools;
+
+  /// The names of [tools], for the common assertion.
+  List<String> get toolNames => [for (final tool in tools) tool.name];
+
+  /// The declaration each tool sent, keyed by tool name: the JSON Schema the
+  /// native host would build the model's parameter constraint from. Assert
+  /// against this to prove a nested object, a list or a string enum survived
+  /// the declaration.
+  Map<String, Map<String, dynamic>> get toolSchemas => {
+    for (final tool in tools) tool.name: tool.resolvedParameterSchema,
+  };
 
   /// Everything `addQueryChunk` appended, in order.
   final StringBuffer transcript = StringBuffer();
@@ -75,6 +90,16 @@ class FakeLocalAiSession {
 /// host.emitToken(1, 'partial');
 /// host.emitDone(1);
 /// await done;
+/// ```
+///
+/// So does a tool call: the fake plays the model asking for one, through the
+/// same registry the native host dispatches with, so a tool loop can be
+/// tested without a device.
+///
+/// ```dart
+/// final result = await host.invokeTool(1, 'weather', {'city': 'Rome'});
+/// expect(result, '{"temp":21}');
+/// expect(host.toolCalls.single.toolName, 'weather');
 /// ```
 class FakeLocalAiHost implements LocalAiHost {
   FakeLocalAiHost({
@@ -129,6 +154,13 @@ class FakeLocalAiHost implements LocalAiHost {
   /// Every session created, in order, open or closed.
   final List<FakeLocalAiSession> sessions = [];
 
+  /// Every tool call [invokeTool] played, in order.
+  final List<FakeToolCall> toolCalls = [];
+
+  /// Dispatch for [invokeTool]. The registry the native host uses, so the
+  /// fake's tool behaviour cannot drift from the real one.
+  final _tools = LocalAiToolRegistry();
+
   /// Ids of sessions that were closed, in the order they closed.
   final List<int> closedIds = [];
 
@@ -181,6 +213,31 @@ class FakeLocalAiHost implements LocalAiHost {
     ),
   );
 
+  /// Plays the model calling [toolName] on [sessionId] with [arguments], and
+  /// returns what the native host would hand back to the model: the tool's
+  /// result as JSON, `null` when it yielded nothing, or `{"error": ...}` when
+  /// the tool body threw.
+  ///
+  /// Dispatch, argument decoding and error encoding all go through the same
+  /// [LocalAiToolRegistry] the native host uses, so a tool loop tested here is
+  /// tested against the real rules: a tool is reachable only from the session
+  /// it was registered on, and throws [UnknownToolException] otherwise.
+  Future<String?> invokeTool(
+    int sessionId,
+    String toolName, [
+    Map<String, dynamic> arguments = const {},
+  ]) {
+    calls.add('invokeTool');
+    toolCalls.add(
+      FakeToolCall(
+        sessionId: sessionId,
+        toolName: toolName,
+        arguments: arguments,
+      ),
+    );
+    return _tools.invoke(sessionId, toolName, jsonEncode(arguments));
+  }
+
   /// Closes the event stream. Call from a tear-down.
   Future<void> dispose() => _events.close();
 
@@ -219,6 +276,8 @@ class FakeLocalAiHost implements LocalAiHost {
   @override
   Future<void> closeModel() async {
     calls.add('closeModel');
+    // Every session dies with the model, tools included — as natively.
+    _tools.clear();
     modelClosed = true;
   }
 
@@ -235,6 +294,15 @@ class FakeLocalAiHost implements LocalAiHost {
     calls.add('createSession');
     final error = createSessionError;
     if (error != null) throw error;
+    if (tools != null &&
+        tools.isNotEmpty &&
+        !capabilities.supportsToolCalling) {
+      throw LocalAiUnsupportedException(
+        'toolCalling',
+        'This fake backend was configured without tool calling.',
+      );
+    }
+    _tools.register(sessionId, tools);
     sessions.add(
       FakeLocalAiSession(
         id: sessionId,
@@ -243,7 +311,7 @@ class FakeLocalAiHost implements LocalAiHost {
         topP: topP,
         maxOutputTokens: maxOutputTokens,
         systemInstruction: systemInstruction,
-        toolNames: [for (final tool in tools ?? const []) tool.name],
+        tools: List.unmodifiable(tools ?? const <LocalAiTool>[]),
       ),
     );
   }
@@ -253,6 +321,7 @@ class FakeLocalAiHost implements LocalAiHost {
     calls.add('closeSession');
     // Tolerates an unknown id the way a real host does: closing twice, or
     // closing after the model went away, must not throw.
+    _tools.forget(sessionId);
     session(sessionId)?.closed = true;
     closedIds.add(sessionId);
   }
@@ -318,4 +387,20 @@ class FakeLocalAiHost implements LocalAiHost {
     lastOverrides = overrides;
     return _require(sessionId)..lastOverrides = overrides;
   }
+}
+
+/// One tool call [FakeLocalAiHost.invokeTool] played.
+class FakeToolCall {
+  FakeToolCall({
+    required this.sessionId,
+    required this.toolName,
+    required this.arguments,
+  });
+
+  final int sessionId;
+  final String toolName;
+  final Map<String, dynamic> arguments;
+
+  @override
+  String toString() => 'FakeToolCall($sessionId, $toolName, $arguments)';
 }

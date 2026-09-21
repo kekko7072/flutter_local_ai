@@ -56,9 +56,20 @@ class LocalAiToolRegistry {
   /// because a zero-argument tool is legitimate. The return value is JSON, or
   /// null when the tool yields nothing.
   ///
+  /// A tool body that throws does *not* fail the turn: the error is encoded
+  /// as a tool result of the shape `{"error": "..."}` and handed back to the
+  /// model, which can read it, answer it, or try something else. A tool that
+  /// refuses — a permission denied, a user declining a confirmation — is a
+  /// normal outcome of an agent loop, not an exception for the app to catch,
+  /// and there is nowhere above this point for one to be caught anyway: the
+  /// caller is a native callback. [LocalAiToolException] is the deliberate
+  /// spelling; anything else is encoded the same way rather than silently
+  /// aborting generation.
+  ///
   /// Throws [UnknownToolException] if [toolName] is not registered for
   /// [sessionId] — including when it is registered for a *different* session,
-  /// which must not be reachable from here.
+  /// which must not be reachable from here. That one is a wiring fault rather
+  /// than a tool outcome, so it stays an exception.
   Future<String?> invoke(
     int sessionId,
     String toolName,
@@ -66,8 +77,43 @@ class LocalAiToolRegistry {
   ) async {
     final tool = _bySession[sessionId]?[toolName];
     if (tool == null) throw UnknownToolException(sessionId, toolName);
-    final result = await tool.onCall(_decodeArguments(argumentsJson));
-    return result == null ? null : jsonEncode(result);
+    final Object? result;
+    try {
+      result = await tool.onCall(_decodeArguments(argumentsJson));
+    } on LocalAiToolException catch (error) {
+      return _encodeError(error.message, details: error.details);
+    } catch (error) {
+      return _encodeError('$error');
+    }
+    if (result == null) return null;
+    try {
+      return jsonEncode(result);
+    } catch (error) {
+      // The tool ran, but answered with something no model can be shown.
+      // Telling it so beats a JSON error unwinding through native code.
+      return _encodeError(
+        'Tool "$toolName" returned a value that is not JSON-serializable: '
+        '$error',
+      );
+    }
+  }
+
+  /// A tool failure, in the shape the model is handed. One key, so a model
+  /// that reads the result at all reads the reason.
+  static String _encodeError(String message, {Object? details}) {
+    Object? encodableDetails;
+    try {
+      jsonEncode(details);
+      encodableDetails = details;
+    } catch (_) {
+      // The message is the part that must always reach the model; details
+      // that cannot be encoded are dropped rather than taking it down.
+      encodableDetails = null;
+    }
+    return jsonEncode({
+      'error': message,
+      if (encodableDetails != null) 'details': encodableDetails,
+    });
   }
 
   static Map<String, dynamic> _decodeArguments(String argumentsJson) {

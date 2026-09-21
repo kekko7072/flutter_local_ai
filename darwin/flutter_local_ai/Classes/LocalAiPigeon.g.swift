@@ -160,13 +160,6 @@ enum LocalAiBackend: Int {
   case unsupported = 5
 }
 
-enum ToolArgumentKind: Int {
-  case string = 0
-  case integer = 1
-  case number = 2
-  case boolean = 3
-}
-
 /// What the *running* host can actually do. Every field is a runtime property
 /// of this device + OS + build, never a compile-time assumption: the same
 /// binary reports `supportsVision: false` on iOS 26 and `true` on iOS 27.
@@ -239,43 +232,6 @@ struct LocalAiBackendInfo: Hashable {
   }
 }
 
-/// Generated class from Pigeon that represents data sent in messages.
-struct ToolParameterSpec: Hashable {
-  var name: String
-  var kind: ToolArgumentKind
-  var optional: Bool
-  var description: String? = nil
-
-
-  // swift-format-ignore: AlwaysUseLowerCamelCase
-  static func fromList(_ pigeonVar_list: [Any?]) -> ToolParameterSpec? {
-    let name = pigeonVar_list[0] as! String
-    let kind = pigeonVar_list[1] as! ToolArgumentKind
-    let optional = pigeonVar_list[2] as! Bool
-    let description: String? = nilOrValue(pigeonVar_list[3])
-
-    return ToolParameterSpec(
-      name: name,
-      kind: kind,
-      optional: optional,
-      description: description
-    )
-  }
-  func toList() -> [Any?] {
-    return [
-      name,
-      kind,
-      optional,
-      description,
-    ]
-  }
-  static func == (lhs: ToolParameterSpec, rhs: ToolParameterSpec) -> Bool {
-    return deepEqualsLocalAiPigeon(lhs.toList(), rhs.toList())  }
-  func hash(into hasher: inout Hasher) {
-    deepHashLocalAiPigeon(value: toList(), hasher: &hasher)
-  }
-}
-
 /// Per-call sampling overrides.
 ///
 /// A session fixes its sampling at creation, which is what flutter_gemma's
@@ -326,26 +282,34 @@ struct GenerationOverrides: Hashable {
 struct ToolSpec: Hashable {
   var name: String
   var description: String
-  var parameters: [ToolParameterSpec]
+  /// The tool's parameters as a JSON Schema object, in the same subset
+  /// `generateStructuredResponse` accepts. A declaration is carried whole —
+  /// nested objects, arrays and string enums included — so the host can
+  /// translate it with the one schema builder it already has, and the model
+  /// is constrained to the declaration rather than asked to respect it.
+  ///
+  /// `{"type":"object","properties":{},"required":[]}` is how a
+  /// zero-argument tool is spelled.
+  var parametersSchemaJson: String
 
 
   // swift-format-ignore: AlwaysUseLowerCamelCase
   static func fromList(_ pigeonVar_list: [Any?]) -> ToolSpec? {
     let name = pigeonVar_list[0] as! String
     let description = pigeonVar_list[1] as! String
-    let parameters = pigeonVar_list[2] as! [ToolParameterSpec]
+    let parametersSchemaJson = pigeonVar_list[2] as! String
 
     return ToolSpec(
       name: name,
       description: description,
-      parameters: parameters
+      parametersSchemaJson: parametersSchemaJson
     )
   }
   func toList() -> [Any?] {
     return [
       name,
       description,
-      parameters,
+      parametersSchemaJson,
     ]
   }
   static func == (lhs: ToolSpec, rhs: ToolSpec) -> Bool {
@@ -371,18 +335,10 @@ private class LocalAiPigeonPigeonCodecReader: FlutterStandardReader {
       }
       return nil
     case 131:
-      let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
-      if let enumResultAsInt = enumResultAsInt {
-        return ToolArgumentKind(rawValue: enumResultAsInt)
-      }
-      return nil
-    case 132:
       return LocalAiBackendInfo.fromList(self.readValue() as! [Any?])
-    case 133:
-      return ToolParameterSpec.fromList(self.readValue() as! [Any?])
-    case 134:
+    case 132:
       return GenerationOverrides.fromList(self.readValue() as! [Any?])
-    case 135:
+    case 133:
       return ToolSpec.fromList(self.readValue() as! [Any?])
     default:
       return super.readValue(ofType: type)
@@ -398,20 +354,14 @@ private class LocalAiPigeonPigeonCodecWriter: FlutterStandardWriter {
     } else if let value = value as? LocalAiBackend {
       super.writeByte(130)
       super.writeValue(value.rawValue)
-    } else if let value = value as? ToolArgumentKind {
-      super.writeByte(131)
-      super.writeValue(value.rawValue)
     } else if let value = value as? LocalAiBackendInfo {
-      super.writeByte(132)
-      super.writeValue(value.toList())
-    } else if let value = value as? ToolParameterSpec {
-      super.writeByte(133)
+      super.writeByte(131)
       super.writeValue(value.toList())
     } else if let value = value as? GenerationOverrides {
-      super.writeByte(134)
+      super.writeByte(132)
       super.writeValue(value.toList())
     } else if let value = value as? ToolSpec {
-      super.writeByte(135)
+      super.writeByte(133)
       super.writeValue(value.toList())
     } else {
       super.writeValue(value)
