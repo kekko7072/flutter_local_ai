@@ -31,7 +31,7 @@ version alone.
 | Image input | OS 27 + SDK/compiler gate; unverified branch | Multiple image parts | Not exposed | Not exposed |
 | Native Dart tools | Supported | Not bridged | Not exposed | Not exposed |
 | Dynamic Dart JSON schema | Supported subset | No runtime API to bridge | `GenerateStructuredJsonResponseAsync`, unverified on device | `responseConstraint` |
-| Exact text token count | OS / SDK 26.4+ | SDK tokenizer | Estimate | `measureInputUsage` |
+| Exact text token count | OS / SDK 26.4+ | SDK tokenizer | Estimate | `measureContextUsage`, `measureInputUsage` on older builds; needs an open session |
 | Explicit thinking control | Not exposed | Not bridged | Not exposed | Not exposed |
 
 Apple's latest updates also introduce DynamicProfile, ToolCallingMode, new
