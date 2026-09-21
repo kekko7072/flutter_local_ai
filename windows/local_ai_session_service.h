@@ -24,11 +24,21 @@ namespace flutter_local_ai {
 // Session half of the flutter_local_ai host on Windows, over Windows AI
 // Foundry (Phi Silica).
 //
-// Windows AI is compile-gated behind WINDOWS_AI_AVAILABLE: the WinRT headers
-// have to be generated or installed from the Windows AI SDK. When the gate is
-// off, every call that would need the model fails with a message saying so,
-// and GetBackendInfo reports `windowsAiFoundryUnconfigured` — Dart callers see
-// an honest "this build cannot run it" rather than a silent no-op.
+// Windows AI is compile-gated behind WINDOWS_AI_AVAILABLE. The build resolves
+// the Windows App SDK's C++/WinRT projection itself (see
+// cmake/windows_ai.cmake); when it cannot, the gate is off, every call that
+// would need the model fails with a message saying so, and GetBackendInfo
+// reports `windowsAiFoundryUnconfigured` — Dart callers see an honest "this
+// build cannot run it" rather than a silent no-op.
+//
+// With the gate on, availability is still the OS's answer: the App Runtime
+// has to be deployed and the app packaged with identity and the
+// `systemAIModels` capability, or the very first WinRT activation fails.
+// That failure is kept so AvailabilityReason can name it.
+//
+// Text generation uses LanguageModel.GenerateResponseAsync; schema-constrained
+// output uses GenerateStructuredJsonResponseAsync (Windows App SDK 2.0+),
+// which is why the projection floor is 2.0.
 //
 // The Flutter Windows runner initializes a COM STA on the platform thread.
 // WinRT coroutines resume there; inference never blocks the message loop.
@@ -150,9 +160,11 @@ class LocalAiSessionService : public flutter_local_ai_pigeon::LocalAiService {
   SessionState* Find(int64_t session_id);
 
 #if WINDOWS_AI_AVAILABLE
+  // One coroutine for both text and schema-constrained turns: `schema_json`
+  // empty means plain GenerateResponseAsync.
   winrt::fire_and_forget Generate(
-      int64_t session_id, std::string prompt, double temperature,
-      int64_t top_k, std::optional<double> top_p,
+      int64_t session_id, std::string prompt, std::string schema_json,
+      double temperature, int64_t top_k, std::optional<double> top_p,
       std::shared_ptr<RunState> run,
       std::function<void(flutter_local_ai_pigeon::ErrorOr<std::string>)> result);
   winrt::fire_and_forget Prepare(
@@ -160,11 +172,15 @@ class LocalAiSessionService : public flutter_local_ai_pigeon::LocalAiService {
 #endif
   void StartGeneration(
       int64_t session_id,
+      const std::string& schema_json,
       const flutter_local_ai_pigeon::GenerationOverrides* overrides,
       std::function<void(flutter_local_ai_pigeon::ErrorOr<std::string>)> result);
   static void Cancel(const std::shared_ptr<RunState>& run);
   std::shared_ptr<int> lifetime_ = std::make_shared<int>(0);
   bool preparing_ = false;
+  // Why the last CheckAvailability probe threw, if it did — e.g. "Class not
+  // registered" when the Windows App Runtime is missing. Empty otherwise.
+  std::string last_probe_error_;
 
   void PostEvent(const flutter::EncodableMap& payload);
   void PostToken(int64_t session_id, const std::string& text);

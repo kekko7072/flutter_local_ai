@@ -15,18 +15,28 @@ add_library(${PLUGIN_NAME} SHARED
 # Apply a standard Windows set of build settings
 # C++20 is required for coroutine support (co_await)
 target_compile_features(${PLUGIN_NAME} PUBLIC cxx_std_20)
+# <windows.h> would otherwise define min/max macros over the std:: ones.
+target_compile_definitions(${PLUGIN_NAME} PRIVATE NOMINMAX)
 
-# The host application owns Windows App SDK deployment/bootstrap and MSIX
-# capabilities. Enabling this requires the 2.0+ C++/WinRT projections.
-option(FLUTTER_LOCAL_AI_WINDOWS_AI "Enable Windows App SDK language model" OFF)
-set(FLUTTER_LOCAL_AI_WINRT_INCLUDE_DIR "" CACHE PATH
-  "Directory containing the generated winrt/Microsoft.Windows.AI.Text.h")
-if(FLUTTER_LOCAL_AI_WINDOWS_AI)
-  if(NOT EXISTS "${FLUTTER_LOCAL_AI_WINRT_INCLUDE_DIR}/winrt/Microsoft.Windows.AI.Text.h")
-    message(FATAL_ERROR "Set FLUTTER_LOCAL_AI_WINRT_INCLUDE_DIR to the Windows App SDK 2.0+ projection directory. See doc/platform-support.md.")
-  endif()
-  target_include_directories(${PLUGIN_NAME} PRIVATE "${FLUTTER_LOCAL_AI_WINRT_INCLUDE_DIR}")
+# Windows AI Foundry (Phi Silica) is reached through the Windows App SDK's
+# C++/WinRT projection. cmake/windows_ai.cmake resolves that projection — an
+# explicit directory, the NuGet cache, or a download plus cppwinrt.exe — and
+# reports the outcome in FLUTTER_LOCAL_AI_WINDOWS_AI_ENABLED. Under the
+# default AUTO mode a projection that cannot be resolved degrades to the
+# unconfigured build below, which reports windowsAiFoundryUnconfigured at
+# runtime instead of failing to compile. Deploying the Windows App Runtime and
+# giving the app package identity remain the host application's job.
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/windows_ai.cmake")
+if(FLUTTER_LOCAL_AI_WINDOWS_AI_ENABLED)
+  # BEFORE: the generated winrt/base.h must shadow the Windows SDK's copy, or
+  # the two C++/WinRT versions disagree and the projection refuses to compile.
+  target_include_directories(${PLUGIN_NAME} BEFORE PRIVATE
+    "${FLUTTER_LOCAL_AI_WINDOWS_AI_INCLUDE_DIR}")
   target_compile_definitions(${PLUGIN_NAME} PRIVATE WINDOWS_AI_AVAILABLE=1)
+  # C++/WinRT needs exceptions (conformance mode is already implied by
+  # /std:c++20), and the projection headers push a single translation unit
+  # past the default COFF section limit.
+  target_compile_options(${PLUGIN_NAME} PRIVATE /EHsc /bigobj)
   target_link_libraries(${PLUGIN_NAME} PRIVATE windowsapp runtimeobject)
 else()
   target_compile_definitions(${PLUGIN_NAME} PRIVATE WINDOWS_AI_AVAILABLE=0)

@@ -4,6 +4,7 @@
 #include <flutter/standard_method_codec.h>
 #include <windows.h>
 
+#include <cstdio>
 #include <utility>
 
 #ifndef WINDOWS_AI_AVAILABLE
@@ -43,9 +44,47 @@ FlutterError SessionMissing(int64_t session_id) {
 FlutterError NotConfigured() {
   return FlutterError(
       "WINDOWS_AI_NOT_CONFIGURED",
-      "This build has no Windows AI SDK headers, so no inference can run. "
-      "Generate the WinRT headers with cppwinrt.exe (or install the Windows "
-      "AI SDK NuGet package) and rebuild with WINDOWS_AI_AVAILABLE=1.");
+      "This build has no Windows App SDK projection, so no inference can run. "
+      "The plugin's CMake resolves it on its own (NuGet cache or a download "
+      "of Microsoft.WindowsAppSDK.AI); look for 'flutter_local_ai:' in the "
+      "build output for why that did not happen, or set "
+      "FLUTTER_LOCAL_AI_WINRT_INCLUDE_DIR. See doc/platform-support.md.");
+}
+#else
+// A one-line description of a failed WinRT call for error messages.
+std::string Describe(const winrt::hresult_error& e) {
+  char code[16];
+  std::snprintf(code, sizeof code, "0x%08X",
+                static_cast<unsigned>(e.code().value));
+  return winrt::to_string(e.message()) + " (" + code + ")";
+}
+
+// Statuses shared by LanguageModelResponseStatus and
+// GenerateStructuredJsonResponseStatus; the two enums agree on these values.
+std::optional<FlutterError> ErrorForStatus(int status, bool structured) {
+  using winrt::Microsoft::Windows::AI::Text::LanguageModelResponseStatus;
+  switch (static_cast<LanguageModelResponseStatus>(status)) {
+    case LanguageModelResponseStatus::Complete:
+      return std::nullopt;
+    case LanguageModelResponseStatus::BlockedByPolicy:
+      return FlutterError("GENERATION_BLOCKED",
+          "Generative AI is blocked by system or user policy on this device.");
+    case LanguageModelResponseStatus::PromptLargerThanContext:
+      return FlutterError("PROMPT_TOO_LONG",
+          "The conversation no longer fits the Windows AI context window. "
+          "Close the session and start a new one.");
+    case LanguageModelResponseStatus::PromptBlockedByContentModeration:
+      return FlutterError("GENERATION_BLOCKED",
+          "The prompt was blocked by Windows content moderation.");
+    case LanguageModelResponseStatus::ResponseBlockedByContentModeration:
+      return FlutterError("GENERATION_BLOCKED",
+          "The response was blocked by Windows content moderation.");
+    default:
+      return FlutterError("GENERATION_ERROR",
+          std::string("Windows AI did not complete the ") +
+              (structured ? "structured " : "") + "response (status " +
+              std::to_string(status) + ").");
+  }
 }
 #endif
 
@@ -153,8 +192,15 @@ void LocalAiSessionService::CheckAvailability(
         result(AvailabilityStatus::kUnavailableDeviceUnsupported); break;
       default: result(AvailabilityStatus::kUnavailableOther); break;
     }
+    last_probe_error_.clear();
+  } catch (const winrt::hresult_error& e) {
+    // The probe's contract is to resolve, never throw. The usual cause here
+    // is "Class not registered": the app has no Windows App Runtime to
+    // activate LanguageModel from, or no package identity to do it with.
+    last_probe_error_ = Describe(e);
+    result(AvailabilityStatus::kUnavailableOther);
   } catch (...) {
-    // The probe's contract is to resolve, never throw.
+    last_probe_error_ = "unknown failure";
     result(AvailabilityStatus::kUnavailableOther);
   }
 #else
@@ -165,7 +211,8 @@ void LocalAiSessionService::CheckAvailability(
 void LocalAiSessionService::AvailabilityReason(
     std::function<void(ErrorOr<std::string> reply)> result) {
 #if WINDOWS_AI_AVAILABLE
-  CheckAvailability([result](ErrorOr<AvailabilityStatus> status) {
+  // CheckAvailability answers synchronously, so `this` outlives the lambda.
+  CheckAvailability([this, result](ErrorOr<AvailabilityStatus> status) {
     if (status.has_error()) { result(std::string("Windows AI readiness check failed.")); return; }
     switch (status.value()) {
       case AvailabilityStatus::kAvailable: result(std::string("Windows AI is ready.")); break;
@@ -176,14 +223,25 @@ void LocalAiSessionService::AvailabilityReason(
         result(std::string("The Windows AI model is disabled by the user.")); break;
       case AvailabilityStatus::kUnavailableOsTooOld:
         result(std::string("The Windows AI model requires an OS update.")); break;
+      case AvailabilityStatus::kUnavailableDeviceUnsupported:
+        result(std::string("This device cannot run the Windows AI model: it needs a Copilot+ PC (NPU) or a supported GPU, and Windows 11 25H2 or later.")); break;
       default:
-        result(std::string("Check supported hardware, Windows App SDK runtime, and the systemAIModels package capability.")); break;
+        if (last_probe_error_.empty()) {
+          result(std::string("Windows AI reported an unclassified state. Check supported hardware, the Windows App Runtime, and the systemAIModels package capability."));
+        } else {
+          result("Windows AI could not be reached: " + last_probe_error_ +
+                 ". The app must be packaged with identity, declare the "
+                 "systemAIModels capability and depend on the Windows App "
+                 "Runtime that matches the SDK it was built against.");
+        }
+        break;
     }
   });
 #else
   result(std::string(
-      "This build has no Windows AI SDK headers, so the OS model cannot be "
-      "reached. See the README for generating the WinRT headers."));
+      "This build has no Windows App SDK projection, so the OS model cannot "
+      "be reached. The build output explains why the plugin could not "
+      "resolve one; see doc/platform-support.md."));
 #endif
 }
 
@@ -193,8 +251,8 @@ void LocalAiSessionService::GetBackendInfo(
   LocalAiBackendInfo info(
       LocalAiBackend::kWindowsAiFoundry, "windows", "Windows AI Foundry",
       /*supports_tool_calling=*/false,
-      // Windows AI generation is text-out; it cannot constrain to a schema.
-      /*supports_structured_output=*/false,
+      // LanguageModel.GenerateStructuredJsonResponseAsync, App SDK 2.0+.
+      /*supports_structured_output=*/true,
       /*supports_vision=*/false,
       /*supports_token_count=*/false,
       /*supports_model_download=*/true,
@@ -345,13 +403,15 @@ winrt::fire_and_forget LocalAiSessionService::Prepare(
 }
 
 winrt::fire_and_forget LocalAiSessionService::Generate(
-    int64_t session_id, std::string prompt, double temperature,
-    int64_t top_k, std::optional<double> top_p, std::shared_ptr<RunState> run,
+    int64_t session_id, std::string prompt, std::string schema_json,
+    double temperature, int64_t top_k, std::optional<double> top_p,
+    std::shared_ptr<RunState> run,
     std::function<void(ErrorOr<std::string>)> result) {
   std::weak_ptr<int> lifetime = lifetime_;
   std::string text;
   std::optional<FlutterError> error;
   winrt::Microsoft::Windows::AI::Text::LanguageModel model{nullptr};
+  const bool structured = !schema_json.empty();
   try {
     using namespace winrt::Microsoft::Windows::AI::Text;
     auto creating = LanguageModel::CreateAsync();
@@ -362,20 +422,46 @@ winrt::fire_and_forget LocalAiSessionService::Generate(
     options.Temperature(static_cast<float>(temperature));
     options.TopK(static_cast<uint32_t>(top_k));
     if (top_p) options.TopP(static_cast<float>(*top_p));
-    auto generating = model.GenerateResponseAsync(winrt::to_hstring(prompt), options);
-    run->operation = generating.as<winrt::Windows::Foundation::IAsyncInfo>();
-    const auto response = co_await generating;
-    if (run->cancelled) throw winrt::hresult_canceled();
-    if (response.Status() != LanguageModelResponseStatus::Complete) {
-      error = FlutterError("GENERATION_ERROR", "Windows AI did not complete the response (status " +
-          std::to_string(static_cast<int>(response.Status())) + ").");
+    if (structured) {
+      auto generating = model.GenerateStructuredJsonResponseAsync(
+          winrt::to_hstring(prompt), winrt::to_hstring(schema_json), options);
+      run->operation = generating.as<winrt::Windows::Foundation::IAsyncInfo>();
+      const auto response = co_await generating;
+      if (run->cancelled) throw winrt::hresult_canceled();
+      const auto status = response.Status();
+      if (status == GenerateStructuredJsonResponseStatus::CompleteWithInvalidStructure) {
+        // The model finished but strayed from the schema. The text travels in
+        // `details` so a caller that wants to salvage it still can.
+        error = FlutterError(
+            "STRUCTURED_OUTPUT_INVALID",
+            "Windows AI produced output that does not conform to the schema.",
+            EncodableValue(winrt::to_string(response.Text())));
+      } else {
+        error = ErrorForStatus(static_cast<int>(status), /*structured=*/true);
+        if (!error) text = winrt::to_string(response.Text());
+      }
     } else {
-      text = winrt::to_string(response.Text());
+      auto generating = model.GenerateResponseAsync(winrt::to_hstring(prompt), options);
+      run->operation = generating.as<winrt::Windows::Foundation::IAsyncInfo>();
+      const auto response = co_await generating;
+      if (run->cancelled) throw winrt::hresult_canceled();
+      error = ErrorForStatus(static_cast<int>(response.Status()), /*structured=*/false);
+      if (!error) text = winrt::to_string(response.Text());
     }
   } catch (const winrt::hresult_canceled&) {
     error = FlutterError("CANCELLED", "Generation was cancelled.");
+  } catch (const winrt::hresult_no_interface&) {
+    // The projection knows the method but the installed Windows App Runtime
+    // predates it: a 1.x runtime under a 2.x build.
+    error = FlutterError(
+        structured ? "STRUCTURED_OUTPUT_UNSUPPORTED" : "GENERATION_ERROR",
+        "The installed Windows App Runtime is older than the SDK this app was "
+        "built against; it lacks " +
+            std::string(structured ? "GenerateStructuredJsonResponseAsync"
+                                   : "the LanguageModel interface") +
+            ". Deploy the matching runtime.");
   } catch (const winrt::hresult_error& e) {
-    error = FlutterError("GENERATION_ERROR", winrt::to_string(e.message()));
+    error = FlutterError("GENERATION_ERROR", Describe(e));
   } catch (...) {
     error = FlutterError("GENERATION_ERROR", "Windows AI generation failed.");
   }
@@ -393,6 +479,7 @@ winrt::fire_and_forget LocalAiSessionService::Generate(
 
 void LocalAiSessionService::StartGeneration(
     int64_t session_id,
+    const std::string& schema_json,
     const flutter_local_ai_pigeon::GenerationOverrides* overrides,
     std::function<void(ErrorOr<std::string>)> result) {
   auto* state = Find(session_id);
@@ -405,8 +492,9 @@ void LocalAiSessionService::StartGeneration(
   const auto top_k = overrides && overrides->top_k() ? *overrides->top_k() : state->top_k;
   const auto top_p = overrides && overrides->top_p() ? std::optional<double>(*overrides->top_p()) : state->top_p;
   // The current Windows LanguageModelOptions has no max-output-token field.
-  Generate(session_id, state->transcript, temperature, top_k, top_p, run, std::move(result));
+  Generate(session_id, state->transcript, schema_json, temperature, top_k, top_p, run, std::move(result));
 #else
+  (void)schema_json;
   (void)overrides;
   result(NotConfigured());
 #endif
@@ -416,7 +504,7 @@ void LocalAiSessionService::GenerateResponse(
     int64_t session_id,
     const flutter_local_ai_pigeon::GenerationOverrides* overrides,
     std::function<void(ErrorOr<std::string>)> result) {
-  StartGeneration(session_id, overrides, std::move(result));
+  StartGeneration(session_id, /*schema_json=*/"", overrides, std::move(result));
 }
 
 void LocalAiSessionService::GenerateResponseAsync(
@@ -425,7 +513,7 @@ void LocalAiSessionService::GenerateResponseAsync(
     std::function<void(std::optional<FlutterError>)> result) {
   if (!Find(session_id)) { result(SessionMissing(session_id)); return; }
   result(std::nullopt);
-  StartGeneration(session_id, overrides, [this, session_id](ErrorOr<std::string> response) {
+  StartGeneration(session_id, /*schema_json=*/"", overrides, [this, session_id](ErrorOr<std::string> response) {
     if (response.has_error()) {
       if (response.error().code() != "CANCELLED") PostError(session_id, response.error().message());
       return;
@@ -440,11 +528,15 @@ void LocalAiSessionService::GenerateStructuredResponse(
     const std::string& schema_json,
     const flutter_local_ai_pigeon::GenerationOverrides* overrides,
     std::function<void(ErrorOr<std::string> reply)> result) {
-  result(ErrorOr<std::string>(FlutterError(
-      "STRUCTURED_OUTPUT_UNSUPPORTED",
-      "Schema-constrained output is not available on Windows AI Foundry, "
-      "which is text-out only. Check "
-      "LocalAi.capabilities().supportsStructuredOutput first.")));
+  if (schema_json.empty()) {
+    result(ErrorOr<std::string>(FlutterError(
+        "INVALID_SCHEMA", "A structured response needs a non-empty schema.")));
+    return;
+  }
+  // Windows constrains decoding to the schema natively; the transcript is
+  // replayed exactly as for a text turn and the JSON is appended as the
+  // model's reply, so the conversation continues past it.
+  StartGeneration(session_id, schema_json, overrides, std::move(result));
 }
 
 void LocalAiSessionService::StopGeneration(

@@ -1,3 +1,54 @@
+## 0.1.1
+
+Windows builds itself, and gains native structured output. Closes
+[#17](https://github.com/kekko7072/flutter_local_ai/issues/17).
+
+### Windows
+
+* **Zero-config build.** `flutter build windows` now resolves the Windows
+  App SDK's C++/WinRT projection on its own: `Microsoft.WindowsAppSDK.AI`
+  2.5.5 and `Microsoft.Windows.CppWinRT` 2.0.250303.1 from the NuGet cache,
+  or downloaded from nuget.org into the build tree, then projected with
+  `cppwinrt.exe` once per build tree. No CMake edits, no NuGet in Visual
+  Studio. When that cannot happen (offline, no cache) the build warns and
+  falls back to the unconfigured plugin exactly as before, so nothing that
+  built yesterday stops building. `FLUTTER_LOCAL_AI_WINDOWS_AI=ON|OFF`,
+  `FLUTTER_LOCAL_AI_NUGET_DOWNLOAD=OFF` and the pre-existing
+  `FLUTTER_LOCAL_AI_WINRT_INCLUDE_DIR` steer it, as environment variables or
+  cache entries. See `doc/platform-support.md`.
+* **Structured output**, natively, through
+  `LanguageModel.GenerateStructuredJsonResponseAsync` (App SDK 2.0+).
+  `supportsStructuredOutput` is now `true` on a configured Windows build. A
+  response that completes but strays from the schema throws
+  `STRUCTURED_OUTPUT_INVALID`, with the model's text in the error details.
+* **Diagnosable availability.** `LocalAi.availabilityReason()` reports the
+  actual WinRT activation failure ("Class not registered (0x80040154)") and
+  what it means — no Windows App Runtime, or no package identity — instead
+  of a generic hint. Generation statuses map to `GENERATION_BLOCKED` and
+  `PROMPT_TOO_LONG` rather than a bare status number; an older runtime under
+  a newer build surfaces as such instead of as a generic failure.
+* **CI compiles the arm.** A `windows-latest` job builds the example twice,
+  with the projection resolved and with it forced off. Previously nothing
+  compiled the Windows C++ at all. It is still not a device pass: the
+  runtime needs a Copilot+ PC or supported GPU, Windows 11 25H2+, and an
+  MSIX-packaged app with the `systemAIModels` capability, none of which a
+  plugin can supply.
+
+### Documentation
+
+* A **known limitations and fallbacks** section in the README spells out
+  what each ❌ in the platform table is blocked on: Foundation Models exist
+  only from OS 26 (older OSes get `unavailableOsTooOld`, not a crash);
+  ML Kit's structured output is compile-time KSP with no runtime schema to
+  bridge and has no function calling for Gemini Nano; Windows AI has no
+  tool API; bring-your-own models belong to flutter_gemma and its
+  `flutter_gemma_builtin_ai` bridge, not this package.
+* The Windows setup section describes the Flutter-side flow — env vars,
+  `msix` packaging with `systemAIModels` — and Microsoft's runtime
+  requirements, instead of a generic CMake/NuGet recipe.
+* The example's "Windows AI setup required" dialog no longer describes steps
+  that stopped existing in 0.1.0.
+
 ## 0.1.0
 
 A rewrite onto one architecture, exposing a standalone OS-model layer that

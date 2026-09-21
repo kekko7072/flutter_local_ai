@@ -26,29 +26,35 @@ Text generation (blocking or streamed), structured JSON outputs, tool calling, a
 
 - **iOS**: Uses Apple's built-in FoundationModels framework (iOS 26.0+) - system-managed preparation may be required
 - **Android**: Uses Google's ML Kit GenAI (Gemini Nano) - leverages the native on-device model
-- **Windows**: Uses Windows AI APIs (Windows AI Foundry) - a supported Windows device and configured Windows App SDK
+- **Windows**: Uses Windows AI APIs (Windows AI Foundry) - the build resolves the Windows App SDK itself; running needs a Copilot+ PC or supported GPU and a packaged app
 - **No bundled checkpoints**: The OS may download model assets during preparation
 - **Native Performance**: Direct access to OS-optimized AI capabilities
 - **Smaller App Size**: The OS manages model weights; the app still includes the plugin and SDK dependencies
-- **Structured Outputs**: On Apple platforms, constrain generation to a JSON Schema and read the decoded object with `AiResponse.json`
+- **Structured Outputs**: On Apple platforms, Windows and Chrome, constrain generation to a JSON Schema and read the decoded object with `AiResponse.json`
 - **Generative UI**: Turn a natural-language goal into a renderable [`genui`](https://pub.dev/packages/genui) module spec, on-device, identically on Apple FoundationModels and Android Gemini Nano (Pixel, Samsung, Xiaomi, OnePlus and [more](https://developers.google.com/ml-kit/genai))
 
 ## Platform Support
 
-| Feature            | iOS / macOS (26+) | Android (API 26+) | Windows (SDK configured) | Web (Chrome) |
+| Feature            | iOS / macOS (26+) | Android (API 26+) | Windows (11 25H2+, Copilot+ / supported GPU) | Web (Chrome) |
 |--------------------|-------------------|-------------------|--------------------|--------------|
-| Text generation    | ✅                | ✅                 | ⚠️ Testing         | ✅           |
+| Text generation    | ✅                | ✅                 | ⚠️ unverified on device | ✅      |
 | Streaming          | ✅                | ✅                 | ⚠️ single chunk    | ✅           |
-| Structured outputs | ✅                | ❌                 | ❌                 | ✅           |
+| Structured outputs | ✅                | ❌ ML Kit is compile-time only | ⚠️ native, unverified | ✅ |
 | Image input        | ⚠️ OS 27 SDK + runtime    | ✅                 | ❌                 | ❌           |
 | Generative UI (genUI) | ✅             | ✅                 | 🚧 Planned         | 🚧 Planned   |
 | Summarization*     | 🚧 Planned        | 🚧 Planned         | 🚧 Planned         | 🚧 Planned   |
 | Image generation   | 🚧 Planned        | ❌                 | 🚧 Planned         | ❌           |
-| Tool calls         | ✅ native         | ❌                 | 🚧 Planned         | ❌           |
+| Tool calls         | ✅ native         | ❌ no ML Kit API   | ❌ no Windows AI API | ❌         |
 | Exact token counts | ✅ OS 26.4+       | ✅                 | ❌ estimate        | ✅           |
 | Concurrent sessions | ✅               | ✅                 | ✅                 | ✅           |
 
 *Summarization is achieved through text-generation prompts and shares the same API surface.
+
+"Unverified" means the code compiles against the vendor SDK but has not yet
+run on a device that meets the vendor's hardware requirements; see
+[known limitations and fallbacks](#known-limitations-and-fallbacks) for what
+each ❌ is blocked on, and [platform support](doc/platform-support.md) for the
+detail.
 
 Every row is a *runtime* property, not a build-time one — the same binary
 reports image input as unavailable on iOS 26; an OS 27 SDK build can enable
@@ -160,18 +166,51 @@ Xcode 27. Always inspect `LocalAi.capabilities()` before enabling images.
 
 ### Windows setup
 
-Windows inference is opt-in and still requires Windows build/device
-validation. The host app must deploy/bootstrap Windows App SDK 2.0+ and
-supply its C++/WinRT projections, plus the applicable package capabilities.
-Set `FLUTTER_LOCAL_AI_WINDOWS_AI` and `FLUTTER_LOCAL_AI_WINRT_INCLUDE_DIR`
-as described in the [build requirements](doc/platform-support.md#build-requirements).
-The default build reports `windowsAiFoundryUnconfigured`.
+No CMake or NuGet work is needed to *build*: `flutter build windows` resolves
+the Windows App SDK's C++/WinRT projection on its own. It looks for
+`Microsoft.WindowsAppSDK.AI` and `Microsoft.Windows.CppWinRT` in the local
+NuGet cache, downloads them from nuget.org into the build tree when they are
+not there, generates the projection with `cppwinrt.exe`, and compiles the
+Windows AI arm. When that cannot happen — no network and no cache — the build
+prints a `flutter_local_ai:` warning and falls back to the unconfigured plugin,
+which reports `windowsAiFoundryUnconfigured` at runtime instead of failing to
+compile. Environment variables steer it without touching CMake:
 
-Read [Microsoft's setup guide](https://learn.microsoft.com/en-us/windows/ai/apis/get-started)
-for current hardware, OS, manifest and SDK requirements. New GPU support has
-additional experimental prerequisites. Preparation may download large
+| Variable | Effect |
+|---|---|
+| `FLUTTER_LOCAL_AI_WINDOWS_AI` | `AUTO` (default), `ON` (a missing projection fails the build) or `OFF` (skip, no download) |
+| `FLUTTER_LOCAL_AI_NUGET_DOWNLOAD` | `OFF` to forbid the nuget.org download and rely on the NuGet cache |
+| `FLUTTER_LOCAL_AI_WINRT_INCLUDE_DIR` | A projection you generated yourself (contains `winrt/Microsoft.Windows.AI.Text.h`) |
+
+The full list, including pinning the SDK version, is in
+[doc/platform-support.md](doc/platform-support.md#build-requirements).
+
+*Running* is gated by Microsoft, not by the build, and none of it can be
+automated by a plugin:
+
+- **Hardware and OS.** A Copilot+ PC (NPU), or an NVIDIA RTX 30+/AMD Radeon
+  GPU with the vendor's latest driver and Developer Mode on; Windows 11 25H2
+  (build 26200.7309) or later.
+- **Package identity.** Windows AI APIs refuse unpackaged processes. Package
+  the app as MSIX (the [`msix`](https://pub.dev/packages/msix) package builds
+  one from a Flutter app), then add the `systemAIModels` capability, the
+  `Microsoft.WindowsAppRuntime` framework dependency for the SDK version you
+  built against, and a `MaxVersionTested` of at least `10.0.26226.0` to its
+  `AppxManifest.xml` — `dart run msix:build`, edit, `dart run msix:pack`. A
+  plain `flutter run` therefore reports `unavailableOther`, and
+  `LocalAi.availabilityReason()` names the activation failure.
+- **Windows App Runtime.** Framework-dependent MSIX pulls it in; otherwise
+  install it from Microsoft's runtime installer. The stable channel also
+  needs a Limited Access Feature token from Microsoft for Phi Silica; the
+  experimental channel does not.
+
+[Microsoft's setup guide](https://learn.microsoft.com/en-us/windows/ai/apis/get-started)
+and [troubleshooting page](https://learn.microsoft.com/en-us/windows/ai/apis/troubleshooting)
+are the source of truth for these. Preparation may download large
 system-managed assets. Streaming currently delivers one final chunk while
 inference runs asynchronously; cancellation targets the active WinRT operation.
+The Windows arm compiles in CI but has not yet run on qualifying hardware —
+treat it as unverified until it has.
 
 ## Usage
 
@@ -191,7 +230,7 @@ if (!isAvailable) {
   print('Local AI is not available on this device');
   print('iOS/macOS: Requires iOS 26.0+ or macOS 26.0+');
   print('Android: Requires API 26+ and Google AICore installed');
-  print('Windows: Requires a supported Windows device and configured Windows App SDK');
+  print('Windows: Requires a Copilot+ PC or supported GPU, Windows 11 25H2+, and a packaged app');
   return;
 }
 
@@ -296,7 +335,7 @@ final response = await aiEngine.generateText(
 print(response.text);
 ```
 
-### Structured Outputs (Apple platforms)
+### Structured Outputs (Apple platforms, Windows, Chrome)
 
 Pass a JSON Schema through `GenerationConfig` to *constrain* generation to valid
 JSON instead of free-form text. On Apple FoundationModels this uses the same
@@ -306,10 +345,16 @@ emit a value matching your schema.
 - **iOS 26.0+ / macOS 26.0+**: native. The schema is translated into a
   FoundationModels `GenerationSchema` and the JSON is returned in
   `AiResponse.text`; use `AiResponse.json` to get it decoded as a `Map`.
-- **Android / Windows**: dynamic Dart schemas are not yet bridged by this package.
-  Supplying a `schema` (or `responseFormat: ResponseFormat.json`) throws a
-  `STRUCTURED_OUTPUT_UNSUPPORTED` error. Gate on
-  `getPlatformInfo().supportsStructuredOutput` in cross-platform code.
+- **Windows**: native, through `LanguageModel.GenerateStructuredJsonResponseAsync`
+  (Windows App SDK 2.0+). The schema is passed to the OS as JSON Schema text.
+  A response the OS finishes but that strays from the schema throws
+  `STRUCTURED_OUTPUT_INVALID`, with the model's text in the error `details`.
+  Compiled in CI, not yet run on qualifying hardware.
+- **Android**: not available. ML Kit's structured output is generated at
+  compile time from annotated Kotlin classes (KSP); there is no runtime schema
+  API for a Dart map to be translated into. Supplying a `schema` (or
+  `responseFormat: ResponseFormat.json`) throws `STRUCTURED_OUTPUT_UNSUPPORTED`.
+  Gate on `getPlatformInfo().supportsStructuredOutput` in cross-platform code.
 
 Supported schema constructs: nested objects (with `required`), arrays (including
 `minItems` / `maxItems`), string enums, and the scalar types (`string`,
@@ -634,15 +679,15 @@ class _LocalAiExampleState extends State<LocalAiExample> {
 - **Error Handling**: Handle error code -101 (AICore not installed) gracefully
 - **Initialization**: `initialize()` is optional on Android but recommended for consistency
 - **Model Access**: Uses Gemini Nano via ML Kit GenAI; model preparation can download system assets.
-- **Structured outputs and tool calls**: Dynamic Dart schemas and native Dart tools are not bridged to the current Kotlin APIs. Gate these on capabilities.
+- **Structured outputs and tool calls**: ML Kit offers neither a runtime schema API nor function calling for Gemini Nano, so this package cannot bridge them; see [known limitations](#known-limitations-and-fallbacks). Gate these on capabilities.
 
 #### Windows
 
-- Configure the Windows App SDK and host application as described above.
-- Probe availability before generation; OS version alone is insufficient.
+- The build configures itself (see [Windows setup](#windows-setup)); the host app owns packaging, the `systemAIModels` capability and the Windows App Runtime.
+- Probe availability before generation; OS version alone is insufficient, and `LocalAi.availabilityReason()` names an activation failure.
 - Full responses and the one-chunk stream run asynchronously and can be cancelled.
-- Dynamic structured output and native tools are not exposed by this backend.
-- Windows compilation and device validation remain release requirements.
+- Structured output is native (`GenerateStructuredJsonResponseAsync`); native tools are not exposed by Windows AI.
+- The arm compiles in CI; device validation on Copilot+ hardware remains a release requirement.
 
 **Example with AICore Error Handling:**
 ```dart
@@ -676,6 +721,35 @@ try {
   }
 }
 ```
+
+## Known limitations and fallbacks
+
+Each of these is a property of the vendor API, not a gap this package can
+close on its own. In every case the right move is to ask
+`LocalAi.availability()` / `LocalAi.capabilities()` at runtime and fall back
+to another backend — the flutter_gemma bridge above being the obvious one.
+
+- **iOS and macOS below 26.** Apple Foundation Models exist only from OS 26,
+  and no polyfill can conjure the system model on iOS 17 or 18. The package
+  still installs and links on older OSes (its deployment floor is iOS 13 /
+  macOS 12): `LocalAi.availability()` returns `unavailableOsTooOld`,
+  `capabilities()` reports every feature as unsupported, and a call that
+  needs the model throws a `LocalAiUnavailableException` rather than
+  crashing. Ship a bundled-model fallback for those users, or gate the
+  feature.
+- **Android tool calls and structured output.** ML Kit's Prompt API has no
+  function-calling surface for Gemini Nano, and its structured output is
+  compiled from annotated Kotlin classes with KSP — there is no runtime
+  schema object for a Dart map to become. A prompt-woven emulation was tried
+  and rejected: Gemini Nano answered in prose instead of performing the call
+  often enough that the capability flag would have lied.
+- **Windows tool calls.** Windows AI Foundry exposes no function-calling API.
+- **Bring-your-own models on Android and Windows.** Out of scope by design:
+  this package is the OS-model layer, deliberately without a model
+  downloader, GGUF loader or inference runtime. For Llama, Phi, Qwen and
+  friends use [flutter_gemma](https://pub.dev/packages/flutter_gemma), whose
+  [`flutter_gemma_builtin_ai`](https://github.com/DenisovAV/flutter_gemma/tree/main/packages/flutter_gemma_builtin_ai)
+  bridge lets the OS model and a downloaded model sit behind one interface.
 
 ## API Reference
 
@@ -773,9 +847,10 @@ sessions. Windows uses C++/WinRT asynchronous operations from the Flutter
 runner's STA.
 
 Apple translates the supported dynamic JSON Schema subset to
-`GenerationSchema` and binds Dart tools at session creation. Android's newer
-Kotlin/KSP structured output is not yet a dynamic Dart-schema bridge. Windows
-and web also have different capability limits. See the
+`GenerationSchema` and binds Dart tools at session creation; Windows and web
+hand the JSON Schema text to the OS (`GenerateStructuredJsonResponseAsync`
+and `responseConstraint`). Android's Kotlin/KSP structured output has no
+runtime form to bridge. See the
 [platform coverage and remaining gaps](doc/platform-support.md#platform-coverage-and-remaining-gaps)
 for current API versions, supported features, and what is still unverified.
 

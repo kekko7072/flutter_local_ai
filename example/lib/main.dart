@@ -1088,12 +1088,17 @@ class _MyHomePageState extends State<MyHomePage> {
             ],
           ),
           content: const Text(
-            'Windows AI headers are not available. To enable Windows AI support:\n\n'
-            '1. Install the Windows AI SDK or obtain Microsoft.Windows.AI.winmd\n'
-            '2. Generate C++/WinRT headers using cppwinrt.exe\n'
-            '3. Add the generated headers path to CMakeLists.txt\n'
-            '4. Uncomment the Windows AI include in flutter_local_ai_plugin.cpp\n\n'
-            'See the README for detailed instructions.',
+            'This build has no Windows App SDK projection, so Windows AI '
+            'Foundry cannot be reached.\n\n'
+            'The plugin resolves the projection itself during '
+            '`flutter build windows` — from the NuGet cache or by downloading '
+            'Microsoft.WindowsAppSDK.AI — so look for "flutter_local_ai:" '
+            'lines in the build output to see why that did not happen '
+            '(usually no network, or FLUTTER_LOCAL_AI_WINDOWS_AI=OFF).\n\n'
+            'Even with the projection in place, inference needs a Copilot+ '
+            'PC or supported GPU, Windows 11 25H2 or later, and an app '
+            'packaged with identity, the systemAIModels capability and the '
+            'Windows App Runtime. See doc/platform-support.md.',
           ),
           actions: [
             TextButton(
