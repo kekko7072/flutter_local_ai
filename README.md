@@ -27,6 +27,7 @@ Text generation (blocking or streamed), structured JSON outputs, tool calling, a
 - **iOS**: Uses Apple's built-in FoundationModels framework (iOS 26.0+) - system-managed preparation may be required
 - **Android**: Uses Google's ML Kit GenAI (Gemini Nano) - leverages the native on-device model
 - **Windows**: Uses Windows AI APIs (Windows AI Foundry) - the build resolves the Windows App SDK itself; running needs a Copilot+ PC or supported GPU and a packaged app
+- **Web**: Uses Chrome's Prompt API (Gemini Nano in the browser) - no script to load and no model to ship; the API is still trialled, so it needs an origin-trial token or a Chrome flag
 - **No bundled checkpoints**: The OS may download model assets during preparation
 - **Native Performance**: Direct access to OS-optimized AI capabilities
 - **Smaller App Size**: The OS manages model weights; the app still includes the plugin and SDK dependencies
@@ -211,6 +212,66 @@ system-managed assets. Streaming currently delivers one final chunk while
 inference runs asynchronously; cancellation targets the active WinRT operation.
 The Windows arm compiles in CI but has not yet run on qualifying hardware —
 treat it as unverified until it has.
+
+### Web (Chrome) setup
+
+There is nothing to add to the build. The plugin declares web support in its
+pubspec, and the web arm talks to Chrome's **Prompt API** (`self.LanguageModel`)
+straight through `dart:js_interop` — no platform channel, no `<script>` tag in
+`index.html`, no asset to host. `flutter build web` picks the arm up on its own,
+and a build for another platform is unaffected.
+
+*Running* is gated by the browser, not by the build:
+
+- **Browser.** A desktop Chromium-based browser (Chrome or Edge) that exposes
+  the Prompt API. The API is still trialled, so it appears either behind an
+  [origin-trial token](https://developer.chrome.com/docs/ai/prompt-api) for
+  your site or, for local development, behind
+  `chrome://flags/#prompt-api-for-gemini-nano`. Firefox, Safari and mobile
+  Chrome do not define `LanguageModel` at all; the arm reports
+  `unavailableDeviceUnsupported` there instead of throwing.
+- **Device.** Chrome's own floors for Gemini Nano — roughly 22 GB free disk
+  and an eligible GPU. Chrome collapses every one of those into a bare
+  `'unavailable'` with no reason attached, which is why
+  `LocalAi.availabilityReason()` returns the list of common causes rather
+  than a single diagnosis.
+- **Download.** The weights are the browser's, not the app's.
+  `LocalAi.ensureReady()` creates a throwaway session to trigger (and dedupe)
+  Chrome's download and reports progress as a 0-100 fraction shaped like the
+  native hosts' byte pair.
+
+Probe before you use it, exactly as on the other platforms:
+
+```dart
+if (await LocalAi.availability() != LocalAiAvailability.available) {
+  print(await LocalAi.availabilityReason());
+  return; // fall back to a server or a bundled model
+}
+```
+
+What the web arm does and does not do, all of it reported by
+`LocalAi.capabilities()` rather than assumed:
+
+| Works | Does not |
+|---|---|
+| Text generation and incremental streaming deltas | Image input — the Prompt API's multimodal path is not usable from an ordinary page as of Chrome 151, and `addImage` throws |
+| Cancellation of any in-flight request (`AbortController`) | Native tool calling — the `tools` option is behind an experimental flag and does not reliably route, so `openSession(tools: …)` throws rather than emulating one |
+| Schema-constrained output via `responseConstraint`, which Android cannot do | Per-call `LocalAiGenerationOverrides` — Chrome fixes sampling at `create()`, so the host warns once and generates with the session's own settings |
+| Exact token counts (`measureContextUsage`, or `measureInputUsage` on older builds), measured against an open session | `topP` and `maxOutputTokens` — accepted for API parity and dropped, not faked |
+| Several concurrent sessions | Two turns at once *in one session*: Chrome runs one at a time, and a second `generate` throws instead of racing |
+
+Two behaviours differ from Android and Windows and are worth knowing before
+you port code. Chrome's `LanguageModel` session keeps the transcript itself,
+so this host sends only the pending turn — replaying the history, as the
+stateless native APIs require, would feed every earlier message back a second
+time. And the context limit is therefore the browser session's `inputQuota`,
+not something this package trims. Sampling above what the browser advertises
+is clamped to its ceiling (with a one-time warning) instead of failing the
+`create()`.
+
+`flutter_local_ai`'s own example app has no `web/` target checked in yet; run
+`flutter create --platforms web .` inside `example/` to add one before
+`flutter run -d chrome`.
 
 ## Usage
 
@@ -751,6 +812,19 @@ class _LocalAiExampleState extends State<LocalAiExample> {
 - Structured output is native (`GenerateStructuredJsonResponseAsync`); native tools are not exposed by Windows AI.
 - The arm compiles in CI; device validation on Copilot+ hardware remains a release requirement.
 
+#### Web (Chrome)
+
+- Nothing to configure at build time (see [Web setup](#web-chrome-setup)); the
+  gates are the browser's — the Prompt API being enabled, disk space and GPU.
+- `LocalAi.availabilityReason()` explains a missing `LanguageModel` global and
+  Chrome's reasonless `'unavailable'`; `ensureReady()` drives the download.
+- The browser session owns the conversation, so only the pending turn is sent
+  and the context limit is its `inputQuota`.
+- Structured output is native (`responseConstraint`); image input and tool
+  calling are not exposed, and per-call sampling overrides cannot apply.
+- One generation at a time per session; `stopGeneration()` aborts the request
+  and settles the turn empty rather than throwing.
+
 **Example with AICore Error Handling:**
 ```dart
 final aiEngine = FlutterLocalAi();
@@ -806,6 +880,15 @@ to another backend — the flutter_gemma bridge above being the obvious one.
   and rejected: Gemini Nano answered in prose instead of performing the call
   often enough that the capability flag would have lied.
 - **Windows tool calls.** Windows AI Foundry exposes no function-calling API.
+- **Web outside Chrome, and Chrome without the Prompt API.** The arm is the
+  Prompt API; no other browser ships it, and Chrome itself exposes
+  `LanguageModel` only behind an origin trial or a flag while the API is
+  trialled. Without the global, `LocalAi.availability()` returns
+  `unavailableDeviceUnsupported` and `capabilities()` reports the backend as
+  unsupported — the page still builds and runs, so gate the feature and fall
+  back. Image input and tool calling stay unavailable even where the API is
+  enabled: Chrome's multimodal path is not reachable from an ordinary page,
+  and its `tools` option is experimental and does not reliably route.
 - **Bring-your-own models on Android and Windows.** Out of scope by design:
   this package is the OS-model layer, deliberately without a model
   downloader, GGUF loader or inference runtime. For Llama, Phi, Qwen and

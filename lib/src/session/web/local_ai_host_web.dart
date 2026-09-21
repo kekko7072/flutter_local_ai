@@ -142,8 +142,9 @@ class WebLocalAiHost implements LocalAiHost {
             : LocalAiBackendKind.unsupported,
         platform: 'web',
         apiName: 'Chrome Prompt API (Gemini Nano)',
-        // Experimental and unreliable in Chrome 151 — the bridge weaves tools
-        // into the prompt instead.
+        // Experimental and unreliable in Chrome 151. Reported false rather
+        // than emulated: createSession throws on a tool list instead of
+        // weaving one into the prompt, for the reason the Android arm gives.
         supportsToolCalling: false,
         supportsStructuredOutput: true,
         supportsVision: false,
@@ -217,7 +218,9 @@ class WebLocalAiHost implements LocalAiHost {
         'toolCalling',
         'Chrome\'s Prompt API has no production tool-calling surface; its '
             '`tools` option is behind an experimental flag and does not '
-            'reliably route. Use prompt-woven tools instead.',
+            'reliably route. Gate tools on '
+            'LocalAiBackendCapabilities.supportsToolCalling and fall back to '
+            'another backend where it is false.',
       );
     }
     // topP and maxOutputTokens have no Prompt API equivalent. They are
