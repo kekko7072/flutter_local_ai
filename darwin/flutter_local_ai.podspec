@@ -10,7 +10,7 @@ Pod::Spec.new do |s|
   # The "Check the podspec version matches the pubspec version" guard in
   # .github/workflows/publish.yml enforces this at the tag, by parsing the
   # line below: keep it one single-quoted literal on its own line.
-  s.version          = '0.1.1'
+  s.version          = '0.1.2'
   s.summary          = 'Flutter plugin for handling Flutter Local AI'
   s.description      = <<-DESC
 Flutter plugin for handling Flutter Local AI.

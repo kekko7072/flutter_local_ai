@@ -1,3 +1,10 @@
+## 0.1.2
+
+* Tool errors now build their `details` key with a null-aware map element
+  (`'details': ?encodableDetails`) instead of an `if` null check, clearing
+  the `use_null_aware_elements` lint pub.dev's analysis reported against
+  0.1.1. No behaviour change.
+
 ## 0.1.1
 
 ### Windows

@@ -110,10 +110,7 @@ class LocalAiToolRegistry {
       // that cannot be encoded are dropped rather than taking it down.
       encodableDetails = null;
     }
-    return jsonEncode({
-      'error': message,
-      if (encodableDetails != null) 'details': encodableDetails,
-    });
+    return jsonEncode({'error': message, 'details': ?encodableDetails});
   }
 
   static Map<String, dynamic> _decodeArguments(String argumentsJson) {
