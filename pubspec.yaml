@@ -4,7 +4,7 @@ description: >-
   On-device AI for Flutter: Apple Foundation Models, Android Gemini Nano,
   Windows AI Foundry, Chrome Prompt API. Text, streaming, tool calling, JSON
   schemas, genUI specs.
-version: 0.1.1
+version: 0.1.2
 homepage: https://github.com/kekko7072/flutter_local_ai
 topics:
   - ai
