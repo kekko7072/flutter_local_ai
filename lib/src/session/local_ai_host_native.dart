@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../models/tool.dart';
 import '../pigeon/local_ai_api.g.dart' as wire;
-import 'local_ai_host.dart';
+import 'local_ai_host_api.dart';
 import 'local_ai_tool_registry.dart';
 
 /// Tokens, generation errors and download progress from the native hosts.

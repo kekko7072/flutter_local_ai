@@ -4,7 +4,7 @@ import 'dart:js_interop';
 import 'dart:typed_data';
 
 import '../../models/tool.dart';
-import '../local_ai_host.dart';
+import '../local_ai_host_api.dart';
 import 'prompt_api_interop.dart';
 
 /// Per-session browser state: the Prompt API session, the transcript chunks

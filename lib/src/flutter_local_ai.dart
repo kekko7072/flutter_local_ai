@@ -6,7 +6,7 @@ import 'models/model_status.dart';
 import 'models/platform_info.dart';
 import 'models/tool.dart';
 import 'session/local_ai.dart';
-import 'session/local_ai_host.dart';
+import 'session/local_ai_host_api.dart';
 import 'session/local_ai_model.dart';
 import 'session/local_ai_runtime.dart';
 import 'session/local_ai_session.dart';

@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import '../models/schema_validation.dart';
-import 'local_ai_host.dart';
+import 'local_ai_host_api.dart';
 
 /// A generation session on the OS built-in model.
 ///

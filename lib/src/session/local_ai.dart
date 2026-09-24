@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'local_ai_host.dart';
+import 'local_ai_host_api.dart';
 import 'local_ai_runtime.dart';
 
 /// Probing and preparing the OS built-in model.

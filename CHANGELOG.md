@@ -58,6 +58,14 @@ and an availability probe that could throw.
 
 ### Internal
 
+* The web test suite runs again, and CI and publish now run it on Chrome.
+  The files that were `local_ai_host.dart` and `fake_local_ai_host.dart`
+  under `lib/src/` are renamed to `local_ai_host_api.dart` and
+  `local_ai_host_fake.dart`, because `flutter test --platform chrome` serves
+  any path containing `host.dart.js` as its own runner script. As a result,
+  every browser test that loaded them hung at "loading". Code that imports
+  only the public libraries (`flutter_local_ai.dart`, `testing.dart`) is not
+  affected; deep `src/` imports need the new names.
 * `LocalAiSession` and `LocalAiModel` use Dart 3.12 private named
   parameters instead of longhand initializer lists.
 * The CI and publish floor legs now run Flutter `3.44.0` exactly.

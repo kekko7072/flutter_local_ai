@@ -1,9 +1,13 @@
+// Not named `*host.dart`: `flutter test --platform chrome` serves every path
+// containing `host.dart.js` as its own test-runner script, so a library with
+// that suffix never loads in a browser test and the suite hangs at "loading".
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
 import '../models/tool.dart';
-import '../session/local_ai_host.dart';
+import '../session/local_ai_host_api.dart';
 import '../session/local_ai_tool_registry.dart';
 
 /// One session the fake was asked to create, and everything sent to it.

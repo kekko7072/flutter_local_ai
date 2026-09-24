@@ -1,3 +1,7 @@
+// Not named `*host.dart`: `flutter test --platform chrome` serves every path
+// containing `host.dart.js` as its own test-runner script, so a library with
+// that suffix never loads in a browser test and the suite hangs at "loading".
+
 import 'dart:typed_data';
 
 import '../models/tool.dart';

@@ -11,7 +11,7 @@ export 'src/models/tool.dart';
 // adapters. It adds images, concurrent sessions, cancellation and exact token
 // counts to the one-shot facade.
 export 'src/session/local_ai.dart';
-export 'src/session/local_ai_host.dart'
+export 'src/session/local_ai_host_api.dart'
     show
         LocalAiAvailability,
         LocalAiBackendCapabilities,

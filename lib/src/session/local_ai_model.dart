@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import '../models/tool.dart';
-import 'local_ai_host.dart';
+import 'local_ai_host_api.dart';
 import 'local_ai_runtime.dart';
 import 'local_ai_session.dart';
 

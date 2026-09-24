@@ -4,7 +4,7 @@ library;
 import 'dart:async';
 import 'dart:js_interop';
 
-import 'package:flutter_local_ai/src/session/local_ai_host.dart';
+import 'package:flutter_local_ai/src/session/local_ai_host_api.dart';
 import 'package:flutter_local_ai/src/session/web/local_ai_host_web.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -278,13 +278,16 @@ void main() {
       final turn = _Turn(host, 1);
       addTearDown(turn.dispose);
 
+      // The running turn takes 'hi'; what is queued behind it belongs to the
+      // next turn.
       await host.generateResponseAsync(1);
+      await host.addQueryChunk(sessionId: 1, text: 'next');
       await expectLater(host.generateResponse(1), throwsA(isA<StateError>()));
       await turn.finished;
 
       // The refused call must not have drained the queued chunks, or the
       // retry would prompt with nothing.
-      expect(await host.generateResponse(1), 'hi');
+      expect(await host.generateResponse(1), 'next');
     });
   });
 
