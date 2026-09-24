@@ -21,11 +21,11 @@ env:
   FLUTTER_PINNED: "3.44.x"
 
 jobs:
-  # pubspec.yaml advertises flutter >=3.32.0 / Dart >=3.8.0. A floor nothing
+  # pubspec.yaml advertises flutter >=3.44.0 / Dart >=3.12.0. A floor nothing
   # ever builds against is a guess, and it breaks silently: a dependency bump
   # or one piece of newer syntax raises the real floor while the published
   # constraint keeps promising the old one, and the consumer sitting on
-  # Flutter 3.32 is the one who finds out. So the floor gets a matrix leg of
+  # Flutter 3.44.0 is the one who finds out. So the floor gets a matrix leg of
   # its own and has to resolve, analyze and pass the suite like any other.
   #
   # `strategy.matrix` cannot read the `env` context, so FLUTTER_PINNED is
@@ -43,8 +43,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # The exact floor release, not 3.44.x: that would resolve to the
+          # same SDK as the stable leg and prove nothing about 3.44.0.
           - label: floor
-            flutter: "3.32.x"
+            flutter: "3.44.0"
           - label: stable
             flutter: "3.44.x"
     steps:
@@ -74,7 +76,7 @@ jobs:
           cache: true
 
       # Resolution is the first half of the compatibility claim: on the floor
-      # leg pub has to find a set of dependency versions a Dart 3.8 SDK will
+      # leg pub has to find a set of dependency versions a Dart 3.12.0 SDK will
       # accept, and it rewrites pubspec.lock to whatever it settles on.
       # Nothing in this job diffs the tree, so that rewrite is harmless here.
       # It is exactly why the pigeon job below stays on a single version.
@@ -99,6 +101,19 @@ jobs:
 
       - name: Test
         run: flutter test --coverage
+
+      # The web arm's suite is `@TestOn('browser')`, so the VM run above skips
+      # it. It runs here against the runner's preinstalled Chrome.
+      - name: Test the web arm
+        run: flutter test --platform chrome test/web
+
+      # The unit suites never execute the example's widget tree, and a
+      # `dart:io` `Platform` call in it only fails at runtime in a browser
+      # (a grey screen, no build error). Building at least proves the example
+      # still has its web platform and compiles for it.
+      - name: Build the example for the web
+        run: flutter build web
+        working-directory: example
 
       - uses: actions/upload-artifact@v4
         if: always()

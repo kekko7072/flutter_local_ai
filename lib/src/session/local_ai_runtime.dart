@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-import 'local_ai_host.dart';
+import 'local_ai_host_api.dart';
 // Web is the default arm and native overrides it, mirroring how the rest of
 // the Flutter on-device-AI ecosystem splits: `dart.library.ffi` is true on
 // Android/iOS/macOS/Windows and false under dart2js/dart2wasm.

@@ -1,4 +1,4 @@
-import '../session/local_ai_host.dart';
+import '../session/local_ai_host_api.dart';
 
 /// Which OS API is answering.
 enum LocalAiBackend {

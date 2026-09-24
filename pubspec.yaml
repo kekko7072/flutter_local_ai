@@ -4,7 +4,7 @@ description: >-
   On-device AI for Flutter: Apple Foundation Models, Android Gemini Nano,
   Windows AI Foundry, Chrome Prompt API. Text, streaming, tool calling, JSON
   schemas, genUI specs.
-version: 0.1.2
+version: 0.2.0
 homepage: https://github.com/kekko7072/flutter_local_ai
 topics:
   - ai
@@ -14,10 +14,12 @@ topics:
   - foundation-models
 
 environment:
-  # Keep the package and its flutter_lints 6 development tooling usable on
-  # Dart 3.8, which ships with Flutter 3.32.
-  sdk: '>=3.8.0 <4.0.0'
-  flutter: ">=3.32.0"
+  # Flutter 3.44 is the first release that applies the Kotlin Gradle Plugin
+  # to plugin subprojects itself, so android/build.gradle no longer has to —
+  # which is what keeps AGP 9's built-in Kotlin from failing the app's build.
+  # It ships Dart 3.12.
+  sdk: '>=3.12.0 <4.0.0'
+  flutter: ">=3.44.0"
 
 dependencies:
   flutter:

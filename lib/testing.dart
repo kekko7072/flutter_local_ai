@@ -12,4 +12,4 @@
 /// `debugLocalAiHost`, which the main library exports.
 library;
 
-export 'src/testing/fake_local_ai_host.dart';
+export 'src/testing/local_ai_host_fake.dart';

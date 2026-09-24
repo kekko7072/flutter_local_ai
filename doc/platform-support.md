@@ -101,8 +101,10 @@ which is why `LocalAi.availabilityReason()` exists instead of a version check.
 
 ## Build requirements
 
-- Package: Dart 3.8+ / Flutter 3.32+. This is the floor the package resolves
-  and analyzes at; the repository itself develops on a newer SDK (see
+- Package: Dart 3.12+ / Flutter 3.44+. This is the floor the package resolves
+  and analyzes at. 3.44 is the first Flutter that applies KGP to plugin
+  subprojects itself, so the plugin no longer does, and apps on AGP 9 with
+  built-in Kotlin build. The repository itself develops on a newer SDK (see
   [FVM_SETUP.md](../FVM_SETUP.md)).
 - Android: minSdk 26; Kotlin **2.3.21** and its `compilerOptions` DSL (the
   beta4 artifact has Kotlin 2.3 metadata). The example shows these settings.

@@ -116,25 +116,38 @@ actually do, what it needs at build time, and what has been verified.
 
 ## Installation
 
-Add this to your package's `pubspec.yaml` file:
+Requires Flutter 3.44+ / Dart 3.12+.
+
+```bash
+flutter pub add flutter_local_ai
+```
+
+or add it to `pubspec.yaml` by hand:
 
 ```yaml
 dependencies:
-  flutter_local_ai:
-    git:
-      url: https://github.com/kekko7072/flutter_local_ai.git
+  flutter_local_ai: ^0.2.0
 ```
 
-Or if published to pub.dev:
+### Upgrading from 0.1.x
 
-```yaml
-dependencies:
-  flutter_local_ai: latest
-```
+0.2.0 has three breaking changes. The full list is in the
+[CHANGELOG](CHANGELOG.md#020).
+
+- **Flutter 3.44 / Dart 3.12 minimum.** The Android plugin no longer applies
+  the Kotlin Gradle Plugin itself, so apps on AGP 9 with built-in Kotlin
+  build. Stay on 0.1.x if you can't upgrade Flutter yet.
+- **`ensureReady()` fails fast.** If the download can't be started, it throws
+  the real error straight away instead of a `TimeoutException` ten minutes
+  later. On the web, call it from a button or key handler: outside a user
+  gesture it throws `LocalAiUserActivationRequiredException`.
+- **Custom `LocalAiHost` implementations** override
+  `countTokens({required int sessionId, required String text})`.
 
 ### Android setup
 
-Use `minSdk = 26` and Kotlin **2.3.21** in the consuming app. ML Kit Prompt
+Requires Flutter 3.44+. Use `minSdk = 26` and Kotlin **2.3.21** in the
+consuming app. ML Kit Prompt
 API beta4 is built with Kotlin 2.3 metadata. See the repository's Android
 example for a complete configuration. Use the current compiler DSL:
 
@@ -238,7 +251,10 @@ and a build for another platform is unaffected.
 - **Download.** The weights are the browser's, not the app's.
   `LocalAi.ensureReady()` creates a throwaway session to trigger (and dedupe)
   Chrome's download and reports progress as a 0-100 fraction shaped like the
-  native hosts' byte pair.
+  native hosts' byte pair. Chrome only starts that download inside a user
+  gesture, so call `ensureReady()` from a click or key handler (an "Enable
+  AI" button), not at start-up; outside one it throws
+  `LocalAiUserActivationRequiredException` straight away.
 
 Probe before you use it, exactly as on the other platforms:
 
@@ -817,7 +833,9 @@ class _LocalAiExampleState extends State<LocalAiExample> {
 - Nothing to configure at build time (see [Web setup](#web-chrome-setup)); the
   gates are the browser's — the Prompt API being enabled, disk space and GPU.
 - `LocalAi.availabilityReason()` explains a missing `LanguageModel` global and
-  Chrome's reasonless `'unavailable'`; `ensureReady()` drives the download.
+  Chrome's reasonless `'unavailable'`; `ensureReady()` drives the download,
+  and must be called from a user gesture while the model is still
+  downloadable (otherwise it throws `LocalAiUserActivationRequiredException`).
 - The browser session owns the conversation, so only the pending turn is sent
   and the context limit is its `inputQuota`.
 - Structured output is native (`responseConstraint`); image input and tool

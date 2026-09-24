@@ -1,3 +1,7 @@
+// Not named `*host.dart`: `flutter test --platform chrome` serves every path
+// containing `host.dart.js` as its own test-runner script, so a library with
+// that suffix never loads in a browser test and the suite hangs at "loading".
+
 import 'dart:typed_data';
 
 import '../models/tool.dart';
@@ -56,6 +60,24 @@ class LocalAiUnavailableException implements Exception {
 
   @override
   String toString() => 'LocalAiUnavailableException($status): $message';
+}
+
+/// Thrown by `LocalAi.ensureReady()` on the web when the model still has to
+/// be downloaded and the call did not run inside a user gesture.
+///
+/// Chrome only lets `LanguageModel.create()` start a download while the page
+/// has transient user activation (a click, a key press). Call
+/// `ensureReady()` from the button handler that asks for AI, not from
+/// `initState` or app start-up. [status] is
+/// [LocalAiAvailability.downloadable]: nothing is broken, and the same call
+/// succeeds from a gesture.
+class LocalAiUserActivationRequiredException
+    extends LocalAiUnavailableException {
+  LocalAiUserActivationRequiredException(String message)
+    : super(LocalAiAvailability.downloadable, message);
+
+  @override
+  String toString() => 'LocalAiUserActivationRequiredException: $message';
 }
 
 /// Thrown when the running host doesn't implement a capability the call needs
@@ -218,6 +240,10 @@ abstract class LocalAiHost {
 
   Future<LocalAiBackendCapabilities> getBackendInfo();
 
+  /// Starts the OS feature download. A failure to *start* is reported by
+  /// throwing — `LocalAi.ensureReady()` fails with it instead of waiting out
+  /// its timeout. The web host throws
+  /// [LocalAiUserActivationRequiredException] outside a user gesture.
   Future<void> downloadFeature();
 
   Future<bool> openAICorePlayStore();
@@ -266,7 +292,11 @@ abstract class LocalAiHost {
   /// Exact count where the host has a tokenizer; throws
   /// [LocalAiTokenizerUnavailable] where it doesn't, so the caller decides
   /// whether to estimate.
-  Future<int> countTokens(String text);
+  ///
+  /// Measured against [sessionId]. The native tokenizers are model-wide and
+  /// ignore it; the web arm measures on that session, after any turn it is
+  /// generating has finished.
+  Future<int> countTokens({required int sessionId, required String text});
 }
 
 /// Thrown by [LocalAiHost.countTokens] when the host has no tokenizer to ask.

@@ -1,3 +1,79 @@
+## 0.2.0
+
+Answers [#24](https://github.com/kekko7072/flutter_local_ai/issues/24): a web
+hang, the Android `kotlin-android` line, token counting scoped to a session,
+and an availability probe that could throw.
+
+### Breaking changes
+
+* **Minimum SDK is now Flutter 3.44 / Dart 3.12**, up from Flutter 3.32 /
+  Dart 3.8. Flutter 3.44 is the first release that applies the Kotlin Gradle
+  Plugin (KGP) to plugin subprojects itself, so `android/build.gradle` no
+  longer runs `apply plugin: 'kotlin-android'`. A plugin that applies KGP
+  itself is a hard configuration error under AGP 9 with built-in Kotlin, and
+  it fails the whole app build, not just the plugin.
+  *Migration:* upgrade the app to Flutter 3.44 or later. Apps that must stay
+  on an older Flutter can stay on 0.1.x.
+* **`LocalAiHost.countTokens` takes named arguments:**
+  `countTokens({required int sessionId, required String text})` instead of
+  `countTokens(String text)`. This only affects code that implements
+  `LocalAiHost` itself; `LocalAiSession.sizeInTokens` passes its own id.
+  *Migration:* add the `sessionId` parameter to your override. A host with a
+  model-wide tokenizer can ignore it, as the native hosts do.
+* **`ensureReady()` fails when the download cannot be started.** Before, a
+  `downloadFeature()` that threw was ignored and polling waited out the full
+  `timeout` (10 minutes by default), then threw a `TimeoutException`. Now
+  `ensureReady()` rethrows the host's error as soon as the kick-off fails.
+  This applies on every platform.
+  *Migration:* nothing, if you already handle errors from `ensureReady()`.
+  Code that caught only `TimeoutException` should also catch the host error,
+  or `LocalAiUnavailableException` on the web.
+
+### New
+
+* `LocalAiUserActivationRequiredException`, a `LocalAiUnavailableException`
+  whose `status` is `downloadable`. The web arm throws it when Chrome would
+  refuse to start the Gemini Nano download because no user gesture is active.
+  Catch it and ask the user to press a button that calls `ensureReady()`.
+* `FakeLocalAiHost` (from `package:flutter_local_ai/testing.dart`) gains
+  `downloadFeatureError`, `availabilityReasonError` and
+  `countTokensSessionIds`, so apps can test these paths.
+
+### Fixes
+
+* **Web: `ensureReady()` outside a user gesture fails straight away**
+  instead of hanging for ten minutes and blaming a slow download. The web
+  host checks `navigator.userActivation.isActive` before calling `create()`,
+  and maps Chrome's `NotAllowedError` to
+  `LocalAiUserActivationRequiredException` for browsers without that API.
+  Call `ensureReady()` from a click or key handler, not at start-up.
+* **Web: token counts use the right session.** `sizeInTokens` used to
+  measure on whichever session was opened first, and could run in the middle
+  of a streaming turn. It now measures on the calling session, after any
+  turn in progress there finishes.
+* **`LocalAi.availabilityReason()` never throws,** matching `availability()`.
+  On a platform with no registered plugin it returns a sentence instead of
+  throwing `MissingPluginException`. It uses the same `debugProbeTimeout`
+  bound as `availability()`.
+
+### Internal
+
+* The web test suite runs again, and CI and publish now run it on Chrome.
+  The files that were `local_ai_host.dart` and `fake_local_ai_host.dart`
+  under `lib/src/` are renamed to `local_ai_host_api.dart` and
+  `local_ai_host_fake.dart`, because `flutter test --platform chrome` serves
+  any path containing `host.dart.js` as its own runner script. As a result,
+  every browser test that loaded them hung at "loading". Code that imports
+  only the public libraries (`flutter_local_ai.dart`, `testing.dart`) is not
+  affected; deep `src/` imports need the new names.
+* The example app runs on the web. It had no `web/` platform folder, and it
+  called `dart:io`'s `Platform.isAndroid` during `build()`, which throws in a
+  browser and left a blank page. It now uses `defaultTargetPlatform` and
+  `kIsWeb`, and CI builds it for the web.
+* `LocalAiSession` and `LocalAiModel` use Dart 3.12 private named
+  parameters instead of longhand initializer lists.
+* The CI and publish floor legs now run Flutter `3.44.0` exactly.
+
 ## 0.1.2
 
 * Tool errors now build their `details` key with a null-aware map element

@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'local_ai_host.dart';
+import 'local_ai_host_api.dart';
 import 'local_ai_runtime.dart';
 
 /// Probing and preparing the OS built-in model.
@@ -35,8 +35,23 @@ abstract final class LocalAi {
   }
 
   /// One human-readable sentence naming what the user would have to change.
-  static Future<String> availabilityReason({LocalAiHost? host}) =>
-      (host ?? localAiHost).availabilityReason();
+  ///
+  /// Never throws and never hangs, like [availability]: where that answers
+  /// [LocalAiAvailability.unavailableOther] because the probe failed, this
+  /// answers a sentence saying so instead of rethrowing, e.g. a
+  /// `MissingPluginException` on a platform with no registered plugin.
+  static Future<String> availabilityReason({LocalAiHost? host}) async {
+    try {
+      return await (host ?? localAiHost).availabilityReason().timeout(
+        debugProbeTimeout,
+      );
+    } on TimeoutException {
+      return 'Built-in AI did not report its status within '
+          '$debugProbeTimeout, so it is treated as unavailable.';
+    } catch (e) {
+      return 'Built-in AI is not available on this platform ($e).';
+    }
+  }
 
   /// What the running host can actually do — vision, tools, schemas, exact
   /// token counts. Gate optional features on this rather than on
@@ -54,6 +69,11 @@ abstract final class LocalAi {
   ///   [LocalAiAvailability.downloading] joins the one already running.
   ///
   /// [onProgress] receives 0..100. [timeout] bounds the whole wait.
+  ///
+  /// A download that cannot even be started fails this call straight away
+  /// with the host's error. On the web that means calling from a user gesture:
+  /// Chrome refuses to start a download without one, and this throws
+  /// [LocalAiUserActivationRequiredException].
   static Future<void> ensureReady({
     void Function(int percent)? onProgress,
     Duration timeout = const Duration(minutes: 10),
@@ -141,16 +161,20 @@ abstract final class LocalAi {
 
     try {
       if (kickOff) {
-        // Fire-and-forget on purpose. The OS routes the AICore feature
-        // download through a system-managed queue that can sit silent for
-        // minutes — or, on a CI device, never get a scheduler slot — and ML
-        // Kit's download() gives no terminal-emission guarantee, so awaiting
-        // it can hang. Availability polling is the readiness signal; a silent
-        // failure surfaces there or via [timeout].
+        // Not awaited on purpose. The OS routes the AICore feature download
+        // through a system-managed queue that can sit silent for minutes — or,
+        // on a CI device, never get a scheduler slot — and ML Kit's
+        // download() gives no terminal-emission guarantee, so awaiting it can
+        // hang. Availability polling is the readiness signal.
+        //
+        // A kick-off that *fails*, though, ends the wait. Availability keeps
+        // reading `downloadable` after a refused start — Chrome's
+        // NotAllowedError outside a user gesture is the common case — so
+        // polling alone would sit out the whole [timeout] and then report a
+        // slow download instead of the real reason.
         unawaited(
-          host.downloadFeature().catchError((Object _) {
-            // Swallowed here so a kick-off failure can't escape a detached
-            // future; poll() observes the real outcome.
+          host.downloadFeature().catchError((Object e, StackTrace stackTrace) {
+            if (!ready.isCompleted) ready.completeError(e, stackTrace);
           }),
         );
       }

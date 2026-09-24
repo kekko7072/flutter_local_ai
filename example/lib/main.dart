@@ -1,13 +1,22 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter_local_ai/flutter_local_ai.dart';
 
 void main() {
   runApp(const MyApp());
 }
+
+// `dart:io`'s `Platform` throws on the web, where this example also runs, so
+// the native-only branches key off the target platform and `kIsWeb` instead.
+bool _isNative(TargetPlatform platform) =>
+    !kIsWeb && defaultTargetPlatform == platform;
+bool get _isAndroid => _isNative(TargetPlatform.android);
+bool get _isIOS => _isNative(TargetPlatform.iOS);
+bool get _isMacOS => _isNative(TargetPlatform.macOS);
+bool get _isWindows => _isNative(TargetPlatform.windows);
 
 /// Which set of system instructions the shared on-device session currently
 /// holds. The text tab and the genUI tab need different instructions, and the
@@ -157,7 +166,7 @@ class _MyHomePageState extends State<MyHomePage> {
         /* keep unsupported */
       }
 
-      if (Platform.isAndroid) {
+      if (_isAndroid) {
         await _refreshModelStatus();
       }
 
@@ -222,7 +231,7 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   void _downloadModel() {
-    if (!Platform.isAndroid || _isDownloading) return;
+    if (!_isAndroid || _isDownloading) return;
 
     setState(() {
       _isDownloading = true;
@@ -282,7 +291,7 @@ class _MyHomePageState extends State<MyHomePage> {
   Future<void> _configureTools(bool enable) async {
     // Tool calling is Apple-only: ML Kit GenAI's Prompt API has no function
     // calling, so the Android backend rejects registerTools.
-    if (!Platform.isIOS && !Platform.isMacOS) return;
+    if (!_isIOS && !_isMacOS) return;
     try {
       final tools = enable ? _buildSampleTools() : <LocalAiTool>[];
       await _aiEngine.registerTools(tools);
@@ -1202,7 +1211,7 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Widget _buildTextTab(BuildContext context) {
-    final supportsTools = !kIsWeb && (Platform.isIOS || Platform.isMacOS);
+    final supportsTools = _isIOS || _isMacOS;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
@@ -1235,13 +1244,13 @@ class _MyHomePageState extends State<MyHomePage> {
                             ),
                             if (!kIsWeb)
                               Text(
-                                Platform.isWindows
+                                _isWindows
                                     ? 'Windows'
-                                    : Platform.isAndroid
+                                    : _isAndroid
                                     ? 'Android'
-                                    : Platform.isIOS
+                                    : _isIOS
                                     ? 'iOS'
-                                    : Platform.isMacOS
+                                    : _isMacOS
                                     ? 'macOS'
                                     : 'Unknown',
                                 style: Theme.of(context).textTheme.bodySmall
@@ -1290,7 +1299,7 @@ class _MyHomePageState extends State<MyHomePage> {
           ),
           const SizedBox(height: 16),
 
-          if (Platform.isAndroid)
+          if (_isAndroid)
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
@@ -1371,7 +1380,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 ),
               ),
             ),
-          if (Platform.isAndroid) const SizedBox(height: 16),
+          if (_isAndroid) const SizedBox(height: 16),
 
           // Instructions TextField (expandable)
           ExpansionTile(

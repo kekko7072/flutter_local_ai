@@ -90,18 +90,17 @@ Add to your `.vscode/settings.json`:
 ## Current Configuration
 
 - **Development SDK:** Flutter 3.44.8, pinned in `.fvmrc`
-- **Minimum supported SDK:** Flutter >=3.32.0 / Dart >=3.8.0, declared in
+- **Minimum supported SDK:** Flutter >=3.44.0 / Dart >=3.12.0, declared in
   `pubspec.yaml`
 
 Those are deliberately two different numbers. The pubspec floor is the oldest
 SDK an app depending on `flutter_local_ai` may be on, so the package has to
-keep resolving, analyzing and testing there — which is why `LocalAiSession`
-and `LocalAiModel` spell their constructors out longhand instead of using
-Dart 3.12's private named parameters. 3.8 is where `flutter_lints` 6 puts it
-(its own pubspec declares `sdk: ^3.8.0`), and nothing in the package asks for
-more: the web arm's `extension type` / `dart:js_interop` interop has been
-stable since Dart 3.3, and the null-aware elements in its Prompt API option
-builders land exactly on 3.8. `.fvmrc` pins the newest SDK the repository
+keep resolving, analyzing and testing there. Flutter 3.44 is where it sits
+because that is the first release that applies the Kotlin Gradle Plugin to
+plugin subprojects itself: before it, the Android arm had to apply KGP on its
+own, and a plugin that does that is a hard configuration error under AGP 9
+with built-in Kotlin. Flutter 3.44 ships Dart 3.12, which the package also
+uses (private named parameters in `LocalAiSession` and `LocalAiModel`). `.fvmrc` pins the newest SDK the repository
 itself develops on, so contributors and CI share one toolchain and see
 identical analyzer output. Bumping `.fvmrc` is routine; raising the pubspec
 floor drops users, and needs a reason beyond convenience.
@@ -110,7 +109,7 @@ floor drops users, and needs a reason beyond convenience.
 
 ### ✅ **Shared (Committed to Git):**
 - `.fvmrc` - The Flutter version specification (e.g., "3.44.8")
-- `pubspec.yaml` - Flutter SDK constraints (`flutter: ">=3.32.0"`), which are
+- `pubspec.yaml` - Flutter SDK constraints (`flutter: ">=3.44.0"`), which are
   the floor for consumers, not the development version
 - Other project-level configs (analysis_options.yaml, etc.)
 
