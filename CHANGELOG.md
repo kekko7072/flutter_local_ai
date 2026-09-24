@@ -66,6 +66,10 @@ and an availability probe that could throw.
   every browser test that loaded them hung at "loading". Code that imports
   only the public libraries (`flutter_local_ai.dart`, `testing.dart`) is not
   affected; deep `src/` imports need the new names.
+* The example app runs on the web. It had no `web/` platform folder, and it
+  called `dart:io`'s `Platform.isAndroid` during `build()`, which throws in a
+  browser and left a blank page. It now uses `defaultTargetPlatform` and
+  `kIsWeb`, and CI builds it for the web.
 * `LocalAiSession` and `LocalAiModel` use Dart 3.12 private named
   parameters instead of longhand initializer lists.
 * The CI and publish floor legs now run Flutter `3.44.0` exactly.

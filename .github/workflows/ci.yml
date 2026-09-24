@@ -107,6 +107,14 @@ jobs:
       - name: Test the web arm
         run: flutter test --platform chrome test/web
 
+      # The unit suites never execute the example's widget tree, and a
+      # `dart:io` `Platform` call in it only fails at runtime in a browser
+      # (a grey screen, no build error). Building at least proves the example
+      # still has its web platform and compiles for it.
+      - name: Build the example for the web
+        run: flutter build web
+        working-directory: example
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
