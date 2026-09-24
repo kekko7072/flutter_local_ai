@@ -130,6 +130,35 @@ bool get hasLanguageModelParams {
       : null,
 );
 
+/// `navigator.userActivation.isActive`: whether the page is inside a user
+/// gesture right now (transient activation), which Chrome requires before
+/// `LanguageModel.create()` may start a model download.
+///
+/// True on a browser without the `userActivation` API, so the check never
+/// blocks a download it cannot judge; `create()` still rejects with a
+/// `NotAllowedError` there, which [isNotAllowedError] catches.
+bool get hasTransientUserActivation {
+  final navigator = globalContext.getProperty<JSObject?>('navigator'.toJS);
+  if (navigator == null || !navigator.has('userActivation')) return true;
+  final activation = navigator.getProperty<JSObject?>('userActivation'.toJS);
+  if (activation == null || !activation.has('isActive')) return true;
+  return activation.getProperty<JSBoolean>('isActive'.toJS).toDart;
+}
+
+/// Whether [error] is the JS `NotAllowedError` `create()` rejects with when a
+/// download needs a user gesture the page does not have. Matches the
+/// structured `DOMException.name` only, for the reasons [isAbortError] gives.
+bool isNotAllowedError(Object error) =>
+    _domExceptionName(error) == 'NotAllowedError';
+
+String? _domExceptionName(Object error) {
+  try {
+    return (error as JSObject).getProperty<JSString?>('name'.toJS)?.toDart;
+  } catch (_) {
+    return null;
+  }
+}
+
 /// Whether [error] is the JS `AbortError` that `AbortController.abort()`
 /// produces on an in-flight `prompt()` / `promptStreaming()` — i.e. the user
 /// pressing stop, not a generation failure.
@@ -142,16 +171,7 @@ bool get hasLanguageModelParams {
 /// check against an interop type either (unreliable across compile modes):
 /// attempt the property read and treat anything not JS-shaped as "not an
 /// abort".
-bool isAbortError(Object error) {
-  try {
-    final name = (error as JSObject)
-        .getProperty<JSString?>('name'.toJS)
-        ?.toDart;
-    return name == 'AbortError';
-  } catch (_) {
-    return false;
-  }
-}
+bool isAbortError(Object error) => _domExceptionName(error) == 'AbortError';
 
 /// Builds the `create()` options object.
 ///

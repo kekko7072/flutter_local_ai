@@ -22,7 +22,9 @@ allprojects {
 }
 
 apply plugin: 'com.android.library'
-apply plugin: 'kotlin-android'
+// No `apply plugin: 'kotlin-android'`: Flutter 3.44+ applies KGP to plugin
+// subprojects itself, and a plugin that applies it too is a hard configuration
+// error under AGP 9 with built-in Kotlin — one that fails the whole app build.
 
 android {
     namespace 'io.vezz.flutter_local_ai'

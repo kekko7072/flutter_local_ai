@@ -12,16 +12,12 @@ import 'local_ai_session.dart';
 /// [openSession] sessions, each with its own conversation context;
 /// generation across them is serialized by the host.
 class LocalAiModel {
-  // See the note on LocalAiSession's constructor: private named parameters
-  // are a Dart 3.12 feature, and using them here would raise this package's
-  // floor to Flutter 3.44 for everyone.
   LocalAiModel._({
-    required LocalAiHost host,
+    required this._host,
     required this.maxTokens,
     required this.supportImage,
-    required _HostModelState state,
-  }) : _host = host,
-       _state = state;
+    required this._state,
+  });
 
   static final _states = Expando<_HostModelState>();
 

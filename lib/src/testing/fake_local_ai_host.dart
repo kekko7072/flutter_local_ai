@@ -141,6 +141,16 @@ class FakeLocalAiHost implements LocalAiHost {
   /// channel.
   Object? countTokensError;
 
+  /// The session id each [countTokens] call was scoped to, in order.
+  final List<int> countTokensSessionIds = [];
+
+  /// Thrown by [downloadFeature] when set — models a download that cannot be
+  /// started, such as the web arm outside a user gesture.
+  Object? downloadFeatureError;
+
+  /// Thrown by [availabilityReason] when set — models an unregistered plugin.
+  Object? availabilityReasonError;
+
   /// Thrown by [createSession] when set — models a host rejecting tools or
   /// an unsupported configuration.
   Object? createSessionError;
@@ -253,13 +263,21 @@ class FakeLocalAiHost implements LocalAiHost {
   }
 
   @override
-  Future<String> availabilityReason() async => reason;
+  Future<String> availabilityReason() async {
+    final error = availabilityReasonError;
+    if (error != null) throw error;
+    return reason;
+  }
 
   @override
   Future<LocalAiBackendCapabilities> getBackendInfo() async => capabilities;
 
   @override
-  Future<void> downloadFeature() async => calls.add('downloadFeature');
+  Future<void> downloadFeature() async {
+    calls.add('downloadFeature');
+    final error = downloadFeatureError;
+    if (error != null) throw error;
+  }
 
   @override
   Future<bool> openAICorePlayStore() async {
@@ -373,8 +391,12 @@ class FakeLocalAiHost implements LocalAiHost {
       calls.add('stopGeneration');
 
   @override
-  Future<int> countTokens(String text) async {
+  Future<int> countTokens({
+    required int sessionId,
+    required String text,
+  }) async {
     calls.add('countTokens');
+    countTokensSessionIds.add(sessionId);
     final error = countTokensError;
     if (error != null) throw error;
     return countTokensResult;

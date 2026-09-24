@@ -340,7 +340,7 @@ void main() {
         ),
       );
 
-      expect(await host.countTokens('abcd'), 4);
+      expect(await host.countTokens(sessionId: 1, text: 'abcd'), 4);
       expect(session.measureCalls, ['measureContextUsage']);
     });
 
@@ -354,8 +354,57 @@ void main() {
         ),
       );
 
-      expect(await host.countTokens('abcd'), 4);
+      expect(await host.countTokens(sessionId: 1, text: 'abcd'), 4);
       expect(session.measureCalls, ['measureInputUsage']);
+    });
+
+    test('measures on the session it is asked about', () async {
+      final sessions = <FakeSession>[];
+      final languageModel = FakeLanguageModel(
+        create: ([options]) {
+          final session = FakeSession();
+          sessions.add(session);
+          return session;
+        },
+      );
+      final host = await openSession(languageModel);
+      await host.createSession(sessionId: 2, temperature: 0.8, topK: 3);
+
+      expect(await host.countTokens(sessionId: 2, text: 'abcd'), 4);
+      // Before, it borrowed the first open session whatever the caller was.
+      expect(sessions.first.measureCalls, isEmpty);
+      expect(sessions.last.measureCalls, ['measureContextUsage']);
+    });
+
+    test('waits for the session to finish generating', () async {
+      late final FakeSession session;
+      final host = await openSession(
+        FakeLanguageModel(
+          create: ([options]) =>
+              session = FakeSession(streamChunks: (_) => ['a', 'b', 'c']),
+        ),
+      );
+      final turn = _Turn(host, 1);
+      addTearDown(turn.dispose);
+      var turnEnded = false;
+      unawaited(turn.finished.then((_) => turnEnded = true));
+
+      await host.generateResponseAsync(1);
+      final count = host.countTokens(sessionId: 1, text: 'abcd');
+
+      expect(await count, 4);
+      // Measured only once the stream had drained, never mid-turn.
+      expect(turnEnded, isTrue);
+      expect(session.measureCalls, ['measureContextUsage']);
+    });
+
+    test('rejects an unknown session', () async {
+      final host = await openSession(FakeLanguageModel());
+
+      await expectLater(
+        host.countTokens(sessionId: 99, text: 'abcd'),
+        throwsA(isA<StateError>()),
+      );
     });
 
     test('reports no tokenizer when the build exposes neither', () async {
@@ -368,8 +417,66 @@ void main() {
       // Naming the missing methods beats the opaque JS
       // "measureInputUsage is not a function" the blind call produced.
       await expectLater(
-        host.countTokens('abcd'),
+        host.countTokens(sessionId: 1, text: 'abcd'),
         throwsA(isA<LocalAiTokenizerUnavailable>()),
+      );
+    });
+  });
+
+  group('downloadFeature', () {
+    test('refuses outside a user gesture without calling create()', () async {
+      final languageModel = FakeLanguageModel(availability: 'downloadable')
+        ..install();
+      final host = WebLocalAiHost(hasUserActivation: () => false);
+
+      await expectLater(
+        host.downloadFeature(),
+        throwsA(
+          isA<LocalAiUserActivationRequiredException>().having(
+            (e) => e.status,
+            'status',
+            LocalAiAvailability.downloadable,
+          ),
+        ),
+      );
+      expect(languageModel.createOptions, isEmpty);
+    });
+
+    test('maps Chrome\'s NotAllowedError to the same exception', () async {
+      // A browser without navigator.userActivation, or activation that lapsed
+      // before create() ran: Chrome itself is the one to refuse.
+      FakeLanguageModel(
+        availability: 'downloadable',
+        createRejectsWith: ('NotAllowedError', 'Requires a user gesture'),
+      ).install();
+      final host = WebLocalAiHost(hasUserActivation: () => true);
+
+      await expectLater(
+        host.downloadFeature(),
+        throwsA(isA<LocalAiUserActivationRequiredException>()),
+      );
+    });
+
+    test('starts the download inside a user gesture', () async {
+      final languageModel = FakeLanguageModel(availability: 'downloadable')
+        ..install();
+      final host = WebLocalAiHost(hasUserActivation: () => true);
+
+      await host.downloadFeature();
+
+      expect(languageModel.createOptions, hasLength(1));
+      expect(languageModel.lastSession!.destroyCount, 1);
+    });
+
+    test('lets any other create() failure through unchanged', () async {
+      FakeLanguageModel(
+        createRejectsWith: ('QuotaExceededError', 'disk full'),
+      ).install();
+      final host = WebLocalAiHost(hasUserActivation: () => true);
+
+      await expectLater(
+        host.downloadFeature(),
+        throwsA(isNot(isA<LocalAiUnavailableException>())),
       );
     });
   });

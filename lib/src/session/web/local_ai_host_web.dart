@@ -26,6 +26,33 @@ class _WebSession {
   /// decoding.
   AbortController? inFlight;
 
+  /// Completes when the turn holding [inFlight] releases it, so work that
+  /// must not overlap a generation (token counting) can wait its turn.
+  Completer<void>? _turnDone;
+
+  /// Takes the generation slot for [controller].
+  void reserve(AbortController controller) {
+    inFlight = controller;
+    _turnDone = Completer<void>();
+  }
+
+  /// Gives the slot back, but only if [controller] still owns it — a turn
+  /// that was superseded or whose session was closed must not null out a
+  /// newer turn's reservation.
+  void release(AbortController controller) {
+    if (!identical(inFlight, controller)) return;
+    inFlight = null;
+    _turnDone?.complete();
+    _turnDone = null;
+  }
+
+  /// Resolves once no turn is generating on this session.
+  Future<void> whenIdle() async {
+    while (inFlight != null) {
+      await _turnDone!.future;
+    }
+  }
+
   /// Drains the queued chunks — a generation consumes them, exactly as the
   /// native hosts consume their buffered transcript.
   String takeTranscript() {
@@ -44,6 +71,14 @@ class _WebSession {
 /// *does* support schema-constrained output via `responseConstraint`, which
 /// Android cannot do.
 class WebLocalAiHost implements LocalAiHost {
+  /// [hasUserActivation] defaults to [hasTransientUserActivation]; tests
+  /// replace it because a test runner never has a real user gesture.
+  WebLocalAiHost({bool Function()? hasUserActivation})
+    : _hasUserActivation = hasUserActivation ?? _readUserActivation;
+
+  static bool _readUserActivation() => hasTransientUserActivation;
+
+  final bool Function() _hasUserActivation;
   final _events = StreamController<LocalAiHostEvent>.broadcast();
   final Map<int, _WebSession> _sessions = {};
 
@@ -77,13 +112,6 @@ class WebLocalAiHost implements LocalAiHost {
       'one turn at a time per session: await the current response, or call '
       'stopGeneration(), before starting another.',
     );
-  }
-
-  /// Releases the single generation slot, but only if [controller] still owns
-  /// it — a turn that was superseded or whose session was closed must not null
-  /// out a newer turn's reservation.
-  void _releaseSlot(_WebSession state, AbortController controller) {
-    if (identical(state.inFlight, controller)) state.inFlight = null;
   }
 
   void _emitDone(int sessionId) => _events.add(
@@ -162,6 +190,12 @@ class WebLocalAiHost implements LocalAiHost {
         'The Prompt API is not available in this browser.',
       );
     }
+    // Chrome starts a download only inside a user gesture, and outside one
+    // `create()` rejects — which ensureReady would otherwise see only as a
+    // download that never finishes. Checked up front so the caller is told
+    // *why*; the NotAllowedError mapping below covers browsers without the
+    // userActivation API and activation that lapsed before `create()` ran.
+    if (!_hasUserActivation()) throw _userActivationRequired();
     // `create()` performs (and dedupes) the download; there is no separate
     // kick-off call. The bootstrap session is disposed once it resolves —
     // Chrome keeps the weights cached regardless.
@@ -177,9 +211,22 @@ class WebLocalAiHost implements LocalAiHost {
         );
       },
     );
-    final session = await LanguageModel.create(options).toDart;
+    final PromptSession session;
+    try {
+      session = await LanguageModel.create(options).toDart;
+    } catch (e) {
+      if (isNotAllowedError(e)) throw _userActivationRequired();
+      rethrow;
+    }
     session.destroy();
   }
+
+  static LocalAiUserActivationRequiredException _userActivationRequired() =>
+      LocalAiUserActivationRequiredException(
+        'Chrome only starts the Gemini Nano download inside a user gesture. '
+        'Call LocalAi.ensureReady() from a click or key handler (for example '
+        'an "Enable AI" button), not at start-up.',
+      );
 
   @override
   Future<bool> openAICorePlayStore() async => false;
@@ -327,7 +374,7 @@ class WebLocalAiHost implements LocalAiHost {
     _requireIdle(state, sessionId);
     _warnOverridesIgnored(overrides);
     final controller = AbortController();
-    state.inFlight = controller;
+    state.reserve(controller);
     try {
       final options = buildPromptOptions(signal: controller.signal);
       final response = await state.session
@@ -342,7 +389,7 @@ class WebLocalAiHost implements LocalAiHost {
       if (isAbortError(e)) return '';
       rethrow;
     } finally {
-      _releaseSlot(state, controller);
+      state.release(controller);
     }
   }
 
@@ -355,7 +402,7 @@ class WebLocalAiHost implements LocalAiHost {
     _requireIdle(state, sessionId);
     _warnOverridesIgnored(overrides);
     final controller = AbortController();
-    state.inFlight = controller;
+    state.reserve(controller);
 
     final JSObject stream;
     try {
@@ -368,7 +415,7 @@ class WebLocalAiHost implements LocalAiHost {
       // promptStreaming threw before a stream existed. Release the slot here,
       // or the session stays wedged as "already generating" for every later
       // turn, then let the caller see the failure.
-      _releaseSlot(state, controller);
+      state.release(controller);
       rethrow;
     }
 
@@ -404,7 +451,7 @@ class WebLocalAiHost implements LocalAiHost {
           );
         }
       } finally {
-        _releaseSlot(state, controller);
+        state.release(controller);
       }
     }());
   }
@@ -419,7 +466,7 @@ class WebLocalAiHost implements LocalAiHost {
     _requireIdle(state, sessionId);
     _warnOverridesIgnored(overrides);
     final controller = AbortController();
-    state.inFlight = controller;
+    state.reserve(controller);
     try {
       final options = buildPromptOptions(
         responseConstraint: jsonDecode(schemaJson),
@@ -436,7 +483,7 @@ class WebLocalAiHost implements LocalAiHost {
       if (isAbortError(e)) return '';
       rethrow;
     } finally {
-      _releaseSlot(state, controller);
+      state.release(controller);
     }
   }
 
@@ -460,17 +507,18 @@ class WebLocalAiHost implements LocalAiHost {
   }
 
   @override
-  Future<int> countTokens(String text) async {
-    // The measuring method is a session method, so borrow any live session;
-    // with none open there is nothing to measure against.
-    final state = _sessions.values.firstOrNull;
-    if (state == null) {
-      throw LocalAiTokenizerUnavailable(
-        'Counting tokens on the web arm needs an open session — the Prompt '
-        'API measures input usage against a session.',
-      );
-    }
-    final session = state.session;
+  Future<int> countTokens({
+    required int sessionId,
+    required String text,
+  }) async {
+    // Measured on the caller's own session, and not while it is decoding:
+    // Chrome runs one operation at a time per session, and a measurement
+    // cutting into a `promptStreaming` turn is not what either caller asked
+    // for.
+    await _require(sessionId).whenIdle();
+    // Closed while we waited: report it the way any other call on a closed
+    // session is reported.
+    final session = _require(sessionId).session;
     // `measureContextUsage` first: it is the current spec name, and calling
     // only the legacy `measureInputUsage` fails on a current Chrome, where
     // that name no longer exists. Each name is probed before it is called so a

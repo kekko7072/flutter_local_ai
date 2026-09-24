@@ -19,9 +19,9 @@ name: Publish
 # `validate`.
 #
 # `validate` is matrixed over the two Flutter versions ci.yml checks — the
-# 3.32.x floor pubspec.yaml advertises and the pinned 3.44.x stable — and
+# 3.44.0 floor pubspec.yaml advertises and the pinned 3.44.x stable — and
 # resolves, analyzes and tests on both. Validating one version only would let
-# a tag publish a package whose advertised `flutter: ">=3.32.0"` floor is
+# a tag publish a package whose advertised `flutter: ">=3.44.0"` floor is
 # already broken, with the whole release pipeline green; catching that before
 # a consumer does is the entire reason ci.yml grew a floor leg, and a release
 # is the worst place to be laxer than CI. Everything that is a property of a
@@ -58,7 +58,7 @@ jobs:
       matrix:
         include:
           - label: floor
-            flutter: "3.32.x"
+            flutter: "3.44.0"
           - label: stable
             flutter: "3.44.x"
     steps:
@@ -161,7 +161,7 @@ jobs:
           cache: true
 
       # Resolution is the first half of the compatibility claim: on the floor
-      # leg pub has to find a set of dependency versions a Dart 3.8 SDK will
+      # leg pub has to find a set of dependency versions a Dart 3.12.0 SDK will
       # accept. It rewrites pubspec.lock to whatever it settles on, which is
       # why the pigeon step below diffs named files instead of the worktree.
       - run: flutter pub get

@@ -24,7 +24,8 @@ export 'src/session/local_ai_host.dart'
         LocalAiDownloadProgressEvent,
         LocalAiTokenizerUnavailable,
         LocalAiUnavailableException,
-        LocalAiUnsupportedException;
+        LocalAiUnsupportedException,
+        LocalAiUserActivationRequiredException;
 export 'src/session/local_ai_model.dart';
 // `UnknownToolException` escapes into app-visible code: a tool call the
 // session never offered, replayed through `FakeLocalAiHost.invokeTool`.

@@ -13,16 +13,11 @@ import 'local_ai_host.dart';
 /// [addImage]) accumulate the turn, then one of the generate calls consumes
 /// it.
 class LocalAiSession {
-  // Initializing formals for the private fields would need Dart 3.12's
-  // private named parameters, which would push every consumer of this
-  // package to Flutter 3.44. The spelling below costs two lines and keeps
-  // the floor at Flutter 3.32.
   LocalAiSession({
     required this.sessionId,
-    required LocalAiHost host,
-    required void Function() onClose,
-  }) : _host = host,
-       _onClose = onClose;
+    required this._host,
+    required this._onClose,
+  });
 
   final int sessionId;
   final LocalAiHost _host;
@@ -167,7 +162,7 @@ class LocalAiSession {
   Future<int> sizeInTokens(String text) async {
     _assertOpen();
     try {
-      return await _host.countTokens(text);
+      return await _host.countTokens(sessionId: sessionId, text: text);
     } on LocalAiTokenizerUnavailable {
       return (text.length / 4).ceil();
     }

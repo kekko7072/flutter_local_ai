@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:flutter/services.dart' show MissingPluginException;
 import 'package:flutter_local_ai/flutter_local_ai.dart';
 import 'package:flutter_local_ai/testing.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -179,6 +180,18 @@ void main() {
       final session = await model.openSession();
 
       expect(await session.sizeInTokens('whatever'), 42);
+    });
+
+    test('scopes the count to the session asking', () async {
+      final model = await newModel();
+      await model.openSession();
+      final second = await model.openSession();
+
+      await second.sizeInTokens('whatever');
+
+      // The web arm measures on this id; without it the count ran on
+      // whichever session happened to be open first.
+      expect(host.countTokensSessionIds, [second.sessionId]);
     });
 
     test('falls back to an estimate when the host has no tokenizer', () async {
@@ -466,6 +479,24 @@ void main() {
     });
   });
 
+  group('LocalAi.availabilityReason', () {
+    test('returns the host sentence', () async {
+      host.reason = 'Enable AICore.';
+      expect(await LocalAi.availabilityReason(), 'Enable AICore.');
+    });
+
+    test('never throws, like availability()', () async {
+      // An unregistered plugin: availability() reports unavailableOther
+      // there, and the reason must not throw beside it.
+      host.availabilityReasonError = MissingPluginException('no plugin');
+
+      expect(
+        await LocalAi.availabilityReason(),
+        contains('not available on this platform'),
+      );
+    });
+  });
+
   group('LocalAi.ensureReady', () {
     test('returns immediately when already available', () async {
       await LocalAi.ensureReady();
@@ -505,6 +536,27 @@ void main() {
         expect(percents, contains(50));
       },
     );
+
+    test('fails fast when the download cannot be started', () async {
+      host.availability = LocalAiAvailability.downloadable;
+      host.downloadFeatureError = LocalAiUserActivationRequiredException(
+        'needs a gesture',
+      );
+
+      // Availability keeps reading `downloadable` after a refused start, so
+      // before this the call sat out its whole timeout and then blamed a slow
+      // download. A timeout far longer than the test proves it did not wait.
+      await expectLater(
+        LocalAi.ensureReady(timeout: const Duration(minutes: 10)),
+        throwsA(
+          isA<LocalAiUserActivationRequiredException>().having(
+            (e) => e.status,
+            'status',
+            LocalAiAvailability.downloadable,
+          ),
+        ),
+      );
+    });
 
     test('joins an in-flight download instead of starting a second', () async {
       host.availability = LocalAiAvailability.downloading;

@@ -210,6 +210,7 @@ class FakeLanguageModel {
   FakeLanguageModel({
     String availability = 'available',
     FakeSession Function([JSObject? options])? create,
+    this.createRejectsWith,
     double? maxTemperature = 2.0,
     int? maxTopK = 8,
     bool includeParams = true,
@@ -225,6 +226,13 @@ class FakeLanguageModel {
       'create'.toJS,
       (([JSObject? options]) {
         createOptions.add(options);
+        final rejection = createRejectsWith;
+        if (rejection != null) {
+          return jsPromiseOf<JSObject>(
+            (resolve, reject) =>
+                reject(fakeDomException(rejection.$1, rejection.$2)),
+          );
+        }
         final session = create?.call(options) ?? FakeSession();
         lastSession = session;
         return jsPromiseOf<JSObject>(
@@ -251,6 +259,10 @@ class FakeLanguageModel {
   }
 
   late final JSObject _jsObject;
+
+  /// `(name, message)` to reject every `create()` with — Chrome's
+  /// `NotAllowedError` for a download outside a user gesture, say.
+  final (String, String)? createRejectsWith;
 
   /// The options object handed to each `create()` call, newest last.
   final List<JSObject?> createOptions = [];
