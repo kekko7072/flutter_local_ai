@@ -176,13 +176,20 @@ class LocalAiSession {
     LocalAiGenerationOverrides? overrides,
   ) => overrides == null || overrides.isEmpty ? null : overrides;
 
-  /// Releases the native session. Idempotent.
-  Future<void> close() async {
-    if (_isClosed) return;
+  Future<void>? _closing;
+
+  /// Releases the native session. Idempotent; a failed close can be retried.
+  Future<void> close() => _closing ??= () async {
     _isClosed = true;
+    try {
+      await _host.closeSession(sessionId);
+    } catch (_) {
+      _isClosed = false;
+      _closing = null;
+      rethrow;
+    }
     _onClose();
-    await _host.closeSession(sessionId);
-  }
+  }();
 }
 
 /// A failure reported by the model during generation, delivered on the

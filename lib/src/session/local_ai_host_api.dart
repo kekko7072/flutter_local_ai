@@ -95,6 +95,18 @@ class LocalAiUnsupportedException implements Exception {
   String toString() => 'LocalAiUnsupportedException($capability): $message';
 }
 
+/// Thrown on every platform when a session gets a call while it is still
+/// generating. Await the running turn or call `stopGeneration()`, then retry.
+class LocalAiSessionBusyException implements Exception {
+  LocalAiSessionBusyException(this.sessionId, this.message);
+
+  final int sessionId;
+  final String message;
+
+  @override
+  String toString() => 'LocalAiSessionBusyException($sessionId): $message';
+}
+
 /// Which OS API is answering.
 enum LocalAiBackendKind {
   androidMlKitGenAi,

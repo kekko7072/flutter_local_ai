@@ -85,6 +85,7 @@ class WebLocalAiHost implements LocalAiHost {
   bool _supportImage = false;
   bool _warnedOverrides = false;
   bool _warnedClamp = false;
+  bool _warnedDropped = false;
 
   @override
   Stream<LocalAiHostEvent> get events => _events.stream;
@@ -100,14 +101,15 @@ class WebLocalAiHost implements LocalAiHost {
   /// Rejects a second generation on a session that is already decoding.
   ///
   /// The native hosts answer the same misuse with a `SESSION_BUSY` platform
-  /// error (Android's `requireIdle`); here it is a [StateError], the same type
-  /// [_require] uses for the other way of calling this host wrong. Failing is
+  /// error (Android's `requireIdle`), mapped to the same
+  /// [LocalAiSessionBusyException] this throws. Failing is
   /// the point: the alternative is two turns racing one Chrome session, with
   /// the earlier one unstoppable and both writing into the same tagged event
   /// stream.
   void _requireIdle(_WebSession state, int sessionId) {
     if (state.inFlight == null) return;
-    throw StateError(
+    throw LocalAiSessionBusyException(
+      sessionId,
       'Session $sessionId is already generating. The Chrome Prompt API runs '
       'one turn at a time per session: await the current response, or call '
       'stopGeneration(), before starting another.',
@@ -272,7 +274,16 @@ class WebLocalAiHost implements LocalAiHost {
     }
     // topP and maxOutputTokens have no Prompt API equivalent. They are
     // accepted for cross-platform API parity and deliberately dropped rather
-    // than faked — sampling stays whatever temperature/topK select.
+    // than faked — sampling stays whatever temperature/topK select — but not
+    // silently.
+    if (!_warnedDropped && (topP != null || maxOutputTokens != null)) {
+      _warnedDropped = true;
+      // ignore: avoid_print
+      print(
+        '[flutter_local_ai/web] topP and maxOutputTokens are ignored: the '
+        'Chrome Prompt API has no top-p sampling and no output-length cap.',
+      );
+    }
     final (clampedTemperature, clampedTopK) = await _clampSampler(
       temperature: temperature,
       topK: topK,
