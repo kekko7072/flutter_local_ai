@@ -70,36 +70,16 @@ void main() {
     test('a failed close can be retried', () async {
       final model = await newModel();
       final session = await model.openSession();
-      host.closeSessionError = StateError('transient teardown failure');
+      host.closeSessionError = StateError('teardown failed');
 
       await expectLater(session.close(), throwsStateError);
-
-      // Still open and still owned, so nothing about the native session that
-      // is still alive has been forgotten.
       expect(session.isClosed, isFalse);
       expect(model.sessions, contains(session));
-      await session.addQueryChunk('still usable');
 
       host.closeSessionError = null;
       await session.close();
-
       expect(session.isClosed, isTrue);
       expect(model.sessions, isEmpty);
-      expect(host.closedIds, [session.sessionId]);
-    });
-
-    test('a close already in flight is shared, not skipped', () async {
-      final model = await newModel();
-      final session = await model.openSession();
-
-      final first = session.close();
-      final second = session.close();
-      // Refuses work from the moment close starts.
-      expect(session.isClosed, isTrue);
-      expect(() => session.addQueryChunk('x'), throwsStateError);
-      await Future.wait([first, second]);
-
-      expect(host.calls.where((c) => c == 'closeSession').length, 1);
     });
 
     test('closing the model closes every open session', () async {

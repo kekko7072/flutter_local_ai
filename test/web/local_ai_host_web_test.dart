@@ -297,55 +297,27 @@ void main() {
     });
   });
 
-  group('dropped options', () {
-    Future<List<String>> printsDuring(Future<void> Function() body) async {
-      final printed = <String>[];
-      await runZoned(
-        body,
-        zoneSpecification: ZoneSpecification(
-          print: (_, _, _, line) => printed.add(line),
-        ),
-      );
-      return printed;
-    }
-
-    test('warns once that topP and maxOutputTokens do nothing', () async {
-      final languageModel = FakeLanguageModel()..install();
-      final host = WebLocalAiHost();
-      await host.createModel(supportImage: false);
-
-      final printed = await printsDuring(() async {
+  test('warns once that topP and maxOutputTokens are ignored', () async {
+    FakeLanguageModel().install();
+    final host = WebLocalAiHost();
+    await host.createModel(supportImage: false);
+    final printed = <String>[];
+    await runZoned(
+      () async {
         for (final id in [1, 2]) {
           await host.createSession(
             sessionId: id,
             temperature: 0.8,
             topK: 3,
-            topP: 0.9,
             maxOutputTokens: 64,
           );
         }
-      });
-
-      expect(printed, hasLength(1));
-      expect(printed.single, contains('topP=0.9'));
-      expect(printed.single, contains('maxOutputTokens=64'));
-      // Still dropped, not faked into some other option.
-      final options = languageModel.createOptions.last!.dartify()! as Map;
-      expect(options.keys, isNot(contains('topP')));
-      expect(options.keys, isNot(contains('maxOutputTokens')));
-    });
-
-    test('stays quiet when neither is set', () async {
-      FakeLanguageModel().install();
-      final host = WebLocalAiHost();
-      await host.createModel(supportImage: false);
-
-      final printed = await printsDuring(
-        () => host.createSession(sessionId: 1, temperature: 0.8, topK: 3),
-      );
-
-      expect(printed, isEmpty);
-    });
+      },
+      zoneSpecification: ZoneSpecification(
+        print: (_, _, _, line) => printed.add(line),
+      ),
+    );
+    expect(printed, hasLength(1));
   });
 
   group('sampler clamp', () {

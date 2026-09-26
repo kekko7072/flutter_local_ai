@@ -202,44 +202,41 @@ class NativeLocalAiHost implements LocalAiHost, wire.LocalAiToolRunner {
   @override
   Future<void> closeSession(int sessionId) async {
     await _service.closeSession(sessionId);
-    // Only once the native session is gone: a close that fails leaves it
-    // alive and retryable, and its tools must still answer until then.
-    _tools.forget(sessionId);
+    _tools.forget(sessionId); // Not before: a failed close must stay retryable.
   }
 
   @override
   Future<void> addQueryChunk({required int sessionId, required String text}) =>
-      _busyAware(
+      _busy(
         sessionId,
-        () => _service.addQueryChunk(sessionId: sessionId, text: text),
+        _service.addQueryChunk(sessionId: sessionId, text: text),
       );
 
   @override
   Future<void> addImage({
     required int sessionId,
     required Uint8List imageBytes,
-  }) => _busyAware(
+  }) => _busy(
     sessionId,
-    () => _service.addImage(sessionId: sessionId, imageBytes: imageBytes),
+    _service.addImage(sessionId: sessionId, imageBytes: imageBytes),
   );
 
   @override
   Future<String> generateResponse(
     int sessionId, {
     LocalAiGenerationOverrides? overrides,
-  }) => _busyAware(
+  }) => _busy(
     sessionId,
-    () => _service.generateResponse(sessionId, _overridesToWire(overrides)),
+    _service.generateResponse(sessionId, _overridesToWire(overrides)),
   );
 
   @override
   Future<void> generateResponseAsync(
     int sessionId, {
     LocalAiGenerationOverrides? overrides,
-  }) => _busyAware(
+  }) => _busy(
     sessionId,
-    () =>
-        _service.generateResponseAsync(sessionId, _overridesToWire(overrides)),
+    _service.generateResponseAsync(sessionId, _overridesToWire(overrides)),
   );
 
   @override
@@ -247,29 +244,23 @@ class NativeLocalAiHost implements LocalAiHost, wire.LocalAiToolRunner {
     required int sessionId,
     required String schemaJson,
     LocalAiGenerationOverrides? overrides,
-  }) => _busyAware(
+  }) => _busy(
     sessionId,
-    () => _service.generateStructuredResponse(
+    _service.generateStructuredResponse(
       sessionId: sessionId,
       schemaJson: schemaJson,
       overrides: _overridesToWire(overrides),
     ),
   );
 
-  /// Maps the hosts' `SESSION_BUSY` platform error onto the type the web host
-  /// throws for the same misuse, so callers need one `catch` on every
-  /// platform. Every other error passes through untouched.
-  Future<T> _busyAware<T>(int sessionId, Future<T> Function() call) async {
-    try {
-      return await call();
-    } on PlatformException catch (e) {
-      if (e.code != 'SESSION_BUSY') rethrow;
-      throw LocalAiSessionBusyException(
-        sessionId,
-        e.message ?? 'Session $sessionId is already generating.',
-      );
-    }
-  }
+  /// Maps `SESSION_BUSY` to the type the web host throws for the same misuse.
+  static Future<T> _busy<T>(int sessionId, Future<T> call) => call.catchError(
+    (Object e) => throw LocalAiSessionBusyException(
+      sessionId,
+      (e as PlatformException).message ?? 'Session is busy.',
+    ),
+    test: (e) => e is PlatformException && e.code == 'SESSION_BUSY',
+  );
 
   @override
   Future<void> stopGeneration(int sessionId) =>

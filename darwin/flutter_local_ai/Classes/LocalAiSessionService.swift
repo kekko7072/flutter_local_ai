@@ -78,11 +78,8 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
       var pendingText: String = ""
       var pendingImages: [(CGImage, CGImagePropertyOrientation?)] = []
       var task: Task<Void, Never>?
-      /// The turn this session is generating, or nil when idle. Read and
-      /// written only on the main queue, like `pendingText`; a finishing task
-      /// clears it by hopping back there, and only if it is still its own
-      /// turn, so a stopped turn unwinding late cannot free its successor.
-      var activeTurn: UInt64?
+      /// Set while generating; main queue only, like `pendingText`.
+      var activeTurn: UUID?
 
       init(
         session: LanguageModelSession,
@@ -148,41 +145,29 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
   }
 
   #if canImport(FoundationModels)
-    /// Monotonic turn ids; see `SessionState.activeTurn`. Main queue only.
-    private var nextTurn: UInt64 = 0
-
-    /// Claims `state` for a new turn, or nil if one is already running.
-    /// Rejecting matches Android's `requireIdle` and the web host: letting the
-    /// second turn through would overwrite `state.task`, leaving the first
-    /// running with nothing that can stop it.
+    /// Claims `state` for one turn, or nil if it is already generating.
     @available(iOS 26.0, macOS 26.0, *)
-    private func beginTurn(_ state: SessionState) -> UInt64? {
-      if state.activeTurn != nil { return nil }
-      nextTurn += 1
-      state.activeTurn = nextTurn
-      return nextTurn
+    private static func beginTurn(_ state: SessionState) -> UUID? {
+      guard state.activeTurn == nil else { return nil }
+      state.activeTurn = UUID()
+      return state.activeTurn
     }
 
-    /// Releases `turn`, then runs `then` — both on the main queue, in that
-    /// order, so the caller that learns the turn is over can start the next
-    /// one without racing the release.
+    /// Frees `turn` on the main queue before `then` reports the turn over, so
+    /// Dart can start the next one at once.
     @available(iOS 26.0, macOS 26.0, *)
     private static func endTurn(
-      _ state: SessionState, _ turn: UInt64, then: @escaping () -> Void = {}
+      _ state: SessionState, _ turn: UUID, then: @escaping () -> Void = {}
     ) {
       DispatchQueue.main.async {
         if state.activeTurn == turn { state.activeTurn = nil }
         then()
       }
     }
-
-    private static func sessionBusyError(_ sessionId: Int64) -> PigeonError {
-      PigeonError(
-        code: "SESSION_BUSY",
-        message: "Session \(sessionId) is already generating.",
-        details: nil)
-    }
   #endif
+
+  private static let sessionBusyError = PigeonError(
+    code: "SESSION_BUSY", message: "This session is already generating.", details: nil)
 
   private func postToken(_ sessionId: Int64, _ text: String) {
     postEvent(["partialResult": text, "done": false, "sessionId": sessionId])
@@ -611,28 +596,28 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
         completion(.failure(Self.sessionMissingError(sessionId)))
         return
       }
-      guard let turn = beginTurn(state) else {
-        completion(.failure(Self.sessionBusyError(sessionId)))
+      guard let turn = Self.beginTurn(state) else {
+        completion(.failure(Self.sessionBusyError))
         return
       }
+      let finish = { result in Self.endTurn(state, turn) { completion(result) } }
       let prompt = Self.takePrompt(state)
 
       state.task = Task {
-        let result: Result<String, Error>
         do {
           let response = try await state.session.respond(
             to: prompt,
             options: Self.options(for: state, overrides: overrides))
           try Task.checkCancellation()
-          result = .success(response.content)
+          finish(.success(response.content))
         } catch {
-          result = .failure(
-            PigeonError(
-              code: "ERROR",
-              message: Self.describeGenerationError(error),
-              details: nil))
+          finish(
+            .failure(
+              PigeonError(
+                code: "ERROR",
+                message: Self.describeGenerationError(error),
+                details: nil)))
         }
-        Self.endTurn(state, turn) { completion(result) }
       }
     #else
       completion(.failure(Self.sessionMissingError(sessionId)))
@@ -651,18 +636,14 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
         completion(.failure(Self.sessionMissingError(sessionId)))
         return
       }
-      guard let turn = beginTurn(state) else {
-        completion(.failure(Self.sessionBusyError(sessionId)))
+      guard let turn = Self.beginTurn(state) else {
+        completion(.failure(Self.sessionBusyError))
         return
       }
       let prompt = Self.takePrompt(state)
 
       var converter = SnapshotDeltaConverter()
       state.task = Task { [weak self] in
-        // Covers the cancelled exits. The done and error paths release
-        // explicitly first, so the release is queued ahead of the event and
-        // Dart never sees the turn end while the session still reads as busy.
-        defer { Self.endTurn(state, turn) }
         guard let self = self else { return }
         do {
           let stream = state.session.streamResponse(
@@ -732,14 +713,14 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
         return
       }
 
-      guard let turn = beginTurn(state) else {
-        completion(.failure(Self.sessionBusyError(sessionId)))
+      guard let turn = Self.beginTurn(state) else {
+        completion(.failure(Self.sessionBusyError))
         return
       }
+      let finish = { result in Self.endTurn(state, turn) { completion(result) } }
       let prompt = Self.takePrompt(state)
 
       state.task = Task {
-        let result: Result<String, Error>
         do {
           let schema = try SchemaBuilder.generationSchema(
             from: schemaMap, rootName: "Output")
@@ -748,15 +729,15 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
             schema: schema,
             options: Self.options(for: state, overrides: overrides))
           try Task.checkCancellation()
-          result = .success(response.content.jsonString)
+          finish(.success(response.content.jsonString))
         } catch {
-          result = .failure(
-            PigeonError(
-              code: "ERROR",
-              message: Self.describeGenerationError(error),
-              details: nil))
+          finish(
+            .failure(
+              PigeonError(
+                code: "ERROR",
+                message: Self.describeGenerationError(error),
+                details: nil)))
         }
-        Self.endTurn(state, turn) { completion(result) }
       }
     #else
       completion(.failure(Self.sessionMissingError(sessionId)))
@@ -769,9 +750,7 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
     #if canImport(FoundationModels)
       if #available(iOS 26.0, macOS 26.0, *), let state = state(for: sessionId) {
         state.task?.cancel()
-        // Idle as soon as stop is asked for, as on Android, where a cancelled
-        // job stops reporting active at once: the done posted below tells Dart
-        // the turn is over, so the next one must be accepted.
+        // Idle at once, as on Android: the done below lets Dart start again.
         state.activeTurn = nil
       }
     #endif

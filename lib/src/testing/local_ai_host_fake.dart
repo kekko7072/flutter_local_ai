@@ -159,8 +159,7 @@ class FakeLocalAiHost implements LocalAiHost {
   /// an unsupported configuration.
   Object? createSessionError;
 
-  /// Thrown by [closeSession] when set — models a transient platform error
-  /// during teardown. The session stays open, as it would on a real host.
+  /// Thrown by [closeSession] when set — models a failed teardown.
   Object? closeSessionError;
 
   final _events = StreamController<LocalAiHostEvent>.broadcast();

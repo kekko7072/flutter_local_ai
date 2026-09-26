@@ -95,16 +95,8 @@ class LocalAiUnsupportedException implements Exception {
   String toString() => 'LocalAiUnsupportedException($capability): $message';
 }
 
-/// Thrown when a call reaches a session that is still producing the previous
-/// turn.
-///
-/// Every host runs one turn at a time per session, and every host reports the
-/// overlap with this type, so one `catch` covers all of them: the native hosts
-/// answer with a `SESSION_BUSY` platform error that is mapped here, the web
-/// host throws it directly. A second generate call always gets it; Android
-/// also refuses to add chunks or images to a busy session. Await the running
-/// response, or call `LocalAiSession.stopGeneration()`, then retry — the
-/// refused call consumed nothing.
+/// Thrown on every platform when a session gets a call while it is still
+/// generating. Await the running turn or call `stopGeneration()`, then retry.
 class LocalAiSessionBusyException implements Exception {
   LocalAiSessionBusyException(this.sessionId, this.message);
 
