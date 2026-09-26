@@ -85,6 +85,7 @@ class WebLocalAiHost implements LocalAiHost {
   bool _supportImage = false;
   bool _warnedOverrides = false;
   bool _warnedClamp = false;
+  bool _warnedDroppedOptions = false;
 
   @override
   Stream<LocalAiHostEvent> get events => _events.stream;
@@ -99,15 +100,15 @@ class WebLocalAiHost implements LocalAiHost {
 
   /// Rejects a second generation on a session that is already decoding.
   ///
-  /// The native hosts answer the same misuse with a `SESSION_BUSY` platform
-  /// error (Android's `requireIdle`); here it is a [StateError], the same type
-  /// [_require] uses for the other way of calling this host wrong. Failing is
-  /// the point: the alternative is two turns racing one Chrome session, with
-  /// the earlier one unstoppable and both writing into the same tagged event
-  /// stream.
+  /// Throws [LocalAiSessionBusyException], the type the native hosts'
+  /// `SESSION_BUSY` platform error is mapped to, so one `catch` works on every
+  /// platform. Failing is the point: the alternative is two turns racing one
+  /// Chrome session, with the earlier one unstoppable and both writing into
+  /// the same tagged event stream.
   void _requireIdle(_WebSession state, int sessionId) {
     if (state.inFlight == null) return;
-    throw StateError(
+    throw LocalAiSessionBusyException(
+      sessionId,
       'Session $sessionId is already generating. The Chrome Prompt API runs '
       'one turn at a time per session: await the current response, or call '
       'stopGeneration(), before starting another.',
@@ -272,7 +273,9 @@ class WebLocalAiHost implements LocalAiHost {
     }
     // topP and maxOutputTokens have no Prompt API equivalent. They are
     // accepted for cross-platform API parity and deliberately dropped rather
-    // than faked — sampling stays whatever temperature/topK select.
+    // than faked — sampling stays whatever temperature/topK select — but not
+    // silently.
+    _warnDroppedOptionsOnce(topP: topP, maxOutputTokens: maxOutputTokens);
     final (clampedTemperature, clampedTopK) = await _clampSampler(
       temperature: temperature,
       topK: topK,
@@ -336,6 +339,26 @@ class WebLocalAiHost implements LocalAiHost {
       '[flutter_local_ai/web] Clamped sampling to the maximum this browser '
       'reports (temperature=$temperature, topK=$topK). Chrome rejects a '
       'session whose temperature or topK is above its advertised limit.',
+    );
+  }
+
+  /// Says once that `topP` / `maxOutputTokens` did nothing, in the same shape
+  /// as the clamp and override warnings. Once, for the same reason as
+  /// [_warnClampedOnce].
+  void _warnDroppedOptionsOnce({double? topP, int? maxOutputTokens}) {
+    if (_warnedDroppedOptions) return;
+    final dropped = [
+      if (topP != null) 'topP=$topP',
+      if (maxOutputTokens != null) 'maxOutputTokens=$maxOutputTokens',
+    ];
+    if (dropped.isEmpty) return;
+    _warnedDroppedOptions = true;
+    // ignore: avoid_print
+    print(
+      '[flutter_local_ai/web] Ignored ${dropped.join(', ')}: the Chrome '
+      'Prompt API has no top-p sampling and no output-length cap. Sampling '
+      'uses temperature and topK only, and responses run to their natural '
+      'end — call stopGeneration() to cut one short.',
     );
   }
 

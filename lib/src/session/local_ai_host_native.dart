@@ -201,42 +201,75 @@ class NativeLocalAiHost implements LocalAiHost, wire.LocalAiToolRunner {
 
   @override
   Future<void> closeSession(int sessionId) async {
-    _tools.forget(sessionId);
     await _service.closeSession(sessionId);
+    // Only once the native session is gone: a close that fails leaves it
+    // alive and retryable, and its tools must still answer until then.
+    _tools.forget(sessionId);
   }
 
   @override
   Future<void> addQueryChunk({required int sessionId, required String text}) =>
-      _service.addQueryChunk(sessionId: sessionId, text: text);
+      _busyAware(
+        sessionId,
+        () => _service.addQueryChunk(sessionId: sessionId, text: text),
+      );
 
   @override
   Future<void> addImage({
     required int sessionId,
     required Uint8List imageBytes,
-  }) => _service.addImage(sessionId: sessionId, imageBytes: imageBytes);
+  }) => _busyAware(
+    sessionId,
+    () => _service.addImage(sessionId: sessionId, imageBytes: imageBytes),
+  );
 
   @override
   Future<String> generateResponse(
     int sessionId, {
     LocalAiGenerationOverrides? overrides,
-  }) => _service.generateResponse(sessionId, _overridesToWire(overrides));
+  }) => _busyAware(
+    sessionId,
+    () => _service.generateResponse(sessionId, _overridesToWire(overrides)),
+  );
 
   @override
   Future<void> generateResponseAsync(
     int sessionId, {
     LocalAiGenerationOverrides? overrides,
-  }) => _service.generateResponseAsync(sessionId, _overridesToWire(overrides));
+  }) => _busyAware(
+    sessionId,
+    () =>
+        _service.generateResponseAsync(sessionId, _overridesToWire(overrides)),
+  );
 
   @override
   Future<String> generateStructuredResponse({
     required int sessionId,
     required String schemaJson,
     LocalAiGenerationOverrides? overrides,
-  }) => _service.generateStructuredResponse(
-    sessionId: sessionId,
-    schemaJson: schemaJson,
-    overrides: _overridesToWire(overrides),
+  }) => _busyAware(
+    sessionId,
+    () => _service.generateStructuredResponse(
+      sessionId: sessionId,
+      schemaJson: schemaJson,
+      overrides: _overridesToWire(overrides),
+    ),
   );
+
+  /// Maps the hosts' `SESSION_BUSY` platform error onto the type the web host
+  /// throws for the same misuse, so callers need one `catch` on every
+  /// platform. Every other error passes through untouched.
+  Future<T> _busyAware<T>(int sessionId, Future<T> Function() call) async {
+    try {
+      return await call();
+    } on PlatformException catch (e) {
+      if (e.code != 'SESSION_BUSY') rethrow;
+      throw LocalAiSessionBusyException(
+        sessionId,
+        e.message ?? 'Session $sessionId is already generating.',
+      );
+    }
+  }
 
   @override
   Future<void> stopGeneration(int sessionId) =>

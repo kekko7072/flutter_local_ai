@@ -25,7 +25,7 @@ class LocalAiSession {
 
   bool _isClosed = false;
 
-  /// Whether [close] has run. A closed session throws on every operation
+  /// Whether [close] has run, or is running. A closed session throws on every operation
   /// rather than silently reopening native state.
   bool get isClosed => _isClosed;
 
@@ -176,12 +176,26 @@ class LocalAiSession {
     LocalAiGenerationOverrides? overrides,
   ) => overrides == null || overrides.isEmpty ? null : overrides;
 
-  /// Releases the native session. Idempotent.
-  Future<void> close() async {
-    if (_isClosed) return;
+  Future<void>? _closing;
+
+  /// Releases the native session. Idempotent: a second call while the first
+  /// is running waits on the same close.
+  ///
+  /// If the host fails to close, the error is rethrown and the session is
+  /// left open and still owned by its model, so [close] can be retried.
+  Future<void> close() => _closing ??= _close();
+
+  Future<void> _close() async {
+    // Refuse new work for as long as the close is in flight.
     _isClosed = true;
+    try {
+      await _host.closeSession(sessionId);
+    } catch (_) {
+      _isClosed = false;
+      _closing = null;
+      rethrow;
+    }
     _onClose();
-    await _host.closeSession(sessionId);
   }
 }
 

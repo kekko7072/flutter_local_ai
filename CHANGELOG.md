@@ -1,3 +1,38 @@
+## Unreleased
+
+Answers [#26](https://github.com/kekko7072/flutter_local_ai/issues/26): an
+unretryable close, no common "session busy" error, and one silent drop on the
+web.
+
+### Breaking changes
+
+* **A busy session throws `LocalAiSessionBusyException` on every platform.**
+  A second generate call on a session that is still generating used to throw
+  a `StateError` on the web and a `PlatformException` with code
+  `SESSION_BUSY` on Android and Windows, and had no guard of its own on
+  Apple, where the second turn replaced the first one's task handle so
+  `stopGeneration()` could no longer reach it.
+  Now every host rejects it, and the Dart side maps each one to
+  `LocalAiSessionBusyException` (with `sessionId` and `message`). Android's
+  refusal to add chunks or images to a busy session maps to it too.
+  *Migration:* catch `LocalAiSessionBusyException` instead of `StateError`
+  (web) or `PlatformException` with code `SESSION_BUSY` (native).
+
+### Fixes
+
+* **A failed `LocalAiSession.close()` can be retried.** The session was
+  marked closed and dropped from its model before the host call, so an error
+  during teardown left the native session alive with no handle to close it.
+  Now a failed close rethrows and leaves the session open, still listed in
+  `LocalAiModel.sessions`, with its tools still registered. A second `close()`
+  while one is running waits on the same close instead of returning early.
+* **The web host warns once when `topP` or `maxOutputTokens` is dropped.**
+  The Prompt API has neither, so both are still ignored, but a caller now
+  sees a one-time console message instead of nothing. This matches the
+  existing warnings for clamped sampling and ignored per-call overrides.
+* `FakeLocalAiHost.closeSessionError` makes `closeSession` throw, for testing
+  close failures.
+
 ## 0.2.0
 
 Answers [#24](https://github.com/kekko7072/flutter_local_ai/issues/24): a web
