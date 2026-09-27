@@ -198,7 +198,12 @@ class GenerationOverrides {
   int? maxOutputTokens;
 
   List<Object?> _toList() {
-    return <Object?>[temperature, topP, topK, maxOutputTokens];
+    return <Object?>[
+      temperature,
+      topP,
+      topK,
+      maxOutputTokens,
+    ];
   }
 
   Object encode() {
@@ -254,7 +259,11 @@ class ToolSpec {
   String parametersSchemaJson;
 
   List<Object?> _toList() {
-    return <Object?>[name, description, parametersSchemaJson];
+    return <Object?>[
+      name,
+      description,
+      parametersSchemaJson,
+    ];
   }
 
   Object encode() {
