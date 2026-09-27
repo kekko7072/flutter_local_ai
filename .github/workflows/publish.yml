@@ -25,8 +25,8 @@ name: Publish
 # already broken, with the whole release pipeline green; catching that before
 # a consumer does is the entire reason ci.yml grew a floor leg, and a release
 # is the worst place to be laxer than CI. Everything that is a property of a
-# single toolchain rather than of the package — formatting, pigeon freshness,
-# the packaging dry run — stays on the pinned leg, as do the four tag-shaped
+# single toolchain rather than of the package — formatting and pigeon
+# freshness — stays on the pinned leg, as do the four tag-shaped
 # guards below, which are toolchain-free and only mean anything at a tag (a
 # fifth pinned-leg check catches FLUTTER_PINNED drifting away from ci.yml's).
 on:
@@ -229,13 +229,6 @@ jobs:
             exit 1
           fi
 
-      # Catches what analyze and test cannot: an ignore rule hiding a pubspec,
-      # a missing licence, a file the archive would ship without. The archive
-      # is built once, from the SDK that publishes it.
-      - name: Package
-        if: matrix.label == 'stable'
-        run: flutter pub publish --dry-run
-
   publish:
     name: Publish to pub.dev
     # A matrixed `needs` waits for every leg, so a floor-leg failure blocks
@@ -262,10 +255,20 @@ jobs:
           flutter-version: ${{ env.FLUTTER_PINNED }}
           cache: true
 
-      # --force skips the interactive confirmation, not the validation:
-      # publish still refuses an archive that `--dry-run` would have
-      # rejected, and validate has already run that dry run.
+      # Publishes only a version pub.dev does not have yet. A tag for a version
+      # that is already out (pub.dev never lets one be overwritten) runs the
+      # dry run instead and passes. --force skips the interactive
+      # confirmation, not the validation the dry run also performs.
       - name: Publish flutter_local_ai
         run: |
           flutter pub get
-          flutter pub publish --force
+          version=$(grep -m1 '^version:' pubspec.yaml | awk '{print $2}')
+          status=$(curl -s -o /dev/null -w '%{http_code}' \
+            "https://pub.dev/api/packages/flutter_local_ai/versions/$version")
+          case "$status" in
+            404) flutter pub publish --force ;;
+            200)
+              echo "::notice::$version is already on pub.dev; dry run only."
+              flutter pub publish --dry-run ;;
+            *) echo "::error::pub.dev answered HTTP $status for $version."; exit 1 ;;
+          esac
