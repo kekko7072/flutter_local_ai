@@ -67,6 +67,21 @@ void main() {
       expect(host.closedIds.where((id) => id == session.sessionId).length, 1);
     });
 
+    test('a failed close can be retried', () async {
+      final model = await newModel();
+      final session = await model.openSession();
+      host.closeSessionError = StateError('teardown failed');
+
+      await expectLater(session.close(), throwsStateError);
+      expect(session.isClosed, isFalse);
+      expect(model.sessions, contains(session));
+
+      host.closeSessionError = null;
+      await session.close();
+      expect(session.isClosed, isTrue);
+      expect(model.sessions, isEmpty);
+    });
+
     test('closing the model closes every open session', () async {
       final model = await newModel();
       final a = await model.openSession();

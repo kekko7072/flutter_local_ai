@@ -2,3 +2,9 @@ analyzer:
   exclude:
     - build/**
 include: package:flutter_lints/flutter.yaml
+
+# Keep the committed layout under every formatter release: CI pins the 3.44
+# formatter, while pub.dev scores with the latest one, and the two otherwise
+# disagree about where to split a call in generated pigeon code.
+formatter:
+  trailing_commas: preserve

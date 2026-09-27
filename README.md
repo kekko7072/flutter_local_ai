@@ -273,8 +273,8 @@ What the web arm does and does not do, all of it reported by
 | Text generation and incremental streaming deltas | Image input — the Prompt API's multimodal path is not usable from an ordinary page as of Chrome 151, and `addImage` throws |
 | Cancellation of any in-flight request (`AbortController`) | Native tool calling — the `tools` option is behind an experimental flag and does not reliably route, so `openSession(tools: …)` throws rather than emulating one |
 | Schema-constrained output via `responseConstraint`, which Android cannot do | Per-call `LocalAiGenerationOverrides` — Chrome fixes sampling at `create()`, so the host warns once and generates with the session's own settings |
-| Exact token counts (`measureContextUsage`, or `measureInputUsage` on older builds), measured against an open session | `topP` and `maxOutputTokens` — accepted for API parity and dropped, not faked |
-| Several concurrent sessions | Two turns at once *in one session*: Chrome runs one at a time, and a second `generate` throws instead of racing |
+| Exact token counts (`measureContextUsage`, or `measureInputUsage` on older builds), measured against an open session | `topP` and `maxOutputTokens` — accepted for API parity and dropped (with a one-time warning), not faked |
+| Several concurrent sessions | Two turns at once *in one session*: Chrome runs one at a time, and a second `generate` throws `LocalAiSessionBusyException` (as on every platform) instead of racing |
 
 Two behaviours differ from Android and Windows and are worth knowing before
 you port code. Chrome's `LanguageModel` session keeps the transcript itself,

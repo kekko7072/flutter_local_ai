@@ -78,6 +78,8 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
       var pendingText: String = ""
       var pendingImages: [(CGImage, CGImagePropertyOrientation?)] = []
       var task: Task<Void, Never>?
+      /// Set while generating; main queue only, like `pendingText`.
+      var activeTurn: UUID?
 
       init(
         session: LanguageModelSession,
@@ -141,6 +143,31 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
       sink?(payload)
     }
   }
+
+  #if canImport(FoundationModels)
+    /// Claims `state` for one turn, or nil if it is already generating.
+    @available(iOS 26.0, macOS 26.0, *)
+    private static func beginTurn(_ state: SessionState) -> UUID? {
+      guard state.activeTurn == nil else { return nil }
+      state.activeTurn = UUID()
+      return state.activeTurn
+    }
+
+    /// Frees `turn` on the main queue before `then` reports the turn over, so
+    /// Dart can start the next one at once.
+    @available(iOS 26.0, macOS 26.0, *)
+    private static func endTurn(
+      _ state: SessionState, _ turn: UUID, then: @escaping () -> Void = {}
+    ) {
+      DispatchQueue.main.async {
+        if state.activeTurn == turn { state.activeTurn = nil }
+        then()
+      }
+    }
+  #endif
+
+  private static let sessionBusyError = PigeonError(
+    code: "SESSION_BUSY", message: "This session is already generating.", details: nil)
 
   private func postToken(_ sessionId: Int64, _ text: String) {
     postEvent(["partialResult": text, "done": false, "sessionId": sessionId])
@@ -569,6 +596,11 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
         completion(.failure(Self.sessionMissingError(sessionId)))
         return
       }
+      guard let turn = Self.beginTurn(state) else {
+        completion(.failure(Self.sessionBusyError))
+        return
+      }
+      let finish = { result in Self.endTurn(state, turn) { completion(result) } }
       let prompt = Self.takePrompt(state)
 
       state.task = Task {
@@ -577,9 +609,9 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
             to: prompt,
             options: Self.options(for: state, overrides: overrides))
           try Task.checkCancellation()
-          completion(.success(response.content))
+          finish(.success(response.content))
         } catch {
-          completion(
+          finish(
             .failure(
               PigeonError(
                 code: "ERROR",
@@ -604,6 +636,10 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
         completion(.failure(Self.sessionMissingError(sessionId)))
         return
       }
+      guard let turn = Self.beginTurn(state) else {
+        completion(.failure(Self.sessionBusyError))
+        return
+      }
       let prompt = Self.takePrompt(state)
 
       var converter = SnapshotDeltaConverter()
@@ -623,6 +659,7 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
           // stopGeneration already posted the single completion on the cancel
           // path; a second one would close an already-closed Dart stream.
           if Task.isCancelled { return }
+          Self.endTurn(state, turn)
           self.postDone(sessionId)
         } catch is CancellationError {
           return
@@ -632,6 +669,7 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
           // is the common case. Stopping is not a generation failure, and
           // `stopGeneration` has already posted the one completion.
           if Task.isCancelled { return }
+          Self.endTurn(state, turn)
           self.postError(sessionId, Self.describeGenerationError(error))
         }
       }
@@ -675,6 +713,11 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
         return
       }
 
+      guard let turn = Self.beginTurn(state) else {
+        completion(.failure(Self.sessionBusyError))
+        return
+      }
+      let finish = { result in Self.endTurn(state, turn) { completion(result) } }
       let prompt = Self.takePrompt(state)
 
       state.task = Task {
@@ -686,9 +729,9 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
             schema: schema,
             options: Self.options(for: state, overrides: overrides))
           try Task.checkCancellation()
-          completion(.success(response.content.jsonString))
+          finish(.success(response.content.jsonString))
         } catch {
-          completion(
+          finish(
             .failure(
               PigeonError(
                 code: "ERROR",
@@ -705,8 +748,10 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
     sessionId: Int64, completion: @escaping (Result<Void, Error>) -> Void
   ) {
     #if canImport(FoundationModels)
-      if #available(iOS 26.0, macOS 26.0, *) {
-        state(for: sessionId)?.task?.cancel()
+      if #available(iOS 26.0, macOS 26.0, *), let state = state(for: sessionId) {
+        state.task?.cancel()
+        // Idle at once, as on Android: the done below lets Dart start again.
+        state.activeTurn = nil
       }
     #endif
     // The single completion signal on the stop path, so the Dart stream

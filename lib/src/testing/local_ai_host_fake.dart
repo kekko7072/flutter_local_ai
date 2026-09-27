@@ -159,6 +159,9 @@ class FakeLocalAiHost implements LocalAiHost {
   /// an unsupported configuration.
   Object? createSessionError;
 
+  /// Thrown by [closeSession] when set — models a failed teardown.
+  Object? closeSessionError;
+
   final _events = StreamController<LocalAiHostEvent>.broadcast();
 
   /// Method names in call order, for the few assertions that are genuinely
@@ -341,6 +344,8 @@ class FakeLocalAiHost implements LocalAiHost {
   @override
   Future<void> closeSession(int sessionId) async {
     calls.add('closeSession');
+    final error = closeSessionError;
+    if (error != null) throw error;
     // Tolerates an unknown id the way a real host does: closing twice, or
     // closing after the model went away, must not throw.
     _tools.forget(sessionId);

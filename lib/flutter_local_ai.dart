@@ -22,6 +22,7 @@ export 'src/session/local_ai_host_api.dart'
         LocalAiTokenEvent,
         LocalAiErrorEvent,
         LocalAiDownloadProgressEvent,
+        LocalAiSessionBusyException,
         LocalAiTokenizerUnavailable,
         LocalAiUnavailableException,
         LocalAiUnsupportedException,

@@ -1,3 +1,17 @@
+## 0.2.1
+
+Answers [#26](https://github.com/kekko7072/flutter_local_ai/issues/26).
+
+* A call on a session that is still generating throws
+  `LocalAiSessionBusyException` on every platform, so one `catch` covers it.
+  Apple had no guard before, so a second turn orphaned the first. Not
+  breaking: the exception is also a `StateError` (as the web threw) and a
+  `PlatformException` with code `SESSION_BUSY` (as Android and Windows
+  threw), so existing handlers keep working.
+* A failed `LocalAiSession.close()` rethrows and leaves the session open, so
+  it can be retried. `FakeLocalAiHost.closeSessionError` simulates it.
+* The web host warns once when `topP` or `maxOutputTokens` is dropped.
+
 ## 0.2.0
 
 Answers [#24](https://github.com/kekko7072/flutter_local_ai/issues/24): a web

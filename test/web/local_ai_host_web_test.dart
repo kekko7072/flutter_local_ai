@@ -238,7 +238,10 @@ void main() {
       addTearDown(turn.dispose);
 
       await host.generateResponseAsync(1);
-      await expectLater(host.generateResponse(1), throwsA(isA<StateError>()));
+      await expectLater(
+        host.generateResponse(1),
+        throwsA(isA<LocalAiSessionBusyException>()),
+      );
 
       await turn.finished;
     });
@@ -257,7 +260,7 @@ void main() {
       await host.generateResponseAsync(1);
       await expectLater(
         host.generateResponseAsync(1),
-        throwsA(isA<StateError>()),
+        throwsA(isA<LocalAiSessionBusyException>()),
       );
       await host.stopGeneration(1);
       await turn.finished;
@@ -282,13 +285,39 @@ void main() {
       // next turn.
       await host.generateResponseAsync(1);
       await host.addQueryChunk(sessionId: 1, text: 'next');
-      await expectLater(host.generateResponse(1), throwsA(isA<StateError>()));
+      await expectLater(
+        host.generateResponse(1),
+        throwsA(isA<LocalAiSessionBusyException>()),
+      );
       await turn.finished;
 
       // The refused call must not have drained the queued chunks, or the
       // retry would prompt with nothing.
       expect(await host.generateResponse(1), 'next');
     });
+  });
+
+  test('warns once that topP and maxOutputTokens are ignored', () async {
+    FakeLanguageModel().install();
+    final host = WebLocalAiHost();
+    await host.createModel(supportImage: false);
+    final printed = <String>[];
+    await runZoned(
+      () async {
+        for (final id in [1, 2]) {
+          await host.createSession(
+            sessionId: id,
+            temperature: 0.8,
+            topK: 3,
+            maxOutputTokens: 64,
+          );
+        }
+      },
+      zoneSpecification: ZoneSpecification(
+        print: (_, _, _, line) => printed.add(line),
+      ),
+    );
+    expect(printed, hasLength(1));
   });
 
   group('sampler clamp', () {
