@@ -1,0 +1,44 @@
+name: Release on merge
+
+# Every push to main (a merged PR included) tags a new release: when
+# pubspec.yaml's version is not on pub.dev and has no tag yet, this pushes
+# `v<version>`, and that tag runs publish.yml, which validates and publishes.
+#
+# pub.dev only accepts automated publishes from a tag push, so the release
+# still goes through the tag. The tag is pushed with the RELEASE_TOKEN secret
+# (a fine-grained token with Contents: read and write on this repository):
+# a tag pushed with the default GITHUB_TOKEN does not start other workflows.
+on:
+  push:
+    branches: [main]
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
+          fetch-tags: true
+      - name: Tag the version if it is new
+        env:
+          HAS_TOKEN: ${{ secrets.RELEASE_TOKEN != '' }}
+        run: |
+          version=$(grep -m1 '^version:' pubspec.yaml | awk '{print $2}')
+          status=$(curl -s -o /dev/null -w '%{http_code}' \
+            "https://pub.dev/api/packages/flutter_local_ai/versions/$version")
+          if [[ "$status" == 200 ]]; then
+            echo "::notice::$version is already on pub.dev; nothing to release."
+            exit 0
+          elif [[ "$status" != 404 ]]; then
+            echo "::error::pub.dev answered HTTP $status for $version."
+            exit 1
+          elif git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "::notice::v$version is already tagged; its Publish run owns the release."
+            exit 0
+          elif [[ "$HAS_TOKEN" != true ]]; then
+            echo "::error::$version is new but the RELEASE_TOKEN secret is not set."
+            exit 1
+          fi
+          git tag "v$version"
+          git push origin "v$version"
