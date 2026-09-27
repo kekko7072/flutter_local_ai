@@ -4,6 +4,8 @@
 
 import 'dart:typed_data';
 
+import 'package:flutter/services.dart' show PlatformException;
+
 import '../models/tool.dart';
 
 /// Availability of the OS built-in model, as surfaced to app code.
@@ -97,11 +99,22 @@ class LocalAiUnsupportedException implements Exception {
 
 /// Thrown on every platform when a session gets a call while it is still
 /// generating. Await the running turn or call `stopGeneration()`, then retry.
-class LocalAiSessionBusyException implements Exception {
-  LocalAiSessionBusyException(this.sessionId, this.message);
+///
+/// Also a [StateError] (what the web host threw before) and a
+/// [PlatformException] with code `SESSION_BUSY` (what the native hosts threw
+/// before), so code written against either keeps catching it.
+class LocalAiSessionBusyException extends PlatformException
+    implements StateError {
+  LocalAiSessionBusyException(this.sessionId, String message)
+    : super(code: 'SESSION_BUSY', message: message);
 
   final int sessionId;
-  final String message;
+
+  @override
+  String get message => super.message!;
+
+  @override
+  StackTrace? get stackTrace => null;
 
   @override
   String toString() => 'LocalAiSessionBusyException($sessionId): $message';

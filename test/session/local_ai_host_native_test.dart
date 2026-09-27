@@ -26,6 +26,15 @@ void main() {
     );
   });
 
+  test('still catchable the way 0.2.0 callers caught it', () {
+    final e = LocalAiSessionBusyException(3, 'busy');
+    expect(e, isA<StateError>());
+    expect(
+      e,
+      isA<PlatformException>().having((e) => e.code, 'code', 'SESSION_BUSY'),
+    );
+  });
+
   test('other platform errors pass through', () async {
     failWith('ERROR');
     await expectLater(
