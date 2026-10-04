@@ -1,7 +1,9 @@
 name: Publish
 
 # One package ships from this repository, and pushing a version tag is what
-# ships it.
+# ships it. Once pub.dev has the version, `github-release` publishes the
+# GitHub release for the tag, with that version's CHANGELOG.md section as its
+# notes.
 #
 # pub.dev has to be told to expect that. On the package's Admin -> Automated
 # publishing tab, "Enable publishing from GitHub Actions" must be ticked
@@ -272,3 +274,36 @@ jobs:
               flutter pub publish --dry-run ;;
             *) echo "::error::pub.dev answered HTTP $status for $version."; exit 1 ;;
           esac
+
+  github-release:
+    name: GitHub release
+    # Runs once pub.dev has the version (or already had it), so the GitHub
+    # release never advertises a package consumers cannot resolve. The notes
+    # are the CHANGELOG.md section for the tagged version, which the
+    # changelog guard in `validate` has already checked exists.
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      # Creating a release needs write access to the repository's contents;
+      # this job holds no pub.dev credential, and publish holds no write token.
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create or update the release for this tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          version=${TAG#v}
+          bash .github/scripts/release-notes.sh "$version" CHANGELOG.md > notes.md
+          cat notes.md
+          # A re-run of a tag whose release already exists refreshes its notes
+          # instead of failing, so the job is safe to retry.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --notes-file notes.md
+          else
+            gh release create "$TAG" \
+              --verify-tag \
+              --title "flutter_local_ai $version" \
+              --notes-file notes.md
+          fi
