@@ -138,6 +138,10 @@ class LocalAiSessionService : public flutter_local_ai_pigeon::LocalAiService {
       const std::string& text,
       std::function<void(flutter_local_ai_pigeon::ErrorOr<int64_t> reply)>
           result) override;
+  void TokenLimit(
+      std::function<void(
+          flutter_local_ai_pigeon::ErrorOr<std::optional<int64_t>> reply)>
+          result) override;
 
  private:
   // The Windows AI model has no server-side history, so each session replays

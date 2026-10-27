@@ -406,6 +406,12 @@ interface LocalAiService {
    * Dart layer turns into a documented character-based estimate.
    */
   fun countTokens(text: String, callback: (Result<Long>) -> Unit)
+  /**
+   * The model's total context in tokens, shared by the session's earlier
+   * turns, a request and its answer: ML Kit's `getTokenLimit`, Apple's
+   * `SystemLanguageModel.contextSize`. Null where the host cannot report it.
+   */
+  fun tokenLimit(callback: (Result<Long?>) -> Unit)
 
   companion object {
     /** The codec used by LocalAiService. */
@@ -714,6 +720,24 @@ interface LocalAiService {
             val args = message as List<Any?>
             val textArg = args[0] as String
             api.countTokens(textArg) { result: Result<Long> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(LocalAiPigeonPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(LocalAiPigeonPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.flutter_local_ai.LocalAiService.tokenLimit$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            api.tokenLimit{ result: Result<Long?> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(LocalAiPigeonPigeonUtils.wrapError(error))

@@ -395,6 +395,13 @@ abstract class LocalAiHost {
   /// ignore it; the web arm measures on that session, after any turn it is
   /// generating has finished.
   Future<int> countTokens({required int sessionId, required String text});
+
+  /// Total context in tokens, shared by the session's earlier turns, a
+  /// request and its answer; null where the host cannot report it.
+  ///
+  /// Read for [sessionId]. The native limits are model-wide and ignore it;
+  /// the web arm reads that session's `contextWindow`.
+  Future<int?> tokenLimit({required int sessionId});
 }
 
 /// Thrown by [LocalAiHost.countTokens] when the host has no tokenizer to ask.

@@ -804,6 +804,27 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
     #endif
   }
 
+  func tokenLimit(completion: @escaping (Result<Int64?, Error>) -> Void) {
+    #if canImport(FoundationModels)
+      // `SystemLanguageModel.contextSize` is back-deployed to 26.0: the 26.x
+      // model reports 4096, and OS 27 the size it reports. The
+      // declaration first ships in the 26.4 SDK, so it takes the same
+      // compiler gate as `countTokens`; an older SDK reports nothing rather
+      // than a guess that would be wrong on OS 27.
+      #if compiler(>=6.3)
+        guard #available(iOS 26.0, macOS 26.0, *) else {
+          completion(.success(nil))
+          return
+        }
+        completion(.success(Int64(SystemLanguageModel.default.contextSize)))
+      #else
+        completion(.success(nil))
+      #endif
+    #else
+      completion(.success(nil))
+    #endif
+  }
+
   // MARK: - Errors
 
   // `.failure` must carry a Swift.Error. `PigeonError` does; `FlutterError`

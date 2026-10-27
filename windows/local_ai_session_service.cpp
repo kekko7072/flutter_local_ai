@@ -556,4 +556,11 @@ void LocalAiSessionService::CountTokens(
       "available. Dart falls back to a character estimate.")));
 }
 
+void LocalAiSessionService::TokenLimit(
+    std::function<void(ErrorOr<std::optional<int64_t>> reply)> result) {
+  // `LanguageModel` reports how much of one prompt fits
+  // (`GetUsablePromptLength`), not the size of its context.
+  result(std::optional<int64_t>());
+}
+
 }  // namespace flutter_local_ai

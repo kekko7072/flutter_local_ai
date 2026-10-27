@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:flutter/services.dart' show MissingPluginException;
+import 'package:flutter/services.dart'
+    show MissingPluginException, PlatformException;
 import 'package:flutter_local_ai/flutter_local_ai.dart';
 import 'package:flutter_local_ai/testing.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -276,6 +277,55 @@ void main() {
       final session = await model.openSession();
 
       expect(() => session.sizeInTokens('12345678'), throwsStateError);
+    });
+  });
+
+  group('token limit', () {
+    test('reports the host limit', () async {
+      host.tokenLimitResult = 6144;
+      final model = await newModel();
+      final session = await model.openSession();
+
+      expect(await session.tokenLimit(), 6144);
+    });
+
+    test('is null where the host reports none', () async {
+      host.tokenLimitResult = null;
+      final model = await newModel();
+      final session = await model.openSession();
+
+      expect(await session.tokenLimit(), isNull);
+    });
+
+    test('reads the limit for the session asking', () async {
+      final model = await newModel();
+      await model.openSession();
+      final second = await model.openSession();
+
+      await second.tokenLimit();
+
+      // The web arm reads each session's own contextWindow.
+      expect(host.tokenLimitSessionIds, [second.sessionId]);
+    });
+
+    test('lets a host failure through', () async {
+      host.tokenLimitError = PlatformException(code: 'GenAiException');
+      final model = await newModel();
+      final session = await model.openSession();
+
+      await expectLater(
+        session.tokenLimit(),
+        throwsA(isA<PlatformException>()),
+      );
+    });
+
+    test('a closed session refuses it', () async {
+      final model = await newModel();
+      final session = await model.openSession();
+      await session.close();
+
+      expect(session.tokenLimit, throwsStateError);
+      expect(host.calls, isNot(contains('tokenLimit')));
     });
   });
 

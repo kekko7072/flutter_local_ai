@@ -200,4 +200,33 @@ void main() {
       throwsA(isA<PlatformException>()),
     );
   });
+
+  group('tokenLimit', () {
+    /// Makes the native `tokenLimit` answer [limit].
+    void answer(int? limit) => TestDefaultBinaryMessengerBinding
+        .instance
+        .defaultBinaryMessenger
+        .setMockMessageHandler(
+          'dev.flutter.pigeon.flutter_local_ai.LocalAiService.tokenLimit',
+          (_) async => const StandardMessageCodec().encodeMessage([limit]),
+        );
+
+    test('passes the native limit through', () async {
+      answer(4096);
+      expect(await NativeLocalAiHost().tokenLimit(sessionId: 3), 4096);
+    });
+
+    test('is null where the host reports none', () async {
+      answer(null);
+      expect(await NativeLocalAiHost().tokenLimit(sessionId: 3), isNull);
+    });
+
+    test('a native failure reaches the caller', () async {
+      failWith('GenAiException', method: 'tokenLimit');
+      await expectLater(
+        NativeLocalAiHost().tokenLimit(sessionId: 3),
+        throwsA(isA<PlatformException>()),
+      );
+    });
+  });
 }

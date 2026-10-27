@@ -425,6 +425,10 @@ protocol LocalAiService {
   /// `supportsTokenCount: false` fail with `TOKENIZER_UNAVAILABLE`, which the
   /// Dart layer turns into a documented character-based estimate.
   func countTokens(text: String, completion: @escaping (Result<Int64, Error>) -> Void)
+  /// The model's total context in tokens, shared by the session's earlier
+  /// turns, a request and its answer: ML Kit's `getTokenLimit`, Apple's
+  /// `SystemLanguageModel.contextSize`. Null where the host cannot report it.
+  func tokenLimit(completion: @escaping (Result<Int64?, Error>) -> Void)
 }
 
 /// Generated setup class from Pigeon to handle messages through the `binaryMessenger`.
@@ -727,6 +731,24 @@ class LocalAiServiceSetup {
       }
     } else {
       countTokensChannel.setMessageHandler(nil)
+    }
+    /// The model's total context in tokens, shared by the session's earlier
+    /// turns, a request and its answer: ML Kit's `getTokenLimit`, Apple's
+    /// `SystemLanguageModel.contextSize`. Null where the host cannot report it.
+    let tokenLimitChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.flutter_local_ai.LocalAiService.tokenLimit\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      tokenLimitChannel.setMessageHandler { _, reply in
+        api.tokenLimit { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      tokenLimitChannel.setMessageHandler(nil)
     }
   }
 }

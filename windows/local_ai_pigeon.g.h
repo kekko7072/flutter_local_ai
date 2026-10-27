@@ -345,6 +345,10 @@ class LocalAiService {
   virtual void CountTokens(
     const std::string& text,
     std::function<void(ErrorOr<int64_t> reply)> result) = 0;
+  // The model's total context in tokens, shared by the session's earlier
+  // turns, a request and its answer: ML Kit's `getTokenLimit`, Apple's
+  // `SystemLanguageModel.contextSize`. Null where the host cannot report it.
+  virtual void TokenLimit(std::function<void(ErrorOr<std::optional<int64_t>> reply)> result) = 0;
 
   // The codec used by LocalAiService.
   static const flutter::StandardMessageCodec& GetCodec();

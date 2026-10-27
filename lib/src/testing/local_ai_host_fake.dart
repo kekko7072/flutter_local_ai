@@ -148,6 +148,17 @@ class FakeLocalAiHost implements LocalAiHost {
   /// The session id each [countTokens] call was scoped to, in order.
   final List<int> countTokensSessionIds = [];
 
+  /// What [tokenLimit] returns, unless [tokenLimitError] is set; null models
+  /// a host that reports no limit.
+  int? tokenLimitResult = 4096;
+
+  /// Thrown by [tokenLimit] when set — models a native model that cannot
+  /// answer, such as Android before the model is ready.
+  Object? tokenLimitError;
+
+  /// The session id each [tokenLimit] call was scoped to, in order.
+  final List<int> tokenLimitSessionIds = [];
+
   /// Thrown by [downloadFeature] when set — models a download that cannot be
   /// started, such as the web arm outside a user gesture.
   Object? downloadFeatureError;
@@ -436,6 +447,16 @@ class FakeLocalAiHost implements LocalAiHost {
     final error = countTokensError;
     if (error != null) throw error;
     return countTokensResult;
+  }
+
+  @override
+  Future<int?> tokenLimit({required int sessionId}) async {
+    calls.add('tokenLimit');
+    _require(sessionId);
+    tokenLimitSessionIds.add(sessionId);
+    final error = tokenLimitError;
+    if (error != null) throw error;
+    return tokenLimitResult;
   }
 
   FakeLocalAiSession _record(

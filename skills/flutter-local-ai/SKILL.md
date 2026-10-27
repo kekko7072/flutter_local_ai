@@ -76,8 +76,9 @@ await for (final delta in ai.generateTextStream(prompt: 'A haiku on rain')) {
 - Call `initialize()` before generating. It is required on Apple.
 - Pass `instructions:` to `generateText`/`generateTextStream` for a stateless
   one-shot session that leaves the shared conversation untouched. Prefer it
-  for independent calls. On Apple the shared transcript counts against a
-  4096-token context window.
+  for independent calls. On Apple the shared transcript counts against the
+  context window (4096 tokens on OS 26; `LocalAiSession.tokenLimit()`
+  reports it).
 - `getPlatformInfo()` returns the backend and capability flags (the older
   form of `LocalAi.capabilities()`).
 - Android model download: `getModelStatus()`, `downloadModel()`, and
@@ -99,6 +100,8 @@ try {
   }
   // session.getResponse() for the whole text at once
   // session.stopGeneration() to cancel
+  // await session.sizeInTokens(prompt) and await session.tokenLimit() to
+  // check a prompt fits before sending it
 } finally {
   await session.close();
   await model.close();
@@ -119,6 +122,14 @@ try {
   case name, e.g. `'rateLimited'`. Apple spells some failures differently on
   OS 26 and OS 27 (`exceededContextWindowSize` / `contextSizeExceeded`), so
   match both. The `FlutterLocalAi.generateText` facade does not expose it.
+- `tokenLimit()` is the model's whole context window, shared by the
+  session's earlier turns, the prompt and the answer. `sizeInTokens(prompt)`
+  plus the answer you expect is an exact check against it only for a fresh
+  session or a one-shot call. It is null where the platform reports none
+  (Windows, an Apple OS older than 26 or a build made with an SDK older than
+  26.4, a browser with no limit). Apple reports 4096 on OS 26 even while the
+  model is unavailable; Android throws the native `PlatformException` when
+  the model cannot answer.
 
 ## Structured output (JSON schema)
 

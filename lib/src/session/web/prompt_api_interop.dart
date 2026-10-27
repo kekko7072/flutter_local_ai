@@ -68,6 +68,12 @@ extension type PromptSession._(JSObject _) implements JSObject {
     JSObject? options,
   ]);
 
+  /// The session's total context in tokens. The **current** spec name; gate
+  /// on [PromptSessionMembers.hasContextWindow].
+  external double get contextWindow;
+
+  /// The name earlier builds shipped, kept only as a fallback; gate on
+  /// [PromptSessionMembers.hasInputQuota].
   external double get inputQuota;
   external double get inputUsage;
 }
@@ -84,6 +90,12 @@ extension PromptSessionMembers on PromptSession {
   /// `'measureInputUsage' in session` — the legacy name. Current Chrome no
   /// longer defines it, so code that knows only this name fails there.
   bool get hasMeasureInputUsage => has('measureInputUsage');
+
+  /// `'contextWindow' in session` — the current spec name, tried first.
+  bool get hasContextWindow => has('contextWindow');
+
+  /// `'inputQuota' in session` — the legacy name of `contextWindow`.
+  bool get hasInputQuota => has('inputQuota');
 }
 
 /// Cancels an in-flight `create` / `prompt` / `promptStreaming` (passed as

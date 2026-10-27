@@ -47,6 +47,7 @@ Text generation (blocking or streamed), structured JSON outputs, tool calling, a
 | Image generation   | 🚧 Planned        | ❌                 | 🚧 Planned         | ❌           |
 | Tool calls         | ✅ native         | ❌ no ML Kit API   | ❌ no Windows AI API | ❌         |
 | Exact token counts | ✅ OS 26.4+       | ✅                 | ❌ estimate        | ✅           |
+| Context size       | ✅ SDK 26.4+      | ✅ per device      | ❌ null            | ✅           |
 | Concurrent sessions | ✅               | ✅                 | ✅                 | ✅           |
 
 *Summarization is achieved through text-generation prompts and shares the same API surface.
@@ -693,7 +694,8 @@ Notes:
   in a **one-shot throwaway session** with exactly those instructions — nothing
   accumulates in the session created by `initialize`. Use it for stateless
   callers that carry their own context in the prompt (on Apple, a shared
-  session's transcript counts toward the 4096-token context window).
+  session's transcript counts toward the context window, 4096 tokens on OS 26;
+  `LocalAiSession.tokenLimit()` reports the size).
 
 ### Complete Example
 

@@ -129,8 +129,12 @@ class FakeSession {
     this.streamRejectAfter,
     this.streamRejectName = 'NotReadableError',
     this.measureMembers = const ['measureContextUsage'],
+    this.contextMembers = const {'contextWindow': 6144},
   }) {
     jsObject = JSObject();
+    for (final MapEntry(:key, :value) in contextMembers.entries) {
+      jsObject.setProperty(key.toJS, value.toJS);
+    }
     jsObject.setProperty('destroy'.toJS, (() => destroyCount++).toJS);
     jsObject.setProperty(
       'prompt'.toJS,
@@ -195,6 +199,10 @@ class FakeSession {
   /// Which of `measureContextUsage` / `measureInputUsage` this build defines.
   /// An empty list is a build that can't measure at all.
   final List<String> measureMembers;
+
+  /// Which of `contextWindow` / `inputQuota` this build defines, and their
+  /// values. An empty map is a build that reports no context size.
+  final Map<String, double> contextMembers;
 
   late final JSObject jsObject;
   final List<String> promptCalls = [];

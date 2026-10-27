@@ -318,6 +318,9 @@ class NativeLocalAiHost implements LocalAiHost, wire.LocalAiToolRunner {
       throw LocalAiTokenizerUnavailable(e.message ?? e.code);
     }
   }
+
+  @override
+  Future<int?> tokenLimit({required int sessionId}) => _service.tokenLimit();
 }
 
 /// The host for this platform.

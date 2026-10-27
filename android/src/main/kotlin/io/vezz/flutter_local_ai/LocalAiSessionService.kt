@@ -666,4 +666,16 @@ internal class LocalAiSessionService(
       }
     }
   }
+
+  // Per device: the limit counts input and output together, so a request's
+  // `countTokens` plus its answer must stay within it.
+  override fun tokenLimit(callback: (Result<Long?>) -> Unit) {
+    scope.launch {
+      try {
+        callback(Result.success(client().getTokenLimit().toLong()))
+      } catch (e: Exception) {
+        callback(Result.failure(e))
+      }
+    }
+  }
 }

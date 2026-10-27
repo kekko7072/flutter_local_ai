@@ -32,6 +32,7 @@ version alone.
 | Native Dart tools | Supported | Not bridged | Not exposed | Not exposed |
 | Dynamic Dart JSON schema | Supported subset | No runtime API to bridge | `GenerateStructuredJsonResponseAsync`, unverified on device | `responseConstraint` |
 | Exact text token count | OS / SDK 26.4+ | SDK tokenizer | Estimate | `measureContextUsage`, `measureInputUsage` on older builds; needs an open session |
+| Context size (`tokenLimit`) | `SystemLanguageModel.contextSize` (4096 on OS 26, the size OS 27 reports from 27); SDK 26.4+, null on older SDKs or OS | `getTokenLimit`, per device | Null; Windows AI reports no context size | Session `contextWindow`, `inputQuota` on older builds; null when unlimited |
 | Explicit thinking control | Not exposed | Not bridged | Not exposed | Not exposed |
 
 Apple's latest updates also introduce DynamicProfile, ToolCallingMode, new

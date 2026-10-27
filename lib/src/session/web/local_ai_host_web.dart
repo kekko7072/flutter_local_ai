@@ -562,6 +562,20 @@ class WebLocalAiHost implements LocalAiHost {
       'tokenizer to ask.',
     );
   }
+
+  @override
+  Future<int?> tokenLimit({required int sessionId}) async {
+    final session = _require(sessionId).session;
+    // `contextWindow` is the current spec name, `inputQuota` the one earlier
+    // builds shipped. Infinity means the browser sets no limit.
+    final window = session.hasContextWindow
+        ? session.contextWindow
+        : session.hasInputQuota
+        ? session.inputQuota
+        : null;
+    if (window == null || !window.isFinite) return null;
+    return window.round();
+  }
 }
 
 /// The host for this platform.

@@ -53,6 +53,13 @@ class _SessionSlot {
   bool isStreaming = false;
   bool isCounting = false;
   int? pendingTokens;
+
+  /// The context [pendingTokens] must fit in, with the answer; null where the
+  /// platform reports none.
+  int? tokenLimit;
+
+  /// The last limit read failed, as opposed to the platform reporting none.
+  bool tokenLimitFailed = false;
 }
 
 /// One line of a session transcript.
@@ -1006,9 +1013,21 @@ class _MyHomePageState extends State<MyHomePage> {
 
     try {
       final tokens = await session.sizeInTokens(turn);
+      // A failed limit read, whatever its cause, must not lose the count
+      // that just succeeded.
+      int? limit;
+      var limitFailed = false;
+      try {
+        limit = await session.tokenLimit();
+      } catch (e) {
+        limitFailed = true;
+        debugPrint('[LocalAI][sessions] tokenLimit ${slot.label} failed: $e');
+      }
       if (!mounted) return;
       setState(() {
         slot.pendingTokens = tokens;
+        slot.tokenLimit = limit;
+        slot.tokenLimitFailed = limitFailed;
         slot.isCounting = false;
       });
     } catch (e) {
@@ -2002,7 +2021,8 @@ class _MyHomePageState extends State<MyHomePage> {
                   Expanded(
                     child: Text(
                       'Pending turn: ${slot.pendingTokens} tokens '
-                      '($_tokenCountQualifier)',
+                      '($_tokenCountQualifier) · context '
+                      '${slot.tokenLimitFailed ? 'unavailable' : slot.tokenLimit ?? 'not reported'}',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ),

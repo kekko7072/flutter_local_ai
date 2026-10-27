@@ -183,9 +183,9 @@ Keep copy warm, plain and encouraging. Never use emoji.
   ///
   /// Every call passes the genUI instructions one-shot: each generation runs
   /// in its own throwaway session, because Apple's LanguageModelSession keeps
-  /// every prompt + response of its transcript counting toward the 4096-token
-  /// context window — riding one cached session kills generation after a
-  /// handful of modules.
+  /// every prompt + response of its transcript counting toward its context
+  /// window (4096 tokens on OS 26) — riding one cached session kills
+  /// generation after a handful of modules.
   Future<String> _readText(
     String prompt,
     GenerationConfig config,

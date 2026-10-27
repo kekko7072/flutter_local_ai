@@ -234,6 +234,12 @@ abstract class LocalAiService {
   /// Dart layer turns into a documented character-based estimate.
   @async
   int countTokens(String text);
+
+  /// The model's total context in tokens, shared by the session's earlier
+  /// turns, a request and its answer: ML Kit's `getTokenLimit`, Apple's
+  /// `SystemLanguageModel.contextSize`. Null where the host cannot report it.
+  @async
+  int? tokenLimit();
 }
 
 /// Host → Dart callback for native tool calling. The host suspends generation,

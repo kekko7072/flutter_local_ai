@@ -1,3 +1,30 @@
+## Unreleased
+
+### Breaking changes
+
+* **`LocalAiHost` gains `tokenLimit({required int sessionId})`.** This only
+  affects code that implements `LocalAiHost` itself.
+  *Migration:* implement it; return null when the host has no limit to
+  report.
+
+### New
+
+* **`LocalAiSession.tokenLimit()`** reports the model's total context window
+  in tokens, shared by the session's earlier turns, the next request and its
+  answer. Comparing `sizeInTokens(prompt)` plus the expected answer with it
+  is exact for a fresh session or a one-shot call; in a longer session,
+  earlier turns use part of the window. It reads ML Kit's per-device
+  `getTokenLimit` on Android, `SystemLanguageModel.contextSize` on Apple
+  (4096 on OS 26, the size OS 27 reports from 27; needs an SDK of 26.4 or
+  newer), and the session's `contextWindow` (`inputQuota` on older builds)
+  on the web. It is null where the platform reports none: Windows, an Apple
+  OS older than 26 or a build made with an SDK older than 26.4, or a browser
+  that sets no limit. On Android it throws the native `PlatformException`
+  when the model cannot answer.
+* `FakeLocalAiHost.tokenLimitResult` sets what the fake reports (default
+  4096; null models a host with no limit), `tokenLimitError` makes it throw,
+  and `tokenLimitSessionIds` records the session each call was scoped to.
+
 ## 0.3.0
 
 A generation failure now says why, so an app can retry the failures worth

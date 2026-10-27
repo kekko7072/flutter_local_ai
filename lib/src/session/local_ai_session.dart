@@ -179,6 +179,25 @@ class LocalAiSession {
     }
   }
 
+  /// The model's total context window in tokens: ML Kit's per-device
+  /// `getTokenLimit` on Android, Apple's `SystemLanguageModel.contextSize`,
+  /// and the session's `contextWindow` on the web.
+  ///
+  /// The session's earlier turns, the next request and its answer all share
+  /// it, so `sizeInTokens(prompt)` plus the expected answer is an exact check
+  /// only for a fresh session or a one-shot call.
+  ///
+  /// Apple reports 4096 on OS 26, even while the model is unavailable, and
+  /// the size OS 27 reports from 27. Null where the platform reports none:
+  /// Windows, an Apple OS older than 26 or a build made with an SDK older
+  /// than 26.4, or a browser with no limit. Throws the native
+  /// `PlatformException` where the model cannot answer, such as Android
+  /// before the model is ready.
+  Future<int?> tokenLimit() async {
+    _assertOpen();
+    return _host.tokenLimit(sessionId: sessionId);
+  }
+
   /// Normalizes an override that overrides nothing to null, so every host
   /// sees either null or a real change. Sending an empty one would make a
   /// host rebuild its options for no reason — and on Apple, rebuilding can

@@ -472,6 +472,62 @@ void main() {
     });
   });
 
+  group('tokenLimit', () {
+    test('prefers contextWindow, the current spec name', () async {
+      final host = await openSession(
+        FakeLanguageModel(
+          create: ([options]) => FakeSession(
+            contextMembers: const {'contextWindow': 6144, 'inputQuota': 1024},
+          ),
+        ),
+      );
+
+      expect(await host.tokenLimit(sessionId: 1), 6144);
+    });
+
+    test('falls back to the legacy inputQuota', () async {
+      final host = await openSession(
+        FakeLanguageModel(
+          create: ([options]) =>
+              FakeSession(contextMembers: const {'inputQuota': 1024}),
+        ),
+      );
+
+      expect(await host.tokenLimit(sessionId: 1), 1024);
+    });
+
+    test('is null when the browser sets no limit', () async {
+      final host = await openSession(
+        FakeLanguageModel(
+          create: ([options]) => FakeSession(
+            contextMembers: const {'contextWindow': double.infinity},
+          ),
+        ),
+      );
+
+      expect(await host.tokenLimit(sessionId: 1), isNull);
+    });
+
+    test('is null when the build exposes neither', () async {
+      final host = await openSession(
+        FakeLanguageModel(
+          create: ([options]) => FakeSession(contextMembers: const {}),
+        ),
+      );
+
+      expect(await host.tokenLimit(sessionId: 1), isNull);
+    });
+
+    test('rejects an unknown session', () async {
+      final host = await openSession(FakeLanguageModel());
+
+      await expectLater(
+        host.tokenLimit(sessionId: 99),
+        throwsA(isA<StateError>()),
+      );
+    });
+  });
+
   group('downloadFeature', () {
     test('refuses outside a user gesture without calling create()', () async {
       final languageModel = FakeLanguageModel(availability: 'downloadable')
