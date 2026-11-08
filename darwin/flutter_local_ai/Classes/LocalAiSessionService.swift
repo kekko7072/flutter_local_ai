@@ -65,10 +65,25 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
     /// pigeon's message handlers dispatch serially on the platform thread on
     /// Darwin, so no two calls for one session overlap. That assumption must
     /// be revisited if pigeon dispatch ever moves off the main queue.
+    ///
+    /// No stored property may name a FoundationModels *value* type.
+    /// `@available` does not stop the Objective-C runtime from realizing
+    /// this class: `objc_copyClassList()` (called by XCTest, analytics SDKs,
+    /// Dart's Objective-C interop) realizes every Swift class, and completing
+    /// this class's metadata needs the layout of each stored property. Below
+    /// OS 26 the weak-linked framework's metadata accessors are null, so a
+    /// stored `GenerationOptions` crashes the process with EXC_BAD_ACCESS at
+    /// 0x0. A class reference (`LanguageModelSession`) is pointer-sized and
+    /// needs no metadata, so it may stay typed; value types are boxed.
     @available(iOS 26.0, macOS 26.0, *)
     private final class SessionState {
       let session: LanguageModelSession
-      let options: GenerationOptions
+      /// `GenerationOptions`, boxed: see the class comment.
+      private let optionsBox: Any
+      var options: GenerationOptions {
+        // Only ever set from a `GenerationOptions` in `init`.
+        optionsBox as! GenerationOptions
+      }
       /// The knobs `options` was built from. GenerationOptions exposes no
       /// readable sampling mode, so a per-call override that touches one
       /// field could not otherwise preserve the others.
@@ -91,7 +106,7 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
         maxOutputTokens: Int?
       ) {
         self.session = session
-        self.options = options
+        self.optionsBox = options
         self.temperature = temperature
         self.topK = topK
         self.topP = topP
