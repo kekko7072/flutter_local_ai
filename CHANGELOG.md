@@ -25,6 +25,15 @@
   4096; null models a host with no limit), `tokenLimitError` makes it throw,
   and `tokenLimitSessionIds` records the session each call was scoped to.
 
+### Fixes
+
+* **Apple, OS older than 26: no more launch crash when the classes are
+  listed.** `objc_copyClassList()` (called by XCTest, analytics SDKs and
+  Dart's Objective-C interop) realizes every Swift class, and the session
+  state stored a FoundationModels value type whose metadata does not exist
+  below OS 26, so the app crashed with `EXC_BAD_ACCESS` at 0x0. The value is
+  now boxed; `RunnerTests` covers it.
+
 ## 0.3.0
 
 A generation failure now says why, so an app can retry the failures worth
