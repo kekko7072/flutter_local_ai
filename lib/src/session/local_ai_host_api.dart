@@ -142,7 +142,7 @@ class LocalAiGenerationException extends PlatformException {
         details: errorCode == null && retryDelay == null
             ? null
             : {
-                if (errorCode != null) 'errorCode': errorCode,
+                'errorCode': ?errorCode,
                 if (retryDelay != null)
                   'retryDelayMs': retryDelay.inMilliseconds,
               },
