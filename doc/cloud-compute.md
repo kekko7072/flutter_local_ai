@@ -34,7 +34,9 @@ cloud service. The plugin includes Firebase AI Logic `18.2.0` and the
 experimental on-device extension `16.0.0-beta08`. The host app must:
 
 1. Register the Android app in Firebase and add `google-services.json`.
-2. Enable AI Logic and choose the Gemini Developer API or Agent Platform API.
+2. Open Firebase Console → AI Logic → Get started to enable the Vertex AI in
+   Firebase API (`firebasevertexai.googleapis.com`) for the project. Allow a few
+   minutes for activation. Choose the Gemini Developer API or Agent Platform API.
 3. Configure Firebase App Check. Use its debug provider only in debug builds,
    register the debug token without committing it, and use Play Integrity or
    another production provider for releases.

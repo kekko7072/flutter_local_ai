@@ -227,6 +227,13 @@ Android cloud fallback uses Firebase AI Logic; Private Compute Core/AICore is
 the on-device runtime, not cloud. The app must configure Firebase, AI Logic,
 App Check, and an explicit cloud model. Follow the complete
 [cloud-compute setup and routing guide](doc/cloud-compute.md).
+For the Android example, register package `com.example.flutter_local_ai_example`
+in Firebase, download its `google-services.json` to
+`example/android/app/google-services.json` (Git ignored), enable AI Logic,
+and configure App Check before testing cloud policies.
+The example installs the App Check debug provider in Android debug builds;
+register its generated debug token in Firebase Console. Enable AI Logic via
+**Get started** and wait for the Vertex AI in Firebase API to activate.
 
 ### Apple setup
 
