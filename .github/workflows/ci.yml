@@ -222,10 +222,9 @@ jobs:
   # device, so the build refuses a diff between what is committed and what
   # the generator produces.
   #
-  # Pinned, and deliberately not matrixed: this job diffs the whole worktree,
-  # and `flutter pub get` rewrites pubspec.lock when it runs under a
-  # different SDK. Matrixed, the floor leg would fail on the lock file rather
-  # than on stale generated code, which is the opposite of informative.
+  # Pinned, and deliberately not matrixed: generated output is tied to one
+  # SDK. Scope the diff to Pigeon's outputs because pub get can rewrite the
+  # lock file even under the pinned toolchain.
   pigeon:
     name: Generated code is current
     runs-on: ubuntu-latest
@@ -240,7 +239,12 @@ jobs:
       - run: dart format .
       - name: Fail if the generated output differs from what is committed
         run: |
-          if ! git diff --exit-code; then
+          if ! git diff --exit-code -- \
+            lib/src/pigeon/local_ai_api.g.dart \
+            android/src/main/kotlin/io/vezz/flutter_local_ai/LocalAiPigeon.g.kt \
+            darwin/flutter_local_ai/Classes/LocalAiPigeon.g.swift \
+            windows/local_ai_pigeon.g.h \
+            windows/local_ai_pigeon.g.cpp; then
             echo "::error::Generated files are stale. Run:" \
                  "dart run pigeon --input pigeon.dart && dart format ."
             exit 1

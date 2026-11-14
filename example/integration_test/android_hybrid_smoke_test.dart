@@ -32,44 +32,47 @@ void main() {
     }
   });
 
-  testWidgets('Android hybrid reports the provider used for a response', (
-    tester,
-  ) async {
-    if (!Platform.isAndroid ||
-        const String.fromEnvironment('RUN_ANDROID_HYBRID_GENERATION') != '1') {
-      return;
-    }
-    final model = await LocalAiModel.create(
-      executionPolicy: LocalAiExecutionPolicy.preferOnDevice,
-      android: const LocalAiAndroidConfiguration(
-        cloudModelName: 'gemini-3.5-flash-lite',
-      ),
-    );
-    try {
-      final session = await model.openSession();
-      try {
-        await session.addQueryChunk('Reply with exactly: HYBRID OK');
-        final result = await session.getResponseWithMetadata();
-        expect(result.text, isNotEmpty);
-        expect(
-          result.executionLocation,
-          isIn([
-            LocalAiExecutionLocation.onDevice,
-            LocalAiExecutionLocation.firebaseAiLogicCloud,
-          ]),
-        );
-        // This is the decisive observation: the hybrid SDK picks the route
-        // for each response, so report the returned location and provider.
-        // ignore: avoid_print
-        print(
-          'Android hybrid route: ${result.executionLocation.name} '
-          '(${result.provider})',
-        );
-      } finally {
-        await session.close();
+  testWidgets(
+    'Android hybrid reports the provider used for a response',
+    (tester) async {
+      if (!Platform.isAndroid ||
+          const String.fromEnvironment('RUN_ANDROID_HYBRID_GENERATION') !=
+              '1') {
+        return;
       }
-    } finally {
-      await model.close();
-    }
-  }, timeout: const Timeout(Duration(minutes: 3)));
+      final model = await LocalAiModel.create(
+        executionPolicy: LocalAiExecutionPolicy.preferOnDevice,
+        android: const LocalAiAndroidConfiguration(
+          cloudModelName: 'gemini-3.5-flash-lite',
+        ),
+      );
+      try {
+        final session = await model.openSession();
+        try {
+          await session.addQueryChunk('Reply with exactly: HYBRID OK');
+          final result = await session.getResponseWithMetadata();
+          expect(result.text, isNotEmpty);
+          expect(
+            result.executionLocation,
+            isIn([
+              LocalAiExecutionLocation.onDevice,
+              LocalAiExecutionLocation.firebaseAiLogicCloud,
+            ]),
+          );
+          // This is the decisive observation: the hybrid SDK picks the route
+          // for each response, so report the returned location and provider.
+          // ignore: avoid_print
+          print(
+            'Android hybrid route: ${result.executionLocation.name} '
+            '(${result.provider})',
+          );
+        } finally {
+          await session.close();
+        }
+      } finally {
+        await model.close();
+      }
+    },
+    timeout: const Timeout(Duration(minutes: 3)),
+  );
 }
