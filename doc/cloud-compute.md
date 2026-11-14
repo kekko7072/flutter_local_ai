@@ -21,9 +21,12 @@ answered a non-streaming request.
 
 PCC requires an iOS/macOS 27 SDK and runtime, eligible Apple Intelligence
 hardware and region, network access, and Apple's managed
-`com.apple.developer.private-cloud-compute` entitlement. Request and add that
-entitlement in the host app. Check `privateCloudAvailability`, but still
-handle session/generation failure: Apple does not expose an API for an iOS app
+`com.apple.developer.private-cloud-compute` entitlement. **Apple must approve
+PCC access for the developer account** before the entitlement can be enabled
+for an App ID and included in its provisioning profile. Request approval from
+Apple before adding the entitlement to the host app. Check
+`privateCloudAvailability`, but still handle session/generation failure: Apple
+does not expose an API for an iOS app
 to inspect its own signing entitlement. PCC has service, rate, timeout, and
 daily per-user quota limits. Physical-device validation is required.
 

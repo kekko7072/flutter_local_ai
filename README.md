@@ -147,12 +147,14 @@ initial selection. Hybrid routing can vary per request, so use
 `getResponse()` still returns just text.
 
 On Apple, cloud policies require iOS/macOS 27, an eligible Apple Intelligence
-device and region, connectivity, and Apple's managed
-`com.apple.developer.private-cloud-compute` entitlement. Check
+device and region, connectivity, and **Apple's approval** for the managed
+`com.apple.developer.private-cloud-compute` entitlement. Request access from
+Apple before configuring signing; adding the entitlement file alone does not
+grant permission. Check
 `capabilities.privateCloudAvailability`. Apple provides no public API for an
 iOS app to inspect its own managed entitlement, so signing failures can still
-surface on session creation or first use.
-The example's PCC signing is opt-in; see [Apple example setup](doc/cloud-compute.md#opt-in-signing-for-the-apple-example).
+surface on session creation or first use. The example's PCC signing is opt-in;
+see [Apple example setup](doc/cloud-compute.md#opt-in-signing-for-the-apple-example).
 
 ## Use with flutter_edge_ai
 
