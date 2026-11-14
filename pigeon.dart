@@ -45,6 +45,60 @@ enum LocalAiBackend {
   unsupported,
 }
 
+/// Where inference is allowed to execute. Existing callers default to
+/// [onDeviceOnly], preserving the package's local-only behaviour.
+enum LocalAiExecutionPolicy {
+  onDeviceOnly,
+  cloudOnly,
+  preferOnDevice,
+  preferCloud,
+}
+
+/// Where the model selected by the host actually executes.
+enum LocalAiExecutionLocation {
+  onDevice,
+  privateCloudCompute,
+  firebaseAiLogicCloud,
+  undetermined,
+}
+
+/// Runtime readiness of Apple's Private Cloud Compute model.
+enum LocalAiPrivateCloudAvailability {
+  available,
+  unavailableOsTooOld,
+  unavailableDeviceUnsupported,
+  unavailableSystemNotReady,
+  unavailableEntitlementOrConfiguration,
+  unavailableOther,
+}
+
+/// The model resolved for a model or session. [fallbackUsed] is true only
+/// when a preference policy had to use its secondary provider.
+class LocalAiModelSelection {
+  LocalAiModelSelection({
+    required this.executionLocation,
+    required this.provider,
+    required this.fallbackUsed,
+  });
+
+  LocalAiExecutionLocation executionLocation;
+  String provider;
+  bool fallbackUsed;
+}
+
+/// A generated value plus the provider that actually answered this request.
+class LocalAiGenerationResult {
+  LocalAiGenerationResult({
+    required this.text,
+    required this.executionLocation,
+    required this.provider,
+  });
+
+  String text;
+  LocalAiExecutionLocation executionLocation;
+  String provider;
+}
+
 /// What the *running* host can actually do. Every field is a runtime property
 /// of this device + OS + build, never a compile-time assumption: the same
 /// binary reports `supportsVision: false` on iOS 26 and `true` on iOS 27.
@@ -59,6 +113,8 @@ class LocalAiBackendInfo {
     required this.supportsTokenCount,
     required this.supportsModelDownload,
     required this.supportsPlayStoreRedirect,
+    required this.supportsPrivateCloudCompute,
+    required this.privateCloudAvailability,
     required this.isConfigured,
   });
 
@@ -80,6 +136,11 @@ class LocalAiBackendInfo {
   bool supportsTokenCount;
   bool supportsModelDownload;
   bool supportsPlayStoreRedirect;
+
+  /// Whether this build contains Apple's PCC API. Runtime usability is
+  /// reported separately by [privateCloudAvailability].
+  bool supportsPrivateCloudCompute;
+  LocalAiPrivateCloudAvailability privateCloudAvailability;
 
   /// The backend is present AND this build can drive it.
   bool isConfigured;
@@ -171,7 +232,11 @@ abstract class LocalAiService {
   // --- Model lifecycle ----------------------------------------------------
 
   @async
-  void createModel({required bool supportImage});
+  LocalAiModelSelection createModel({
+    required bool supportImage,
+    required LocalAiExecutionPolicy executionPolicy,
+    String? androidCloudModelName,
+  });
 
   @async
   void closeModel();
@@ -186,8 +251,10 @@ abstract class LocalAiService {
   /// at `LanguageModelSession` construction and cannot add them to a live
   /// session.
   @async
-  void createSession({
+  LocalAiModelSelection createSession({
     required int sessionId,
+    required LocalAiExecutionPolicy executionPolicy,
+    String? androidCloudModelName,
     required double temperature,
     required int topK,
     double? topP,
@@ -208,7 +275,10 @@ abstract class LocalAiService {
   // --- Generation ---------------------------------------------------------
 
   @async
-  String generateResponse(int sessionId, GenerationOverrides? overrides);
+  LocalAiGenerationResult generateResponse(
+    int sessionId,
+    GenerationOverrides? overrides,
+  );
 
   /// Streams the response; tokens arrive on the event channel as
   /// `{sessionId, partialResult, done}` and failures as
@@ -233,13 +303,13 @@ abstract class LocalAiService {
   /// `supportsTokenCount: false` fail with `TOKENIZER_UNAVAILABLE`, which the
   /// Dart layer turns into a documented character-based estimate.
   @async
-  int countTokens(String text);
+  int countTokens({required int sessionId, required String text});
 
   /// The model's total context in tokens, shared by the session's earlier
   /// turns, a request and its answer: ML Kit's `getTokenLimit`, Apple's
   /// `SystemLanguageModel.contextSize`. Null where the host cannot report it.
   @async
-  int? tokenLimit();
+  int? tokenLimit(int sessionId);
 }
 
 /// Host → Dart callback for native tool calling. The host suspends generation,

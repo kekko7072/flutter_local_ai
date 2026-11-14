@@ -77,6 +77,138 @@ enum LocalAiBackend {
   unsupported,
 }
 
+/// Where inference is allowed to execute. Existing callers default to
+/// [onDeviceOnly], preserving the package's local-only behaviour.
+enum LocalAiExecutionPolicy {
+  onDeviceOnly,
+  cloudOnly,
+  preferOnDevice,
+  preferCloud,
+}
+
+/// Where the model selected by the host actually executes.
+enum LocalAiExecutionLocation {
+  onDevice,
+  privateCloudCompute,
+  firebaseAiLogicCloud,
+  undetermined,
+}
+
+/// Runtime readiness of Apple's Private Cloud Compute model.
+enum LocalAiPrivateCloudAvailability {
+  available,
+  unavailableOsTooOld,
+  unavailableDeviceUnsupported,
+  unavailableSystemNotReady,
+  unavailableEntitlementOrConfiguration,
+  unavailableOther,
+}
+
+/// The model resolved for a model or session. [fallbackUsed] is true only
+/// when a preference policy had to use its secondary provider.
+class LocalAiModelSelection {
+  LocalAiModelSelection({
+    required this.executionLocation,
+    required this.provider,
+    required this.fallbackUsed,
+  });
+
+  LocalAiExecutionLocation executionLocation;
+
+  String provider;
+
+  bool fallbackUsed;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      executionLocation,
+      provider,
+      fallbackUsed,
+    ];
+  }
+
+  Object encode() {
+    return _toList();
+  }
+
+  static LocalAiModelSelection decode(Object result) {
+    result as List<Object?>;
+    return LocalAiModelSelection(
+      executionLocation: result[0]! as LocalAiExecutionLocation,
+      provider: result[1]! as String,
+      fallbackUsed: result[2]! as bool,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! LocalAiModelSelection || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(encode(), other.encode());
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => Object.hashAll(_toList());
+}
+
+/// A generated value plus the provider that actually answered this request.
+class LocalAiGenerationResult {
+  LocalAiGenerationResult({
+    required this.text,
+    required this.executionLocation,
+    required this.provider,
+  });
+
+  String text;
+
+  LocalAiExecutionLocation executionLocation;
+
+  String provider;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      text,
+      executionLocation,
+      provider,
+    ];
+  }
+
+  Object encode() {
+    return _toList();
+  }
+
+  static LocalAiGenerationResult decode(Object result) {
+    result as List<Object?>;
+    return LocalAiGenerationResult(
+      text: result[0]! as String,
+      executionLocation: result[1]! as LocalAiExecutionLocation,
+      provider: result[2]! as String,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! LocalAiGenerationResult || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(encode(), other.encode());
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => Object.hashAll(_toList());
+}
+
 /// What the *running* host can actually do. Every field is a runtime property
 /// of this device + OS + build, never a compile-time assumption: the same
 /// binary reports `supportsVision: false` on iOS 26 and `true` on iOS 27.
@@ -91,6 +223,8 @@ class LocalAiBackendInfo {
     required this.supportsTokenCount,
     required this.supportsModelDownload,
     required this.supportsPlayStoreRedirect,
+    required this.supportsPrivateCloudCompute,
+    required this.privateCloudAvailability,
     required this.isConfigured,
   });
 
@@ -118,6 +252,12 @@ class LocalAiBackendInfo {
 
   bool supportsPlayStoreRedirect;
 
+  /// Whether this build contains Apple's PCC API. Runtime usability is
+  /// reported separately by [privateCloudAvailability].
+  bool supportsPrivateCloudCompute;
+
+  LocalAiPrivateCloudAvailability privateCloudAvailability;
+
   /// The backend is present AND this build can drive it.
   bool isConfigured;
 
@@ -132,6 +272,8 @@ class LocalAiBackendInfo {
       supportsTokenCount,
       supportsModelDownload,
       supportsPlayStoreRedirect,
+      supportsPrivateCloudCompute,
+      privateCloudAvailability,
       isConfigured,
     ];
   }
@@ -152,7 +294,9 @@ class LocalAiBackendInfo {
       supportsTokenCount: result[6]! as bool,
       supportsModelDownload: result[7]! as bool,
       supportsPlayStoreRedirect: result[8]! as bool,
-      isConfigured: result[9]! as bool,
+      supportsPrivateCloudCompute: result[9]! as bool,
+      privateCloudAvailability: result[10]! as LocalAiPrivateCloudAvailability,
+      isConfigured: result[11]! as bool,
     );
   }
 
@@ -309,14 +453,29 @@ class _PigeonCodec extends StandardMessageCodec {
     } else if (value is LocalAiBackend) {
       buffer.putUint8(130);
       writeValue(buffer, value.index);
-    } else if (value is LocalAiBackendInfo) {
+    } else if (value is LocalAiExecutionPolicy) {
       buffer.putUint8(131);
+      writeValue(buffer, value.index);
+    } else if (value is LocalAiExecutionLocation) {
+      buffer.putUint8(132);
+      writeValue(buffer, value.index);
+    } else if (value is LocalAiPrivateCloudAvailability) {
+      buffer.putUint8(133);
+      writeValue(buffer, value.index);
+    } else if (value is LocalAiModelSelection) {
+      buffer.putUint8(134);
+      writeValue(buffer, value.encode());
+    } else if (value is LocalAiGenerationResult) {
+      buffer.putUint8(135);
+      writeValue(buffer, value.encode());
+    } else if (value is LocalAiBackendInfo) {
+      buffer.putUint8(136);
       writeValue(buffer, value.encode());
     } else if (value is GenerationOverrides) {
-      buffer.putUint8(132);
+      buffer.putUint8(137);
       writeValue(buffer, value.encode());
     } else if (value is ToolSpec) {
-      buffer.putUint8(133);
+      buffer.putUint8(138);
       writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
@@ -333,10 +492,25 @@ class _PigeonCodec extends StandardMessageCodec {
         final int? value = readValue(buffer) as int?;
         return value == null ? null : LocalAiBackend.values[value];
       case 131:
-        return LocalAiBackendInfo.decode(readValue(buffer)!);
+        final int? value = readValue(buffer) as int?;
+        return value == null ? null : LocalAiExecutionPolicy.values[value];
       case 132:
-        return GenerationOverrides.decode(readValue(buffer)!);
+        final int? value = readValue(buffer) as int?;
+        return value == null ? null : LocalAiExecutionLocation.values[value];
       case 133:
+        final int? value = readValue(buffer) as int?;
+        return value == null
+            ? null
+            : LocalAiPrivateCloudAvailability.values[value];
+      case 134:
+        return LocalAiModelSelection.decode(readValue(buffer)!);
+      case 135:
+        return LocalAiGenerationResult.decode(readValue(buffer)!);
+      case 136:
+        return LocalAiBackendInfo.decode(readValue(buffer)!);
+      case 137:
+        return GenerationOverrides.decode(readValue(buffer)!);
+      case 138:
         return ToolSpec.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);
@@ -513,7 +687,11 @@ class LocalAiService {
     }
   }
 
-  Future<void> createModel({required bool supportImage}) async {
+  Future<LocalAiModelSelection> createModel({
+    required bool supportImage,
+    required LocalAiExecutionPolicy executionPolicy,
+    String? androidCloudModelName,
+  }) async {
     final String pigeonVar_channelName =
         'dev.flutter.pigeon.flutter_local_ai.LocalAiService.createModel$pigeonVar_messageChannelSuffix';
     final BasicMessageChannel<Object?> pigeonVar_channel =
@@ -523,7 +701,7 @@ class LocalAiService {
           binaryMessenger: pigeonVar_binaryMessenger,
         );
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
-      <Object?>[supportImage],
+      <Object?>[supportImage, executionPolicy, androidCloudModelName],
     );
     final List<Object?>? pigeonVar_replyList =
         await pigeonVar_sendFuture as List<Object?>?;
@@ -535,8 +713,13 @@ class LocalAiService {
         message: pigeonVar_replyList[1] as String?,
         details: pigeonVar_replyList[2],
       );
+    } else if (pigeonVar_replyList[0] == null) {
+      throw PlatformException(
+        code: 'null-error',
+        message: 'Host platform returned null value for non-null return value.',
+      );
     } else {
-      return;
+      return (pigeonVar_replyList[0] as LocalAiModelSelection?)!;
     }
   }
 
@@ -572,8 +755,10 @@ class LocalAiService {
   /// [tools] must be supplied here rather than per-request: Apple binds tools
   /// at `LanguageModelSession` construction and cannot add them to a live
   /// session.
-  Future<void> createSession({
+  Future<LocalAiModelSelection> createSession({
     required int sessionId,
+    required LocalAiExecutionPolicy executionPolicy,
+    String? androidCloudModelName,
     required double temperature,
     required int topK,
     double? topP,
@@ -592,6 +777,8 @@ class LocalAiService {
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
       <Object?>[
         sessionId,
+        executionPolicy,
+        androidCloudModelName,
         temperature,
         topK,
         topP,
@@ -610,8 +797,13 @@ class LocalAiService {
         message: pigeonVar_replyList[1] as String?,
         details: pigeonVar_replyList[2],
       );
+    } else if (pigeonVar_replyList[0] == null) {
+      throw PlatformException(
+        code: 'null-error',
+        message: 'Host platform returned null value for non-null return value.',
+      );
     } else {
-      return;
+      return (pigeonVar_replyList[0] as LocalAiModelSelection?)!;
     }
   }
 
@@ -702,7 +894,7 @@ class LocalAiService {
     }
   }
 
-  Future<String> generateResponse(
+  Future<LocalAiGenerationResult> generateResponse(
     int sessionId,
     GenerationOverrides? overrides,
   ) async {
@@ -733,7 +925,7 @@ class LocalAiService {
         message: 'Host platform returned null value for non-null return value.',
       );
     } else {
-      return (pigeonVar_replyList[0] as String?)!;
+      return (pigeonVar_replyList[0] as LocalAiGenerationResult?)!;
     }
   }
 
@@ -839,7 +1031,10 @@ class LocalAiService {
   /// Exact token count where the host has a tokenizer. Hosts reporting
   /// `supportsTokenCount: false` fail with `TOKENIZER_UNAVAILABLE`, which the
   /// Dart layer turns into a documented character-based estimate.
-  Future<int> countTokens(String text) async {
+  Future<int> countTokens({
+    required int sessionId,
+    required String text,
+  }) async {
     final String pigeonVar_channelName =
         'dev.flutter.pigeon.flutter_local_ai.LocalAiService.countTokens$pigeonVar_messageChannelSuffix';
     final BasicMessageChannel<Object?> pigeonVar_channel =
@@ -849,7 +1044,7 @@ class LocalAiService {
           binaryMessenger: pigeonVar_binaryMessenger,
         );
     final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
-      <Object?>[text],
+      <Object?>[sessionId, text],
     );
     final List<Object?>? pigeonVar_replyList =
         await pigeonVar_sendFuture as List<Object?>?;
@@ -874,7 +1069,7 @@ class LocalAiService {
   /// The model's total context in tokens, shared by the session's earlier
   /// turns, a request and its answer: ML Kit's `getTokenLimit`, Apple's
   /// `SystemLanguageModel.contextSize`. Null where the host cannot report it.
-  Future<int?> tokenLimit() async {
+  Future<int?> tokenLimit(int sessionId) async {
     final String pigeonVar_channelName =
         'dev.flutter.pigeon.flutter_local_ai.LocalAiService.tokenLimit$pigeonVar_messageChannelSuffix';
     final BasicMessageChannel<Object?> pigeonVar_channel =
@@ -883,7 +1078,9 @@ class LocalAiService {
           pigeonChannelCodec,
           binaryMessenger: pigeonVar_binaryMessenger,
         );
-    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[sessionId],
+    );
     final List<Object?>? pigeonVar_replyList =
         await pigeonVar_sendFuture as List<Object?>?;
     if (pigeonVar_replyList == null) {

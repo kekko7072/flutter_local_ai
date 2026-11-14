@@ -160,6 +160,104 @@ enum LocalAiBackend: Int {
   case unsupported = 5
 }
 
+/// Where inference is allowed to execute. Existing callers default to
+/// [onDeviceOnly], preserving the package's local-only behaviour.
+enum LocalAiExecutionPolicy: Int {
+  case onDeviceOnly = 0
+  case cloudOnly = 1
+  case preferOnDevice = 2
+  case preferCloud = 3
+}
+
+/// Where the model selected by the host actually executes.
+enum LocalAiExecutionLocation: Int {
+  case onDevice = 0
+  case privateCloudCompute = 1
+  case firebaseAiLogicCloud = 2
+  case undetermined = 3
+}
+
+/// Runtime readiness of Apple's Private Cloud Compute model.
+enum LocalAiPrivateCloudAvailability: Int {
+  case available = 0
+  case unavailableOsTooOld = 1
+  case unavailableDeviceUnsupported = 2
+  case unavailableSystemNotReady = 3
+  case unavailableEntitlementOrConfiguration = 4
+  case unavailableOther = 5
+}
+
+/// The model resolved for a model or session. [fallbackUsed] is true only
+/// when a preference policy had to use its secondary provider.
+///
+/// Generated class from Pigeon that represents data sent in messages.
+struct LocalAiModelSelection: Hashable {
+  var executionLocation: LocalAiExecutionLocation
+  var provider: String
+  var fallbackUsed: Bool
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> LocalAiModelSelection? {
+    let executionLocation = pigeonVar_list[0] as! LocalAiExecutionLocation
+    let provider = pigeonVar_list[1] as! String
+    let fallbackUsed = pigeonVar_list[2] as! Bool
+
+    return LocalAiModelSelection(
+      executionLocation: executionLocation,
+      provider: provider,
+      fallbackUsed: fallbackUsed
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      executionLocation,
+      provider,
+      fallbackUsed,
+    ]
+  }
+  static func == (lhs: LocalAiModelSelection, rhs: LocalAiModelSelection) -> Bool {
+    return deepEqualsLocalAiPigeon(lhs.toList(), rhs.toList())  }
+  func hash(into hasher: inout Hasher) {
+    deepHashLocalAiPigeon(value: toList(), hasher: &hasher)
+  }
+}
+
+/// A generated value plus the provider that actually answered this request.
+///
+/// Generated class from Pigeon that represents data sent in messages.
+struct LocalAiGenerationResult: Hashable {
+  var text: String
+  var executionLocation: LocalAiExecutionLocation
+  var provider: String
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> LocalAiGenerationResult? {
+    let text = pigeonVar_list[0] as! String
+    let executionLocation = pigeonVar_list[1] as! LocalAiExecutionLocation
+    let provider = pigeonVar_list[2] as! String
+
+    return LocalAiGenerationResult(
+      text: text,
+      executionLocation: executionLocation,
+      provider: provider
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      text,
+      executionLocation,
+      provider,
+    ]
+  }
+  static func == (lhs: LocalAiGenerationResult, rhs: LocalAiGenerationResult) -> Bool {
+    return deepEqualsLocalAiPigeon(lhs.toList(), rhs.toList())  }
+  func hash(into hasher: inout Hasher) {
+    deepHashLocalAiPigeon(value: toList(), hasher: &hasher)
+  }
+}
+
 /// What the *running* host can actually do. Every field is a runtime property
 /// of this device + OS + build, never a compile-time assumption: the same
 /// binary reports `supportsVision: false` on iOS 26 and `true` on iOS 27.
@@ -181,6 +279,10 @@ struct LocalAiBackendInfo: Hashable {
   var supportsTokenCount: Bool
   var supportsModelDownload: Bool
   var supportsPlayStoreRedirect: Bool
+  /// Whether this build contains Apple's PCC API. Runtime usability is
+  /// reported separately by [privateCloudAvailability].
+  var supportsPrivateCloudCompute: Bool
+  var privateCloudAvailability: LocalAiPrivateCloudAvailability
   /// The backend is present AND this build can drive it.
   var isConfigured: Bool
 
@@ -196,7 +298,9 @@ struct LocalAiBackendInfo: Hashable {
     let supportsTokenCount = pigeonVar_list[6] as! Bool
     let supportsModelDownload = pigeonVar_list[7] as! Bool
     let supportsPlayStoreRedirect = pigeonVar_list[8] as! Bool
-    let isConfigured = pigeonVar_list[9] as! Bool
+    let supportsPrivateCloudCompute = pigeonVar_list[9] as! Bool
+    let privateCloudAvailability = pigeonVar_list[10] as! LocalAiPrivateCloudAvailability
+    let isConfigured = pigeonVar_list[11] as! Bool
 
     return LocalAiBackendInfo(
       backend: backend,
@@ -208,6 +312,8 @@ struct LocalAiBackendInfo: Hashable {
       supportsTokenCount: supportsTokenCount,
       supportsModelDownload: supportsModelDownload,
       supportsPlayStoreRedirect: supportsPlayStoreRedirect,
+      supportsPrivateCloudCompute: supportsPrivateCloudCompute,
+      privateCloudAvailability: privateCloudAvailability,
       isConfigured: isConfigured
     )
   }
@@ -222,6 +328,8 @@ struct LocalAiBackendInfo: Hashable {
       supportsTokenCount,
       supportsModelDownload,
       supportsPlayStoreRedirect,
+      supportsPrivateCloudCompute,
+      privateCloudAvailability,
       isConfigured,
     ]
   }
@@ -335,10 +443,32 @@ private class LocalAiPigeonPigeonCodecReader: FlutterStandardReader {
       }
       return nil
     case 131:
-      return LocalAiBackendInfo.fromList(self.readValue() as! [Any?])
+      let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
+      if let enumResultAsInt = enumResultAsInt {
+        return LocalAiExecutionPolicy(rawValue: enumResultAsInt)
+      }
+      return nil
     case 132:
-      return GenerationOverrides.fromList(self.readValue() as! [Any?])
+      let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
+      if let enumResultAsInt = enumResultAsInt {
+        return LocalAiExecutionLocation(rawValue: enumResultAsInt)
+      }
+      return nil
     case 133:
+      let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
+      if let enumResultAsInt = enumResultAsInt {
+        return LocalAiPrivateCloudAvailability(rawValue: enumResultAsInt)
+      }
+      return nil
+    case 134:
+      return LocalAiModelSelection.fromList(self.readValue() as! [Any?])
+    case 135:
+      return LocalAiGenerationResult.fromList(self.readValue() as! [Any?])
+    case 136:
+      return LocalAiBackendInfo.fromList(self.readValue() as! [Any?])
+    case 137:
+      return GenerationOverrides.fromList(self.readValue() as! [Any?])
+    case 138:
       return ToolSpec.fromList(self.readValue() as! [Any?])
     default:
       return super.readValue(ofType: type)
@@ -354,14 +484,29 @@ private class LocalAiPigeonPigeonCodecWriter: FlutterStandardWriter {
     } else if let value = value as? LocalAiBackend {
       super.writeByte(130)
       super.writeValue(value.rawValue)
-    } else if let value = value as? LocalAiBackendInfo {
+    } else if let value = value as? LocalAiExecutionPolicy {
       super.writeByte(131)
+      super.writeValue(value.rawValue)
+    } else if let value = value as? LocalAiExecutionLocation {
+      super.writeByte(132)
+      super.writeValue(value.rawValue)
+    } else if let value = value as? LocalAiPrivateCloudAvailability {
+      super.writeByte(133)
+      super.writeValue(value.rawValue)
+    } else if let value = value as? LocalAiModelSelection {
+      super.writeByte(134)
+      super.writeValue(value.toList())
+    } else if let value = value as? LocalAiGenerationResult {
+      super.writeByte(135)
+      super.writeValue(value.toList())
+    } else if let value = value as? LocalAiBackendInfo {
+      super.writeByte(136)
       super.writeValue(value.toList())
     } else if let value = value as? GenerationOverrides {
-      super.writeByte(132)
+      super.writeByte(137)
       super.writeValue(value.toList())
     } else if let value = value as? ToolSpec {
-      super.writeByte(133)
+      super.writeByte(138)
       super.writeValue(value.toList())
     } else {
       super.writeValue(value)
@@ -398,7 +543,7 @@ protocol LocalAiService {
   func downloadFeature(completion: @escaping (Result<Void, Error>) -> Void)
   /// Opens Google AICore in the Play Store. False on every non-Android host.
   func openAICorePlayStore(completion: @escaping (Result<Bool, Error>) -> Void)
-  func createModel(supportImage: Bool, completion: @escaping (Result<Void, Error>) -> Void)
+  func createModel(supportImage: Bool, executionPolicy: LocalAiExecutionPolicy, androidCloudModelName: String?, completion: @escaping (Result<LocalAiModelSelection, Error>) -> Void)
   func closeModel(completion: @escaping (Result<Void, Error>) -> Void)
   /// Sessions are keyed by a caller-allocated [sessionId]; every generated
   /// token on the event channel carries it back so concurrent sessions can be
@@ -407,11 +552,11 @@ protocol LocalAiService {
   /// [tools] must be supplied here rather than per-request: Apple binds tools
   /// at `LanguageModelSession` construction and cannot add them to a live
   /// session.
-  func createSession(sessionId: Int64, temperature: Double, topK: Int64, topP: Double?, maxOutputTokens: Int64?, systemInstruction: String?, tools: [ToolSpec]?, completion: @escaping (Result<Void, Error>) -> Void)
+  func createSession(sessionId: Int64, executionPolicy: LocalAiExecutionPolicy, androidCloudModelName: String?, temperature: Double, topK: Int64, topP: Double?, maxOutputTokens: Int64?, systemInstruction: String?, tools: [ToolSpec]?, completion: @escaping (Result<LocalAiModelSelection, Error>) -> Void)
   func closeSession(sessionId: Int64, completion: @escaping (Result<Void, Error>) -> Void)
   func addQueryChunk(sessionId: Int64, text: String, completion: @escaping (Result<Void, Error>) -> Void)
   func addImage(sessionId: Int64, imageBytes: FlutterStandardTypedData, completion: @escaping (Result<Void, Error>) -> Void)
-  func generateResponse(sessionId: Int64, overrides: GenerationOverrides?, completion: @escaping (Result<String, Error>) -> Void)
+  func generateResponse(sessionId: Int64, overrides: GenerationOverrides?, completion: @escaping (Result<LocalAiGenerationResult, Error>) -> Void)
   /// Streams the response; tokens arrive on the event channel as
   /// `{sessionId, partialResult, done}` and failures as
   /// `{sessionId, code: ERROR, message}`.
@@ -424,11 +569,11 @@ protocol LocalAiService {
   /// Exact token count where the host has a tokenizer. Hosts reporting
   /// `supportsTokenCount: false` fail with `TOKENIZER_UNAVAILABLE`, which the
   /// Dart layer turns into a documented character-based estimate.
-  func countTokens(text: String, completion: @escaping (Result<Int64, Error>) -> Void)
+  func countTokens(sessionId: Int64, text: String, completion: @escaping (Result<Int64, Error>) -> Void)
   /// The model's total context in tokens, shared by the session's earlier
   /// turns, a request and its answer: ML Kit's `getTokenLimit`, Apple's
   /// `SystemLanguageModel.contextSize`. Null where the host cannot report it.
-  func tokenLimit(completion: @escaping (Result<Int64?, Error>) -> Void)
+  func tokenLimit(sessionId: Int64, completion: @escaping (Result<Int64?, Error>) -> Void)
 }
 
 /// Generated setup class from Pigeon to handle messages through the `binaryMessenger`.
@@ -524,10 +669,12 @@ class LocalAiServiceSetup {
       createModelChannel.setMessageHandler { message, reply in
         let args = message as! [Any?]
         let supportImageArg = args[0] as! Bool
-        api.createModel(supportImage: supportImageArg) { result in
+        let executionPolicyArg = args[1] as! LocalAiExecutionPolicy
+        let androidCloudModelNameArg: String? = nilOrValue(args[2])
+        api.createModel(supportImage: supportImageArg, executionPolicy: executionPolicyArg, androidCloudModelName: androidCloudModelNameArg) { result in
           switch result {
-          case .success:
-            reply(wrapResult(nil))
+          case .success(let res):
+            reply(wrapResult(res))
           case .failure(let error):
             reply(wrapError(error))
           }
@@ -563,16 +710,18 @@ class LocalAiServiceSetup {
       createSessionChannel.setMessageHandler { message, reply in
         let args = message as! [Any?]
         let sessionIdArg = args[0] as! Int64
-        let temperatureArg = args[1] as! Double
-        let topKArg = args[2] as! Int64
-        let topPArg: Double? = nilOrValue(args[3])
-        let maxOutputTokensArg: Int64? = nilOrValue(args[4])
-        let systemInstructionArg: String? = nilOrValue(args[5])
-        let toolsArg: [ToolSpec]? = nilOrValue(args[6])
-        api.createSession(sessionId: sessionIdArg, temperature: temperatureArg, topK: topKArg, topP: topPArg, maxOutputTokens: maxOutputTokensArg, systemInstruction: systemInstructionArg, tools: toolsArg) { result in
+        let executionPolicyArg = args[1] as! LocalAiExecutionPolicy
+        let androidCloudModelNameArg: String? = nilOrValue(args[2])
+        let temperatureArg = args[3] as! Double
+        let topKArg = args[4] as! Int64
+        let topPArg: Double? = nilOrValue(args[5])
+        let maxOutputTokensArg: Int64? = nilOrValue(args[6])
+        let systemInstructionArg: String? = nilOrValue(args[7])
+        let toolsArg: [ToolSpec]? = nilOrValue(args[8])
+        api.createSession(sessionId: sessionIdArg, executionPolicy: executionPolicyArg, androidCloudModelName: androidCloudModelNameArg, temperature: temperatureArg, topK: topKArg, topP: topPArg, maxOutputTokens: maxOutputTokensArg, systemInstruction: systemInstructionArg, tools: toolsArg) { result in
           switch result {
-          case .success:
-            reply(wrapResult(nil))
+          case .success(let res):
+            reply(wrapResult(res))
           case .failure(let error):
             reply(wrapError(error))
           }
@@ -719,8 +868,9 @@ class LocalAiServiceSetup {
     if let api = api {
       countTokensChannel.setMessageHandler { message, reply in
         let args = message as! [Any?]
-        let textArg = args[0] as! String
-        api.countTokens(text: textArg) { result in
+        let sessionIdArg = args[0] as! Int64
+        let textArg = args[1] as! String
+        api.countTokens(sessionId: sessionIdArg, text: textArg) { result in
           switch result {
           case .success(let res):
             reply(wrapResult(res))
@@ -737,8 +887,10 @@ class LocalAiServiceSetup {
     /// `SystemLanguageModel.contextSize`. Null where the host cannot report it.
     let tokenLimitChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.flutter_local_ai.LocalAiService.tokenLimit\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {
-      tokenLimitChannel.setMessageHandler { _, reply in
-        api.tokenLimit { result in
+      tokenLimitChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let sessionIdArg = args[0] as! Int64
+        api.tokenLimit(sessionId: sessionIdArg) { result in
           switch result {
           case .success(let res):
             reply(wrapResult(res))

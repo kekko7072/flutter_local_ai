@@ -1,5 +1,5 @@
 PODS:
-  - flutter_local_ai (0.1.0):
+  - flutter_local_ai (0.5.0):
     - Flutter
     - FlutterMacOS
   - FlutterMacOS (1.0.0)
@@ -15,8 +15,8 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral
 
 SPEC CHECKSUMS:
-  flutter_local_ai: ae5fa9cfca2584a1a737a0e8132744d6cf0e798a
-  FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
+  flutter_local_ai: 5c194e6a1cb19bfe4e2db9b77718cfd7107dbad8
+  FlutterMacOS: c232990155153907050900a2e175c7773903ba4e
 
 PODFILE CHECKSUM: 1e95c36afbfd1cb6423ceca4de7a8e1b256fb6ac
 

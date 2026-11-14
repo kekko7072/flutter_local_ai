@@ -2,7 +2,7 @@
 
 What each OS backend actually does, what it needs at build time, and what has
 been verified so far. The Apple and Android claims were checked against the
-linked vendor documentation on **12 September 2026**, the Windows claims on
+linked vendor documentation on **14 November 2026**, the Windows claims on
 **21 September 2026** (Windows App SDK 2.5.5 metadata and the Windows AI API
 docs); the Web claims are read off this package's own Chrome Prompt API arm in
 `lib/src/session/web/`, not off a documentation review with a date.
@@ -26,7 +26,7 @@ version alone.
 | Capability | Apple | Android | Windows | Web |
 |---|---|---|---|---|
 | Text / conversation | OS 26+ native sessions | beta4, host replays the transcript | App SDK 2.0+ (build resolves it), host replays the transcript | Chrome Prompt API, browser session owns the history |
-| Streaming | Incremental deltas | Incremental deltas | One final chunk, asynchronously delivered | Incremental deltas |
+| Streaming | Incremental deltas | Incremental on-device; hybrid alpha currently emits the completed response as one chunk | One final chunk, asynchronously delivered | Incremental deltas |
 | Cancellation | Full, stream, structured tasks | Full and stream jobs | Async model creation/generation | `AbortController` on every request |
 | Image input | OS 27 + SDK/compiler gate; unverified branch | Multiple image parts | Not exposed | Not exposed |
 | Native Dart tools | Supported | Not bridged | Not exposed | Not exposed |
@@ -34,15 +34,27 @@ version alone.
 | Exact text token count | OS / SDK 26.4+ | SDK tokenizer | Estimate | `measureContextUsage`, `measureInputUsage` on older builds; needs an open session |
 | Context size (`tokenLimit`) | `SystemLanguageModel.contextSize` (4096 on OS 26, the size OS 27 reports from 27); SDK 26.4+, null on older SDKs or OS | `getTokenLimit`, per device | Null; Windows AI reports no context size | Session `contextWindow`, `inputQuota` on older builds; null when unlimited |
 | Explicit thinking control | Not exposed | Not bridged | Not exposed | Not exposed |
+| Execution policy | all four; cloud = PCC | all four; cloud = Firebase AI Logic | `onDeviceOnly`; others fail explicitly | `onDeviceOnly`; others fail explicitly |
+| Cloud readiness | PCC availability; managed entitlement validated when used | SDK present; Firebase/App Check/model configuration validated when used | Not supported | Not supported |
 
 Apple's latest updates also introduce DynamicProfile, ToolCallingMode, new
 error types (their case names reach Dart as
 `LocalAiGenerationException.errorCode`), system Vision tools, custom
-LanguageModel implementations, and Private Cloud Compute. Those APIs are not all exposed by this package. The
+LanguageModel implementations, and Private Cloud Compute. This package
+exposes model selection and PCC while the remaining APIs are not all exposed. The
 OS-provided on-device model updates automatically; model behavior still needs
-prompt regression testing. Private Cloud Compute is a cloud path and is
-intentionally not silently selected by this local-only backend. Native
-structured streaming and runtime context-size reporting remain follow-ups. The
+prompt regression testing. Private Cloud Compute is available only on
+iOS/macOS 27+, requires Apple's managed entitlement and a network connection,
+has a daily per-user quota, and reports a 32K context window through the SDK.
+PCC exposes no public `tokenCount(for:)` API, so `sizeInTokens` uses the
+package's documented character estimate for PCC sessions. Apple also exposes
+no public iOS API for an app to inspect its own managed PCC entitlement;
+availability is preflighted, while entitlement/signing failures surface when
+the session is created or first used.
+The default remains `onDeviceOnly`; `preferOnDevice` falls back to PCC only
+after the on-device model is unavailable and exposes that choice through
+`fallbackUsed`, `executionLocation`, and `provider`. Native structured
+streaming remains a follow-up. The
 OS 27 image branch requires Swift 6.4+ with a matching SDK, then runtime
 iOS/macOS 27; running OS 27 alone with an older build does not enable vision.
 See [Apple's updates](https://developer.apple.com/documentation/updates/foundationmodels)
@@ -51,13 +63,30 @@ and [multimodal prompting](https://developer.apple.com/documentation/foundationm
 Android's current SDK exposes thinking, caching and typed structured output in
 addition to the features used here. The structured-output guide requires Kotlin
 types and KSP; this package has not implemented a runtime Dart-schema bridge.
-Experimental Kotlin tool declarations in reference documentation do not
-establish a working Dart callback bridge. Feature-specific ML Kit APIs and
+The current Prompt API documents tool declarations, but this package keeps
+`supportsToolCalling: false` until it can provide the same reliable typed
+declaration, Dart callback, result-reinjection, cancellation, and multi-step
+semantics as its Apple implementation. Feature-specific ML Kit APIs and
 Android AppFunctions are separate integrations, not substitutes for this LLM
 backend. See the [Android solution guide](https://developer.android.com/ai/overview#ai-solution-guide),
 [Prompt API setup](https://developers.google.com/ml-kit/genai/prompt/android/get-started),
 [request reference](https://developers.google.com/android/reference/kotlin/com/google/mlkit/genai/prompt/GenerateContentRequest),
 and [typed output guide](https://developers.google.com/ml-kit/genai/prompt/android/structured-output).
+
+Android cloud routing uses Firebase AI Logic Hybrid, not Private Compute Core.
+Private Compute Core/AICore protects and runs Gemini Nano locally. Firebase's
+experimental hybrid SDK chooses one provider for each request according to
+`ONLY_ON_DEVICE`, `ONLY_IN_CLOUD`, `PREFER_ON_DEVICE`, or `PREFER_IN_CLOUD`;
+it does not split a prompt across providers. The response's `inferenceSource`
+is mapped to `LocalAiGenerationResult.executionLocation`. Cloud-capable modes
+require a caller-supplied model name, a configured Firebase project, AI Logic,
+and App Check. The plugin deliberately does not install an App Check provider:
+the host app must use a debug provider only for development and production
+attestation for releases. Hybrid requests are single-turn at the vendor API;
+the plugin replays its transcript for a unified session experience. Firebase
+warns that long multi-turn history is less precise on Nano, token counting is
+not comparable across providers, and tools do not automatically fall back.
+For that reason Android tool calling stays disabled in 0.5.0 alpha.
 
 Windows is gated by Microsoft at runtime far more than at build time. Phi
 Silica needs a Copilot+ PC (NPU) or, with Developer Mode and the vendor's

@@ -1,14 +1,13 @@
 name: flutter_local_ai
 # pub.dev truncates past ~180 characters, and scores a longer one down.
 description: >-
-  On-device AI for Flutter: Apple Foundation Models, Android Gemini Nano,
-  Windows AI Foundry, Chrome Prompt API. Text, streaming, tool calling, JSON
-  schemas, genUI specs.
-version: 0.4.0
+  On-device and hybrid cloud AI for Flutter: Apple Foundation Models/PCC,
+  Android Gemini Nano/Firebase AI Logic, Windows AI Foundry, Chrome Prompt API.
+version: 0.5.0
 homepage: https://github.com/kekko7072/flutter_local_ai
 topics:
   - ai
-  - genui
+  - cloud-ai
   - on-device-ai
   - gemini-nano
   - foundation-models

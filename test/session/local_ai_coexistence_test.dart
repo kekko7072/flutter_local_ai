@@ -90,15 +90,32 @@ class _DelayedHost extends FakeLocalAiHost {
   final created = Completer<void>();
   final cleaned = Completer<void>();
   @override
-  Future<void> createSession({
+  Future<LocalAiModelSelection> createSession({
     required int sessionId,
+    LocalAiAndroidConfiguration? android,
+    LocalAiExecutionPolicy executionPolicy =
+        LocalAiExecutionPolicy.onDeviceOnly,
     required double temperature,
     required int topK,
     double? topP,
     int? maxOutputTokens,
     String? systemInstruction,
     List<LocalAiTool>? tools,
-  }) => created.future;
+  }) async {
+    await created.future;
+    return super.createSession(
+      sessionId: sessionId,
+      android: android,
+      executionPolicy: executionPolicy,
+      temperature: temperature,
+      topK: topK,
+      topP: topP,
+      maxOutputTokens: maxOutputTokens,
+      systemInstruction: systemInstruction,
+      tools: tools,
+    );
+  }
+
   @override
   Future<void> closeSession(int sessionId) => cleaned.future;
 }

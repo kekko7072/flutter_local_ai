@@ -45,7 +45,11 @@ android {
 }
 
 dependencies {
-    // Keep common and coroutine versions aligned with the Prompt API POM.
+    // Firebase AI Logic hybrid inference includes the ML Kit Prompt API used
+    // for on-device execution. Keep the on-device artifact explicit because
+    // it is not part of the Firebase BoM yet.
+    implementation 'com.google.firebase:firebase-ai:18.2.0'
+    implementation 'com.google.firebase:firebase-ai-ondevice:16.0.0-beta08'
     implementation 'com.google.mlkit:genai-prompt:1.0.0-beta4'
 }
 

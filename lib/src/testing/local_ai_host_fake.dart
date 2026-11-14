@@ -17,6 +17,7 @@ import '../session/local_ai_tool_registry.dart';
 class FakeLocalAiSession {
   FakeLocalAiSession({
     required this.id,
+    required this.selection,
     required this.temperature,
     required this.topK,
     this.topP,
@@ -26,6 +27,7 @@ class FakeLocalAiSession {
   });
 
   final int id;
+  final LocalAiModelSelection selection;
   final double temperature;
   final int topK;
   final double? topP;
@@ -131,6 +133,14 @@ class FakeLocalAiHost implements LocalAiHost {
   /// What [getBackendInfo] answers.
   LocalAiBackendCapabilities capabilities;
 
+  /// Policies this fake accepts and the model each resolves to.
+  final Map<LocalAiExecutionPolicy, LocalAiModelSelection> policySelections = {
+    LocalAiExecutionPolicy.onDeviceOnly: const LocalAiModelSelection(
+      executionLocation: LocalAiExecutionLocation.onDevice,
+      provider: 'Fake on-device model',
+    ),
+  };
+
   /// What [availabilityReason] answers.
   String reason = 'Fake host.';
 
@@ -206,6 +216,9 @@ class FakeLocalAiHost implements LocalAiHost {
 
   /// Whether [createModel] was asked for image support.
   bool? modelSupportsImage;
+
+  LocalAiExecutionPolicy? modelExecutionPolicy;
+  LocalAiAndroidConfiguration? modelAndroidConfiguration;
 
   /// The most recent generate call's sampling, across all sessions.
   LocalAiGenerationOverrides? lastOverrides;
@@ -327,9 +340,17 @@ class FakeLocalAiHost implements LocalAiHost {
   }
 
   @override
-  Future<void> createModel({required bool supportImage}) async {
+  Future<LocalAiModelSelection> createModel({
+    required bool supportImage,
+    LocalAiExecutionPolicy executionPolicy =
+        LocalAiExecutionPolicy.onDeviceOnly,
+    LocalAiAndroidConfiguration? android,
+  }) async {
     calls.add('createModel');
     modelSupportsImage = supportImage;
+    modelExecutionPolicy = executionPolicy;
+    modelAndroidConfiguration = android;
+    return _selection(executionPolicy);
   }
 
   @override
@@ -341,8 +362,11 @@ class FakeLocalAiHost implements LocalAiHost {
   }
 
   @override
-  Future<void> createSession({
+  Future<LocalAiModelSelection> createSession({
     required int sessionId,
+    LocalAiExecutionPolicy executionPolicy =
+        LocalAiExecutionPolicy.onDeviceOnly,
+    LocalAiAndroidConfiguration? android,
     required double temperature,
     required int topK,
     double? topP,
@@ -362,9 +386,11 @@ class FakeLocalAiHost implements LocalAiHost {
       );
     }
     _tools.register(sessionId, tools);
+    final selection = _selection(executionPolicy);
     sessions.add(
       FakeLocalAiSession(
         id: sessionId,
+        selection: selection,
         temperature: temperature,
         topK: topK,
         topP: topP,
@@ -372,6 +398,16 @@ class FakeLocalAiHost implements LocalAiHost {
         systemInstruction: systemInstruction,
         tools: List.unmodifiable(tools ?? const <LocalAiTool>[]),
       ),
+    );
+    return selection;
+  }
+
+  LocalAiModelSelection _selection(LocalAiExecutionPolicy policy) {
+    final selection = policySelections[policy];
+    if (selection != null) return selection;
+    throw LocalAiUnsupportedException(
+      'executionPolicy',
+      'This fake backend does not support ${policy.name}.',
     );
   }
 
@@ -400,7 +436,7 @@ class FakeLocalAiHost implements LocalAiHost {
   }) async => _require(sessionId).images.add(imageBytes);
 
   @override
-  Future<String> generateResponse(
+  Future<LocalAiGenerationResult> generateResponse(
     int sessionId, {
     LocalAiGenerationOverrides? overrides,
   }) async {
@@ -408,7 +444,12 @@ class FakeLocalAiHost implements LocalAiHost {
     _record(sessionId, overrides);
     final error = generateResponseError;
     if (error != null) throw error;
-    return response;
+    final selection = _require(sessionId).selection;
+    return LocalAiGenerationResult(
+      text: response,
+      executionLocation: selection.executionLocation,
+      provider: selection.provider,
+    );
   }
 
   @override

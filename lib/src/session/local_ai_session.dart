@@ -16,10 +16,16 @@ class LocalAiSession {
   LocalAiSession({
     required this.sessionId,
     required this._host,
+    this.executionLocation = LocalAiExecutionLocation.onDevice,
+    this.provider = 'Unknown on-device provider',
+    this.fallbackUsed = false,
     required this._onClose,
   });
 
   final int sessionId;
+  final LocalAiExecutionLocation executionLocation;
+  final String provider;
+  final bool fallbackUsed;
   final LocalAiHost _host;
   final void Function() _onClose;
 
@@ -60,7 +66,20 @@ class LocalAiSession {
   /// Prompt API) log once and ignore it.
   Future<String> getResponse({LocalAiGenerationOverrides? overrides}) {
     _assertOpen();
-    return _host.generateResponse(sessionId, overrides: _meaningful(overrides));
+    return getResponseWithMetadata(
+      overrides: overrides,
+    ).then((result) => result.text);
+  }
+
+  /// Generates a full response and reports which provider actually answered.
+  Future<LocalAiGenerationResult> getResponseWithMetadata({
+    LocalAiGenerationOverrides? overrides,
+  }) {
+    _assertOpen();
+    return _host.generateResponse(
+      sessionId,
+      overrides: _meaningful(overrides),
+    );
   }
 
   /// Generates the response as a stream of deltas — each event is the newly

@@ -28,6 +28,114 @@ FlutterError CreateConnectionError(const std::string channel_name) {
       EncodableValue(""));
 }
 
+// LocalAiModelSelection
+
+LocalAiModelSelection::LocalAiModelSelection(
+  const LocalAiExecutionLocation& execution_location,
+  const std::string& provider,
+  bool fallback_used)
+ : execution_location_(execution_location),
+    provider_(provider),
+    fallback_used_(fallback_used) {}
+
+const LocalAiExecutionLocation& LocalAiModelSelection::execution_location() const {
+  return execution_location_;
+}
+
+void LocalAiModelSelection::set_execution_location(const LocalAiExecutionLocation& value_arg) {
+  execution_location_ = value_arg;
+}
+
+
+const std::string& LocalAiModelSelection::provider() const {
+  return provider_;
+}
+
+void LocalAiModelSelection::set_provider(std::string_view value_arg) {
+  provider_ = value_arg;
+}
+
+
+bool LocalAiModelSelection::fallback_used() const {
+  return fallback_used_;
+}
+
+void LocalAiModelSelection::set_fallback_used(bool value_arg) {
+  fallback_used_ = value_arg;
+}
+
+
+EncodableList LocalAiModelSelection::ToEncodableList() const {
+  EncodableList list;
+  list.reserve(3);
+  list.push_back(CustomEncodableValue(execution_location_));
+  list.push_back(EncodableValue(provider_));
+  list.push_back(EncodableValue(fallback_used_));
+  return list;
+}
+
+LocalAiModelSelection LocalAiModelSelection::FromEncodableList(const EncodableList& list) {
+  LocalAiModelSelection decoded(
+    std::any_cast<const LocalAiExecutionLocation&>(std::get<CustomEncodableValue>(list[0])),
+    std::get<std::string>(list[1]),
+    std::get<bool>(list[2]));
+  return decoded;
+}
+
+// LocalAiGenerationResult
+
+LocalAiGenerationResult::LocalAiGenerationResult(
+  const std::string& text,
+  const LocalAiExecutionLocation& execution_location,
+  const std::string& provider)
+ : text_(text),
+    execution_location_(execution_location),
+    provider_(provider) {}
+
+const std::string& LocalAiGenerationResult::text() const {
+  return text_;
+}
+
+void LocalAiGenerationResult::set_text(std::string_view value_arg) {
+  text_ = value_arg;
+}
+
+
+const LocalAiExecutionLocation& LocalAiGenerationResult::execution_location() const {
+  return execution_location_;
+}
+
+void LocalAiGenerationResult::set_execution_location(const LocalAiExecutionLocation& value_arg) {
+  execution_location_ = value_arg;
+}
+
+
+const std::string& LocalAiGenerationResult::provider() const {
+  return provider_;
+}
+
+void LocalAiGenerationResult::set_provider(std::string_view value_arg) {
+  provider_ = value_arg;
+}
+
+
+EncodableList LocalAiGenerationResult::ToEncodableList() const {
+  EncodableList list;
+  list.reserve(3);
+  list.push_back(EncodableValue(text_));
+  list.push_back(CustomEncodableValue(execution_location_));
+  list.push_back(EncodableValue(provider_));
+  return list;
+}
+
+LocalAiGenerationResult LocalAiGenerationResult::FromEncodableList(const EncodableList& list) {
+  LocalAiGenerationResult decoded(
+    std::get<std::string>(list[0]),
+    std::any_cast<const LocalAiExecutionLocation&>(std::get<CustomEncodableValue>(list[1])),
+    std::get<std::string>(list[2]));
+  return decoded;
+}
+
 // LocalAiBackendInfo
 
 LocalAiBackendInfo::LocalAiBackendInfo(
@@ -40,6 +148,8 @@ LocalAiBackendInfo::LocalAiBackendInfo(
   bool supports_token_count,
   bool supports_model_download,
   bool supports_play_store_redirect,
+  bool supports_private_cloud_compute,
+  const LocalAiPrivateCloudAvailability& private_cloud_availability,
   bool is_configured)
  : backend_(backend),
     platform_(platform),
@@ -50,6 +160,8 @@ LocalAiBackendInfo::LocalAiBackendInfo(
     supports_token_count_(supports_token_count),
     supports_model_download_(supports_model_download),
     supports_play_store_redirect_(supports_play_store_redirect),
+    supports_private_cloud_compute_(supports_private_cloud_compute),
+    private_cloud_availability_(private_cloud_availability),
     is_configured_(is_configured) {}
 
 const LocalAiBackend& LocalAiBackendInfo::backend() const {
@@ -133,6 +245,24 @@ void LocalAiBackendInfo::set_supports_play_store_redirect(bool value_arg) {
 }
 
 
+bool LocalAiBackendInfo::supports_private_cloud_compute() const {
+  return supports_private_cloud_compute_;
+}
+
+void LocalAiBackendInfo::set_supports_private_cloud_compute(bool value_arg) {
+  supports_private_cloud_compute_ = value_arg;
+}
+
+
+const LocalAiPrivateCloudAvailability& LocalAiBackendInfo::private_cloud_availability() const {
+  return private_cloud_availability_;
+}
+
+void LocalAiBackendInfo::set_private_cloud_availability(const LocalAiPrivateCloudAvailability& value_arg) {
+  private_cloud_availability_ = value_arg;
+}
+
+
 bool LocalAiBackendInfo::is_configured() const {
   return is_configured_;
 }
@@ -144,7 +274,7 @@ void LocalAiBackendInfo::set_is_configured(bool value_arg) {
 
 EncodableList LocalAiBackendInfo::ToEncodableList() const {
   EncodableList list;
-  list.reserve(10);
+  list.reserve(12);
   list.push_back(CustomEncodableValue(backend_));
   list.push_back(EncodableValue(platform_));
   list.push_back(EncodableValue(api_name_));
@@ -154,6 +284,8 @@ EncodableList LocalAiBackendInfo::ToEncodableList() const {
   list.push_back(EncodableValue(supports_token_count_));
   list.push_back(EncodableValue(supports_model_download_));
   list.push_back(EncodableValue(supports_play_store_redirect_));
+  list.push_back(EncodableValue(supports_private_cloud_compute_));
+  list.push_back(CustomEncodableValue(private_cloud_availability_));
   list.push_back(EncodableValue(is_configured_));
   return list;
 }
@@ -169,7 +301,9 @@ LocalAiBackendInfo LocalAiBackendInfo::FromEncodableList(const EncodableList& li
     std::get<bool>(list[6]),
     std::get<bool>(list[7]),
     std::get<bool>(list[8]),
-    std::get<bool>(list[9]));
+    std::get<bool>(list[9]),
+    std::any_cast<const LocalAiPrivateCloudAvailability&>(std::get<CustomEncodableValue>(list[10])),
+    std::get<bool>(list[11]));
   return decoded;
 }
 
@@ -342,12 +476,33 @@ EncodableValue PigeonInternalCodecSerializer::ReadValueOfType(
         return encodable_enum_arg.IsNull() ? EncodableValue() : CustomEncodableValue(static_cast<LocalAiBackend>(enum_arg_value));
       }
     case 131: {
-        return CustomEncodableValue(LocalAiBackendInfo::FromEncodableList(std::get<EncodableList>(ReadValue(stream))));
+        const auto& encodable_enum_arg = ReadValue(stream);
+        const int64_t enum_arg_value = encodable_enum_arg.IsNull() ? 0 : encodable_enum_arg.LongValue();
+        return encodable_enum_arg.IsNull() ? EncodableValue() : CustomEncodableValue(static_cast<LocalAiExecutionPolicy>(enum_arg_value));
       }
     case 132: {
-        return CustomEncodableValue(GenerationOverrides::FromEncodableList(std::get<EncodableList>(ReadValue(stream))));
+        const auto& encodable_enum_arg = ReadValue(stream);
+        const int64_t enum_arg_value = encodable_enum_arg.IsNull() ? 0 : encodable_enum_arg.LongValue();
+        return encodable_enum_arg.IsNull() ? EncodableValue() : CustomEncodableValue(static_cast<LocalAiExecutionLocation>(enum_arg_value));
       }
     case 133: {
+        const auto& encodable_enum_arg = ReadValue(stream);
+        const int64_t enum_arg_value = encodable_enum_arg.IsNull() ? 0 : encodable_enum_arg.LongValue();
+        return encodable_enum_arg.IsNull() ? EncodableValue() : CustomEncodableValue(static_cast<LocalAiPrivateCloudAvailability>(enum_arg_value));
+      }
+    case 134: {
+        return CustomEncodableValue(LocalAiModelSelection::FromEncodableList(std::get<EncodableList>(ReadValue(stream))));
+      }
+    case 135: {
+        return CustomEncodableValue(LocalAiGenerationResult::FromEncodableList(std::get<EncodableList>(ReadValue(stream))));
+      }
+    case 136: {
+        return CustomEncodableValue(LocalAiBackendInfo::FromEncodableList(std::get<EncodableList>(ReadValue(stream))));
+      }
+    case 137: {
+        return CustomEncodableValue(GenerationOverrides::FromEncodableList(std::get<EncodableList>(ReadValue(stream))));
+      }
+    case 138: {
         return CustomEncodableValue(ToolSpec::FromEncodableList(std::get<EncodableList>(ReadValue(stream))));
       }
     default:
@@ -369,18 +524,43 @@ void PigeonInternalCodecSerializer::WriteValue(
       WriteValue(EncodableValue(static_cast<int>(std::any_cast<LocalAiBackend>(*custom_value))), stream);
       return;
     }
-    if (custom_value->type() == typeid(LocalAiBackendInfo)) {
+    if (custom_value->type() == typeid(LocalAiExecutionPolicy)) {
       stream->WriteByte(131);
+      WriteValue(EncodableValue(static_cast<int>(std::any_cast<LocalAiExecutionPolicy>(*custom_value))), stream);
+      return;
+    }
+    if (custom_value->type() == typeid(LocalAiExecutionLocation)) {
+      stream->WriteByte(132);
+      WriteValue(EncodableValue(static_cast<int>(std::any_cast<LocalAiExecutionLocation>(*custom_value))), stream);
+      return;
+    }
+    if (custom_value->type() == typeid(LocalAiPrivateCloudAvailability)) {
+      stream->WriteByte(133);
+      WriteValue(EncodableValue(static_cast<int>(std::any_cast<LocalAiPrivateCloudAvailability>(*custom_value))), stream);
+      return;
+    }
+    if (custom_value->type() == typeid(LocalAiModelSelection)) {
+      stream->WriteByte(134);
+      WriteValue(EncodableValue(std::any_cast<LocalAiModelSelection>(*custom_value).ToEncodableList()), stream);
+      return;
+    }
+    if (custom_value->type() == typeid(LocalAiGenerationResult)) {
+      stream->WriteByte(135);
+      WriteValue(EncodableValue(std::any_cast<LocalAiGenerationResult>(*custom_value).ToEncodableList()), stream);
+      return;
+    }
+    if (custom_value->type() == typeid(LocalAiBackendInfo)) {
+      stream->WriteByte(136);
       WriteValue(EncodableValue(std::any_cast<LocalAiBackendInfo>(*custom_value).ToEncodableList()), stream);
       return;
     }
     if (custom_value->type() == typeid(GenerationOverrides)) {
-      stream->WriteByte(132);
+      stream->WriteByte(137);
       WriteValue(EncodableValue(std::any_cast<GenerationOverrides>(*custom_value).ToEncodableList()), stream);
       return;
     }
     if (custom_value->type() == typeid(ToolSpec)) {
-      stream->WriteByte(133);
+      stream->WriteByte(138);
       WriteValue(EncodableValue(std::any_cast<ToolSpec>(*custom_value).ToEncodableList()), stream);
       return;
     }
@@ -527,13 +707,21 @@ void LocalAiService::SetUp(
             return;
           }
           const auto& support_image_arg = std::get<bool>(encodable_support_image_arg);
-          api->CreateModel(support_image_arg, [reply](std::optional<FlutterError>&& output) {
-            if (output.has_value()) {
-              reply(WrapError(output.value()));
+          const auto& encodable_execution_policy_arg = args.at(1);
+          if (encodable_execution_policy_arg.IsNull()) {
+            reply(WrapError("execution_policy_arg unexpectedly null."));
+            return;
+          }
+          const auto& execution_policy_arg = std::any_cast<const LocalAiExecutionPolicy&>(std::get<CustomEncodableValue>(encodable_execution_policy_arg));
+          const auto& encodable_android_cloud_model_name_arg = args.at(2);
+          const auto* android_cloud_model_name_arg = std::get_if<std::string>(&encodable_android_cloud_model_name_arg);
+          api->CreateModel(support_image_arg, execution_policy_arg, android_cloud_model_name_arg, [reply](ErrorOr<LocalAiModelSelection>&& output) {
+            if (output.has_error()) {
+              reply(WrapError(output.error()));
               return;
             }
             EncodableList wrapped;
-            wrapped.push_back(EncodableValue());
+            wrapped.push_back(CustomEncodableValue(std::move(output).TakeValue()));
             reply(EncodableValue(std::move(wrapped)));
           });
         } catch (const std::exception& exception) {
@@ -578,33 +766,41 @@ void LocalAiService::SetUp(
             return;
           }
           const int64_t session_id_arg = encodable_session_id_arg.LongValue();
-          const auto& encodable_temperature_arg = args.at(1);
+          const auto& encodable_execution_policy_arg = args.at(1);
+          if (encodable_execution_policy_arg.IsNull()) {
+            reply(WrapError("execution_policy_arg unexpectedly null."));
+            return;
+          }
+          const auto& execution_policy_arg = std::any_cast<const LocalAiExecutionPolicy&>(std::get<CustomEncodableValue>(encodable_execution_policy_arg));
+          const auto& encodable_android_cloud_model_name_arg = args.at(2);
+          const auto* android_cloud_model_name_arg = std::get_if<std::string>(&encodable_android_cloud_model_name_arg);
+          const auto& encodable_temperature_arg = args.at(3);
           if (encodable_temperature_arg.IsNull()) {
             reply(WrapError("temperature_arg unexpectedly null."));
             return;
           }
           const auto& temperature_arg = std::get<double>(encodable_temperature_arg);
-          const auto& encodable_top_k_arg = args.at(2);
+          const auto& encodable_top_k_arg = args.at(4);
           if (encodable_top_k_arg.IsNull()) {
             reply(WrapError("top_k_arg unexpectedly null."));
             return;
           }
           const int64_t top_k_arg = encodable_top_k_arg.LongValue();
-          const auto& encodable_top_p_arg = args.at(3);
+          const auto& encodable_top_p_arg = args.at(5);
           const auto* top_p_arg = std::get_if<double>(&encodable_top_p_arg);
-          const auto& encodable_max_output_tokens_arg = args.at(4);
+          const auto& encodable_max_output_tokens_arg = args.at(6);
           const auto* max_output_tokens_arg = std::get_if<int64_t>(&encodable_max_output_tokens_arg);
-          const auto& encodable_system_instruction_arg = args.at(5);
+          const auto& encodable_system_instruction_arg = args.at(7);
           const auto* system_instruction_arg = std::get_if<std::string>(&encodable_system_instruction_arg);
-          const auto& encodable_tools_arg = args.at(6);
+          const auto& encodable_tools_arg = args.at(8);
           const auto* tools_arg = std::get_if<EncodableList>(&encodable_tools_arg);
-          api->CreateSession(session_id_arg, temperature_arg, top_k_arg, top_p_arg, max_output_tokens_arg, system_instruction_arg, tools_arg, [reply](std::optional<FlutterError>&& output) {
-            if (output.has_value()) {
-              reply(WrapError(output.value()));
+          api->CreateSession(session_id_arg, execution_policy_arg, android_cloud_model_name_arg, temperature_arg, top_k_arg, top_p_arg, max_output_tokens_arg, system_instruction_arg, tools_arg, [reply](ErrorOr<LocalAiModelSelection>&& output) {
+            if (output.has_error()) {
+              reply(WrapError(output.error()));
               return;
             }
             EncodableList wrapped;
-            wrapped.push_back(EncodableValue());
+            wrapped.push_back(CustomEncodableValue(std::move(output).TakeValue()));
             reply(EncodableValue(std::move(wrapped)));
           });
         } catch (const std::exception& exception) {
@@ -728,13 +924,13 @@ void LocalAiService::SetUp(
           const int64_t session_id_arg = encodable_session_id_arg.LongValue();
           const auto& encodable_overrides_arg = args.at(1);
           const auto* overrides_arg = encodable_overrides_arg.IsNull() ? nullptr : &(std::any_cast<const GenerationOverrides&>(std::get<CustomEncodableValue>(encodable_overrides_arg)));
-          api->GenerateResponse(session_id_arg, overrides_arg, [reply](ErrorOr<std::string>&& output) {
+          api->GenerateResponse(session_id_arg, overrides_arg, [reply](ErrorOr<LocalAiGenerationResult>&& output) {
             if (output.has_error()) {
               reply(WrapError(output.error()));
               return;
             }
             EncodableList wrapped;
-            wrapped.push_back(EncodableValue(std::move(output).TakeValue()));
+            wrapped.push_back(CustomEncodableValue(std::move(output).TakeValue()));
             reply(EncodableValue(std::move(wrapped)));
           });
         } catch (const std::exception& exception) {
@@ -848,13 +1044,19 @@ void LocalAiService::SetUp(
       channel.SetMessageHandler([api](const EncodableValue& message, const flutter::MessageReply<EncodableValue>& reply) {
         try {
           const auto& args = std::get<EncodableList>(message);
-          const auto& encodable_text_arg = args.at(0);
+          const auto& encodable_session_id_arg = args.at(0);
+          if (encodable_session_id_arg.IsNull()) {
+            reply(WrapError("session_id_arg unexpectedly null."));
+            return;
+          }
+          const int64_t session_id_arg = encodable_session_id_arg.LongValue();
+          const auto& encodable_text_arg = args.at(1);
           if (encodable_text_arg.IsNull()) {
             reply(WrapError("text_arg unexpectedly null."));
             return;
           }
           const auto& text_arg = std::get<std::string>(encodable_text_arg);
-          api->CountTokens(text_arg, [reply](ErrorOr<int64_t>&& output) {
+          api->CountTokens(session_id_arg, text_arg, [reply](ErrorOr<int64_t>&& output) {
             if (output.has_error()) {
               reply(WrapError(output.error()));
               return;
@@ -876,7 +1078,14 @@ void LocalAiService::SetUp(
     if (api != nullptr) {
       channel.SetMessageHandler([api](const EncodableValue& message, const flutter::MessageReply<EncodableValue>& reply) {
         try {
-          api->TokenLimit([reply](ErrorOr<std::optional<int64_t>>&& output) {
+          const auto& args = std::get<EncodableList>(message);
+          const auto& encodable_session_id_arg = args.at(0);
+          if (encodable_session_id_arg.IsNull()) {
+            reply(WrapError("session_id_arg unexpectedly null."));
+            return;
+          }
+          const int64_t session_id_arg = encodable_session_id_arg.LongValue();
+          api->TokenLimit(session_id_arg, [reply](ErrorOr<std::optional<int64_t>>&& output) {
             if (output.has_error()) {
               reply(WrapError(output.error()));
               return;

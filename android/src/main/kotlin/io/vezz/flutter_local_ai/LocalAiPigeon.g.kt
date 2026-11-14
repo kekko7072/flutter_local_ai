@@ -130,6 +130,130 @@ enum class LocalAiBackend(val raw: Int) {
 }
 
 /**
+ * Where inference is allowed to execute. Existing callers default to
+ * [onDeviceOnly], preserving the package's local-only behaviour.
+ */
+enum class LocalAiExecutionPolicy(val raw: Int) {
+  ON_DEVICE_ONLY(0),
+  CLOUD_ONLY(1),
+  PREFER_ON_DEVICE(2),
+  PREFER_CLOUD(3);
+
+  companion object {
+    fun ofRaw(raw: Int): LocalAiExecutionPolicy? {
+      return values().firstOrNull { it.raw == raw }
+    }
+  }
+}
+
+/** Where the model selected by the host actually executes. */
+enum class LocalAiExecutionLocation(val raw: Int) {
+  ON_DEVICE(0),
+  PRIVATE_CLOUD_COMPUTE(1),
+  FIREBASE_AI_LOGIC_CLOUD(2),
+  UNDETERMINED(3);
+
+  companion object {
+    fun ofRaw(raw: Int): LocalAiExecutionLocation? {
+      return values().firstOrNull { it.raw == raw }
+    }
+  }
+}
+
+/** Runtime readiness of Apple's Private Cloud Compute model. */
+enum class LocalAiPrivateCloudAvailability(val raw: Int) {
+  AVAILABLE(0),
+  UNAVAILABLE_OS_TOO_OLD(1),
+  UNAVAILABLE_DEVICE_UNSUPPORTED(2),
+  UNAVAILABLE_SYSTEM_NOT_READY(3),
+  UNAVAILABLE_ENTITLEMENT_OR_CONFIGURATION(4),
+  UNAVAILABLE_OTHER(5);
+
+  companion object {
+    fun ofRaw(raw: Int): LocalAiPrivateCloudAvailability? {
+      return values().firstOrNull { it.raw == raw }
+    }
+  }
+}
+
+/**
+ * The model resolved for a model or session. [fallbackUsed] is true only
+ * when a preference policy had to use its secondary provider.
+ *
+ * Generated class from Pigeon that represents data sent in messages.
+ */
+data class LocalAiModelSelection (
+  val executionLocation: LocalAiExecutionLocation,
+  val provider: String,
+  val fallbackUsed: Boolean
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): LocalAiModelSelection {
+      val executionLocation = pigeonVar_list[0] as LocalAiExecutionLocation
+      val provider = pigeonVar_list[1] as String
+      val fallbackUsed = pigeonVar_list[2] as Boolean
+      return LocalAiModelSelection(executionLocation, provider, fallbackUsed)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      executionLocation,
+      provider,
+      fallbackUsed,
+    )
+  }
+  override fun equals(other: Any?): Boolean {
+    if (other !is LocalAiModelSelection) {
+      return false
+    }
+    if (this === other) {
+      return true
+    }
+    return LocalAiPigeonPigeonUtils.deepEquals(toList(), other.toList())  }
+
+  override fun hashCode(): Int = toList().hashCode()
+}
+
+/**
+ * A generated value plus the provider that actually answered this request.
+ *
+ * Generated class from Pigeon that represents data sent in messages.
+ */
+data class LocalAiGenerationResult (
+  val text: String,
+  val executionLocation: LocalAiExecutionLocation,
+  val provider: String
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): LocalAiGenerationResult {
+      val text = pigeonVar_list[0] as String
+      val executionLocation = pigeonVar_list[1] as LocalAiExecutionLocation
+      val provider = pigeonVar_list[2] as String
+      return LocalAiGenerationResult(text, executionLocation, provider)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      text,
+      executionLocation,
+      provider,
+    )
+  }
+  override fun equals(other: Any?): Boolean {
+    if (other !is LocalAiGenerationResult) {
+      return false
+    }
+    if (this === other) {
+      return true
+    }
+    return LocalAiPigeonPigeonUtils.deepEquals(toList(), other.toList())  }
+
+  override fun hashCode(): Int = toList().hashCode()
+}
+
+/**
  * What the *running* host can actually do. Every field is a runtime property
  * of this device + OS + build, never a compile-time assumption: the same
  * binary reports `supportsVision: false` on iOS 26 and `true` on iOS 27.
@@ -158,6 +282,12 @@ data class LocalAiBackendInfo (
   val supportsTokenCount: Boolean,
   val supportsModelDownload: Boolean,
   val supportsPlayStoreRedirect: Boolean,
+  /**
+   * Whether this build contains Apple's PCC API. Runtime usability is
+   * reported separately by [privateCloudAvailability].
+   */
+  val supportsPrivateCloudCompute: Boolean,
+  val privateCloudAvailability: LocalAiPrivateCloudAvailability,
   /** The backend is present AND this build can drive it. */
   val isConfigured: Boolean
 )
@@ -173,8 +303,10 @@ data class LocalAiBackendInfo (
       val supportsTokenCount = pigeonVar_list[6] as Boolean
       val supportsModelDownload = pigeonVar_list[7] as Boolean
       val supportsPlayStoreRedirect = pigeonVar_list[8] as Boolean
-      val isConfigured = pigeonVar_list[9] as Boolean
-      return LocalAiBackendInfo(backend, platform, apiName, supportsToolCalling, supportsStructuredOutput, supportsVision, supportsTokenCount, supportsModelDownload, supportsPlayStoreRedirect, isConfigured)
+      val supportsPrivateCloudCompute = pigeonVar_list[9] as Boolean
+      val privateCloudAvailability = pigeonVar_list[10] as LocalAiPrivateCloudAvailability
+      val isConfigured = pigeonVar_list[11] as Boolean
+      return LocalAiBackendInfo(backend, platform, apiName, supportsToolCalling, supportsStructuredOutput, supportsVision, supportsTokenCount, supportsModelDownload, supportsPlayStoreRedirect, supportsPrivateCloudCompute, privateCloudAvailability, isConfigured)
     }
   }
   fun toList(): List<Any?> {
@@ -188,6 +320,8 @@ data class LocalAiBackendInfo (
       supportsTokenCount,
       supportsModelDownload,
       supportsPlayStoreRedirect,
+      supportsPrivateCloudCompute,
+      privateCloudAvailability,
       isConfigured,
     )
   }
@@ -308,16 +442,41 @@ private open class LocalAiPigeonPigeonCodec : StandardMessageCodec() {
         }
       }
       131.toByte() -> {
+        return (readValue(buffer) as Long?)?.let {
+          LocalAiExecutionPolicy.ofRaw(it.toInt())
+        }
+      }
+      132.toByte() -> {
+        return (readValue(buffer) as Long?)?.let {
+          LocalAiExecutionLocation.ofRaw(it.toInt())
+        }
+      }
+      133.toByte() -> {
+        return (readValue(buffer) as Long?)?.let {
+          LocalAiPrivateCloudAvailability.ofRaw(it.toInt())
+        }
+      }
+      134.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          LocalAiModelSelection.fromList(it)
+        }
+      }
+      135.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          LocalAiGenerationResult.fromList(it)
+        }
+      }
+      136.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
           LocalAiBackendInfo.fromList(it)
         }
       }
-      132.toByte() -> {
+      137.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
           GenerationOverrides.fromList(it)
         }
       }
-      133.toByte() -> {
+      138.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
           ToolSpec.fromList(it)
         }
@@ -335,16 +494,36 @@ private open class LocalAiPigeonPigeonCodec : StandardMessageCodec() {
         stream.write(130)
         writeValue(stream, value.raw)
       }
-      is LocalAiBackendInfo -> {
+      is LocalAiExecutionPolicy -> {
         stream.write(131)
+        writeValue(stream, value.raw)
+      }
+      is LocalAiExecutionLocation -> {
+        stream.write(132)
+        writeValue(stream, value.raw)
+      }
+      is LocalAiPrivateCloudAvailability -> {
+        stream.write(133)
+        writeValue(stream, value.raw)
+      }
+      is LocalAiModelSelection -> {
+        stream.write(134)
+        writeValue(stream, value.toList())
+      }
+      is LocalAiGenerationResult -> {
+        stream.write(135)
+        writeValue(stream, value.toList())
+      }
+      is LocalAiBackendInfo -> {
+        stream.write(136)
         writeValue(stream, value.toList())
       }
       is GenerationOverrides -> {
-        stream.write(132)
+        stream.write(137)
         writeValue(stream, value.toList())
       }
       is ToolSpec -> {
-        stream.write(133)
+        stream.write(138)
         writeValue(stream, value.toList())
       }
       else -> super.writeValue(stream, value)
@@ -371,7 +550,7 @@ interface LocalAiService {
   fun downloadFeature(callback: (Result<Unit>) -> Unit)
   /** Opens Google AICore in the Play Store. False on every non-Android host. */
   fun openAICorePlayStore(callback: (Result<Boolean>) -> Unit)
-  fun createModel(supportImage: Boolean, callback: (Result<Unit>) -> Unit)
+  fun createModel(supportImage: Boolean, executionPolicy: LocalAiExecutionPolicy, androidCloudModelName: String?, callback: (Result<LocalAiModelSelection>) -> Unit)
   fun closeModel(callback: (Result<Unit>) -> Unit)
   /**
    * Sessions are keyed by a caller-allocated [sessionId]; every generated
@@ -382,11 +561,11 @@ interface LocalAiService {
    * at `LanguageModelSession` construction and cannot add them to a live
    * session.
    */
-  fun createSession(sessionId: Long, temperature: Double, topK: Long, topP: Double?, maxOutputTokens: Long?, systemInstruction: String?, tools: List<ToolSpec>?, callback: (Result<Unit>) -> Unit)
+  fun createSession(sessionId: Long, executionPolicy: LocalAiExecutionPolicy, androidCloudModelName: String?, temperature: Double, topK: Long, topP: Double?, maxOutputTokens: Long?, systemInstruction: String?, tools: List<ToolSpec>?, callback: (Result<LocalAiModelSelection>) -> Unit)
   fun closeSession(sessionId: Long, callback: (Result<Unit>) -> Unit)
   fun addQueryChunk(sessionId: Long, text: String, callback: (Result<Unit>) -> Unit)
   fun addImage(sessionId: Long, imageBytes: ByteArray, callback: (Result<Unit>) -> Unit)
-  fun generateResponse(sessionId: Long, overrides: GenerationOverrides?, callback: (Result<String>) -> Unit)
+  fun generateResponse(sessionId: Long, overrides: GenerationOverrides?, callback: (Result<LocalAiGenerationResult>) -> Unit)
   /**
    * Streams the response; tokens arrive on the event channel as
    * `{sessionId, partialResult, done}` and failures as
@@ -405,13 +584,13 @@ interface LocalAiService {
    * `supportsTokenCount: false` fail with `TOKENIZER_UNAVAILABLE`, which the
    * Dart layer turns into a documented character-based estimate.
    */
-  fun countTokens(text: String, callback: (Result<Long>) -> Unit)
+  fun countTokens(sessionId: Long, text: String, callback: (Result<Long>) -> Unit)
   /**
    * The model's total context in tokens, shared by the session's earlier
    * turns, a request and its answer: ML Kit's `getTokenLimit`, Apple's
    * `SystemLanguageModel.contextSize`. Null where the host cannot report it.
    */
-  fun tokenLimit(callback: (Result<Long?>) -> Unit)
+  fun tokenLimit(sessionId: Long, callback: (Result<Long?>) -> Unit)
 
   companion object {
     /** The codec used by LocalAiService. */
@@ -517,12 +696,15 @@ interface LocalAiService {
           channel.setMessageHandler { message, reply ->
             val args = message as List<Any?>
             val supportImageArg = args[0] as Boolean
-            api.createModel(supportImageArg) { result: Result<Unit> ->
+            val executionPolicyArg = args[1] as LocalAiExecutionPolicy
+            val androidCloudModelNameArg = args[2] as String?
+            api.createModel(supportImageArg, executionPolicyArg, androidCloudModelNameArg) { result: Result<LocalAiModelSelection> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(LocalAiPigeonPigeonUtils.wrapError(error))
               } else {
-                reply.reply(LocalAiPigeonPigeonUtils.wrapResult(null))
+                val data = result.getOrNull()
+                reply.reply(LocalAiPigeonPigeonUtils.wrapResult(data))
               }
             }
           }
@@ -553,18 +735,21 @@ interface LocalAiService {
           channel.setMessageHandler { message, reply ->
             val args = message as List<Any?>
             val sessionIdArg = args[0] as Long
-            val temperatureArg = args[1] as Double
-            val topKArg = args[2] as Long
-            val topPArg = args[3] as Double?
-            val maxOutputTokensArg = args[4] as Long?
-            val systemInstructionArg = args[5] as String?
-            val toolsArg = args[6] as List<ToolSpec>?
-            api.createSession(sessionIdArg, temperatureArg, topKArg, topPArg, maxOutputTokensArg, systemInstructionArg, toolsArg) { result: Result<Unit> ->
+            val executionPolicyArg = args[1] as LocalAiExecutionPolicy
+            val androidCloudModelNameArg = args[2] as String?
+            val temperatureArg = args[3] as Double
+            val topKArg = args[4] as Long
+            val topPArg = args[5] as Double?
+            val maxOutputTokensArg = args[6] as Long?
+            val systemInstructionArg = args[7] as String?
+            val toolsArg = args[8] as List<ToolSpec>?
+            api.createSession(sessionIdArg, executionPolicyArg, androidCloudModelNameArg, temperatureArg, topKArg, topPArg, maxOutputTokensArg, systemInstructionArg, toolsArg) { result: Result<LocalAiModelSelection> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(LocalAiPigeonPigeonUtils.wrapError(error))
               } else {
-                reply.reply(LocalAiPigeonPigeonUtils.wrapResult(null))
+                val data = result.getOrNull()
+                reply.reply(LocalAiPigeonPigeonUtils.wrapResult(data))
               }
             }
           }
@@ -638,7 +823,7 @@ interface LocalAiService {
             val args = message as List<Any?>
             val sessionIdArg = args[0] as Long
             val overridesArg = args[1] as GenerationOverrides?
-            api.generateResponse(sessionIdArg, overridesArg) { result: Result<String> ->
+            api.generateResponse(sessionIdArg, overridesArg) { result: Result<LocalAiGenerationResult> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(LocalAiPigeonPigeonUtils.wrapError(error))
@@ -718,8 +903,9 @@ interface LocalAiService {
         if (api != null) {
           channel.setMessageHandler { message, reply ->
             val args = message as List<Any?>
-            val textArg = args[0] as String
-            api.countTokens(textArg) { result: Result<Long> ->
+            val sessionIdArg = args[0] as Long
+            val textArg = args[1] as String
+            api.countTokens(sessionIdArg, textArg) { result: Result<Long> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(LocalAiPigeonPigeonUtils.wrapError(error))
@@ -736,8 +922,10 @@ interface LocalAiService {
       run {
         val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.flutter_local_ai.LocalAiService.tokenLimit$separatedMessageChannelSuffix", codec)
         if (api != null) {
-          channel.setMessageHandler { _, reply ->
-            api.tokenLimit{ result: Result<Long?> ->
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val sessionIdArg = args[0] as Long
+            api.tokenLimit(sessionIdArg) { result: Result<Long?> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(LocalAiPigeonPigeonUtils.wrapError(error))
