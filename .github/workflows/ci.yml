@@ -237,6 +237,9 @@ jobs:
       - run: flutter pub get
       - run: dart run pigeon --input pigeon.dart
       - run: dart format .
+      # Dart 3.12's formatter needs a second pass for one generated channel
+      # invocation; the first pass changes its layout, the second stabilizes it.
+      - run: dart format .
       - name: Fail if the generated output differs from what is committed
         run: |
           if ! git diff --exit-code -- \
