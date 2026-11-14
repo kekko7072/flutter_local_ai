@@ -80,8 +80,9 @@ managed PCC entitlement. Run the opt-in real-service smoke test with:
 
 ```bash
 cd example
-FLUTTER_LOCAL_AI_RUN_PCC_SMOKE=1 \
-  flutter test integration_test/apple_pcc_smoke_test.dart -d macos
+flutter test integration_test/apple_hybrid_smoke_test.dart -d macos
+flutter test integration_test/apple_pcc_smoke_test.dart -d macos \
+  --dart-define=RUN_PCC_SMOKE=1
 ```
 
 The test is opt-in so ordinary CI does not depend on a cloud service or
@@ -94,3 +95,21 @@ Check provider/token, and cloud model described above. Select the policy in
 the example and confirm the displayed last-response location. Do not paste an
 API key into Dart: Firebase configuration and App Check belong to the native
 host app and Firebase console.
+
+On a connected Android device, these tests check the example screen, hybrid
+selection, real hybrid routing, and explicit cloud generation respectively:
+
+```bash
+cd example
+flutter test integration_test/android_example_ui_test.dart -d DEVICE_ID
+flutter test integration_test/android_hybrid_smoke_test.dart -d DEVICE_ID \
+  --dart-define=RUN_ANDROID_HYBRID_GENERATION=1
+flutter test integration_test/android_cloud_smoke_test.dart -d DEVICE_ID
+```
+
+Run integration tests sequentially: Flutter shares example build artifacts
+between runs. The cloud-only test requires a registered App Check token; the
+hybrid test may succeed locally when Nano is available. Reinstalling a debug
+app can generate a new App Check token. If Firebase rejects the token during
+an integration test, register the token printed by that installed build, or
+keep the normal example app installed and retry there without reinstalling.

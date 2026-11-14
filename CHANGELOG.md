@@ -4,6 +4,8 @@ Cloud execution is released as an **alpha** for physical-device testing and
 behavioral feedback. Existing calls remain on-device-only. Do not enable cloud
 policies in production until you have validated Apple entitlements or Firebase
 App Check, routing, quota, offline, and privacy behavior for your app.
+The Android provider label now uses Firebase's typed inference source; a
+cloud-only response cannot be reported as on-device.
 
 ### Breaking changes
 

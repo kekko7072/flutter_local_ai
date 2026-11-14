@@ -11,6 +11,7 @@ import com.google.firebase.Firebase
 import com.google.firebase.FirebaseApp
 import com.google.firebase.ai.type.PublicPreviewAPI
 import com.google.firebase.ai.InferenceMode
+import com.google.firebase.ai.InferenceSource
 import com.google.firebase.ai.OnDeviceConfig
 import com.google.firebase.ai.ai
 import com.google.firebase.ai.type.GenerativeBackend
@@ -639,7 +640,23 @@ internal class LocalAiSessionService(
     }
     val result = model.generateContent(input)
     val text = result.text.orEmpty()
-    val usedCloud = result.inferenceSource.toString() == "IN_CLOUD"
+    val source = result.inferenceSource
+    if (source != InferenceSource.IN_CLOUD && source != InferenceSource.ON_DEVICE) {
+      throw FlutterError(
+        "UNKNOWN_INFERENCE_SOURCE",
+        "Firebase AI Logic did not report a recognized inference source.",
+        null,
+      )
+    }
+    if (state.executionPolicy == LocalAiExecutionPolicy.CLOUD_ONLY &&
+      source != InferenceSource.IN_CLOUD) {
+      throw FlutterError(
+        "INFERENCE_POLICY_VIOLATION",
+        "Firebase AI Logic returned an on-device response for cloudOnly.",
+        null,
+      )
+    }
+    val usedCloud = source == InferenceSource.IN_CLOUD
     commitTurn(state, text)
     return LocalAiGenerationResult(
       text = text,

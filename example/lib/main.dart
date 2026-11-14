@@ -708,11 +708,8 @@ class _MyHomePageState extends State<MyHomePage> {
         return;
       }
 
-      // The example stays local-only. For the 0.5.0 alpha, apps can pass
-      // `preferOnDevice`; Android must additionally pass
-      // `android: LocalAiAndroidConfiguration(cloudModelName: '...')` after
-      // Firebase AI Logic + App Check setup. Use
-      // `getResponseWithMetadata()` to display/audit the actual provider.
+      // Android cloud policies require Firebase AI Logic, App Check, and an
+      // explicit cloud model. The response metadata identifies the provider.
       final created = await LocalAiModel.create(
         maxTokens: _sessionMaxTokens,
         executionPolicy: _sessionExecutionPolicy,
