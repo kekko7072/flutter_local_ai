@@ -6,11 +6,13 @@
 
 # Flutter Local AI
 
-A Flutter package that provides a unified API for local AI inference on Android with [*ML Kit GenAI*](https://developers.google.com/ml-kit/genai), on Apple Platforms using [*Foundation Models*](https://developer.apple.com/documentation/FoundationModels), and on Windows using [*Windows AI APIs*](https://learn.microsoft.com/en-us/windows/ai/) (Windows AI Foundry).
+A Flutter API for zero-bundled-model AI: Android Gemini Nano/Firebase AI Logic,
+Apple Foundation Models/Private Cloud Compute, Windows AI Foundry, and Chrome
+Prompt API.
 
 Text generation (blocking or streamed), structured JSON outputs, tool calling, and **generative UI**: the on-device model can design small typed-block UI modules that render with the [`genui`](https://pub.dev/packages/genui) runtime — and, with tool calls, operate them afterwards.
 
-`#ai` `#genui` `#structured-outputs` `#on-device-ai` `#gemini-nano` `#foundation-models`
+`#on-device-ai` `#hybrid-ai` `#private-cloud-compute` `#firebase-ai-logic` `#gemini-nano` `#foundation-models`
 
 </div>
 
@@ -98,6 +100,62 @@ await session.close();
 await model.close();
 ```
 
+### Unified on-device and cloud execution (0.5.0 alpha)
+
+> Cloud execution is an **alpha feature** in 0.5.0. The default on-device
+> path remains stable and unchanged. Validate Apple PCC entitlements and
+> Firebase hybrid routing on physical devices before production use; vendor
+> experimental APIs, quotas, routing, and error behavior may still change.
+
+Existing calls remain strictly on-device. Cloud inference is never selected
+unless the caller opts in:
+
+```dart
+final model = await LocalAiModel.create(
+  executionPolicy: LocalAiExecutionPolicy.preferOnDevice,
+  // Android only. Apple ignores this setting and uses PCC as its cloud model.
+  android: const LocalAiAndroidConfiguration(
+    cloudModelName: 'gemini-3.5-flash-lite',
+  ),
+);
+
+final session = await model.openSession();
+await session.addQueryChunk('Explain this feature.');
+final result = await session.getResponseWithMetadata();
+print(result.text);
+print(result.executionLocation); // exact provider used for this request
+print(result.provider);
+```
+
+The policies have the same intent on Apple and Android:
+
+| Dart policy | Apple | Android |
+|---|---|---|
+| `onDeviceOnly` (default) | `SystemLanguageModel`; never PCC | ML Kit Prompt API through AICore; never Firebase cloud |
+| `cloudOnly` | PCC only | Firebase AI Logic cloud only |
+| `preferOnDevice` | system model, then PCC | AICore, then Firebase cloud |
+| `preferCloud` | PCC, then system model | Firebase cloud, then AICore when offline |
+
+`LocalAiAndroidConfiguration` is Android-only because Firebase requires an
+explicit cloud model and has no default. Apple ignores it: PCC selects its
+model. Conversely, Apple's managed PCC entitlement has no Dart setting.
+Windows and web reject cloud-capable policies explicitly.
+
+`model.executionLocation` and `session.executionLocation` describe the
+initial selection. Hybrid routing can vary per request, so use
+`getResponseWithMetadata()` for the authoritative location. The existing
+`getResponse()` still returns just text.
+
+On Apple, cloud policies require iOS/macOS 27, an eligible Apple Intelligence
+device and region, connectivity, and **Apple's approval** for the managed
+`com.apple.developer.private-cloud-compute` entitlement. Request access from
+Apple before configuring signing; adding the entitlement file alone does not
+grant permission. Check
+`capabilities.privateCloudAvailability`. Apple provides no public API for an
+iOS app to inspect its own managed entitlement, so signing failures can still
+surface on session creation or first use. The example's PCC signing is opt-in;
+see [Apple example setup](doc/cloud-compute.md#opt-in-signing-for-the-apple-example).
+
 ## Use with flutter_edge_ai
 
 [`flutter_edge_ai_builtin_ai`](https://pub.dev/packages/flutter_edge_ai_builtin_ai)
@@ -126,7 +184,7 @@ or add it to `pubspec.yaml` by hand:
 
 ```yaml
 dependencies:
-  flutter_local_ai: ^0.3.0
+  flutter_local_ai: ^0.5.0
 ```
 
 ### Upgrading from 0.1.x
@@ -165,6 +223,20 @@ Compatible AICore hardware and model availability are required for inference.
 API 26 is an installation floor, not a hardware compatibility guarantee.
 Use `LocalAi.availability()` / `LocalAi.ensureReady()` and Google's current
 [Prompt API setup guide](https://developers.google.com/ml-kit/genai/prompt/android/get-started).
+
+#### Android cloud / hybrid alpha setup
+
+Android cloud fallback uses Firebase AI Logic; Private Compute Core/AICore is
+the on-device runtime, not cloud. The app must configure Firebase, AI Logic,
+App Check, and an explicit cloud model. Follow the complete
+[cloud-compute setup and routing guide](doc/cloud-compute.md).
+For the Android example, register package `com.example.flutter_local_ai_example`
+in Firebase, download its `google-services.json` to
+`example/android/app/google-services.json` (Git ignored), enable AI Logic,
+and configure App Check before testing cloud policies.
+The example installs the App Check debug provider in Android debug builds;
+register its generated debug token in Firebase Console. Enable AI Logic via
+**Get started** and wait for the Vertex AI in Firebase API to activate.
 
 ### Apple setup
 
@@ -1035,20 +1107,22 @@ for current API versions, supported features, and what is still unverified.
 
 ## Skills
 
-The package ships an [Agent Skill](https://docs.claude.com/en/docs/claude-code/skills)
-that teaches a coding assistant how to use it: availability checks, the two
-APIs, streaming, structured output, tool calls, genUI, per-platform setup and
-testing with the fake host. Install it into your app:
+The package ships a routed Agent Skill that teaches Codex/Claude-compatible
+coding assistants the API, Apple PCC setup, Android Firebase setup, routing,
+privacy, and fake-host testing. Copy the **whole folder** so its references are
+available:
 
 ```bash
-mkdir -p .claude/skills/flutter-local-ai
-curl -fsSL -o .claude/skills/flutter-local-ai/SKILL.md \
-  https://raw.githubusercontent.com/kekko7072/flutter_local_ai/main/skills/flutter-local-ai/SKILL.md
+mkdir -p .codex/skills .claude/skills
+cp -R skills/flutter-local-ai .codex/skills/
+cp -R skills/flutter-local-ai .claude/skills/
 ```
 
-It is also inside the package archive, at
-`skills/flutter-local-ai/SKILL.md` under the package's directory in your pub
-cache.
+It is also inside the package archive under `skills/flutter-local-ai` in the
+pub cache. Invoke it as `$flutter-local-ai`, or ask the assistant to develop,
+configure, test, or review code using flutter_local_ai. The skill routes to
+only the platform reference needed for the task. To attach the package docs
+as a local MCP resource, follow [Local MCP + skills](doc/local-mcp-and-skills.md).
 
 Maintainers of this repository get a second skill,
 [`.claude/skills/flutter-local-ai-maintainer`](.claude/skills/flutter-local-ai-maintainer/SKILL.md),

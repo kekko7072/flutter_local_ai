@@ -7,6 +7,16 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Log
+import com.google.firebase.Firebase
+import com.google.firebase.FirebaseApp
+import com.google.firebase.ai.type.PublicPreviewAPI
+import com.google.firebase.ai.InferenceMode
+import com.google.firebase.ai.InferenceSource
+import com.google.firebase.ai.OnDeviceConfig
+import com.google.firebase.ai.ai
+import com.google.firebase.ai.type.GenerativeBackend
+import com.google.firebase.ai.type.content
+import com.google.firebase.ai.type.generationConfig
 import com.google.mlkit.genai.common.DownloadStatus
 import com.google.mlkit.genai.common.FeatureStatus
 import com.google.mlkit.genai.common.GenAiException
@@ -74,6 +84,8 @@ internal class LocalAiSessionService(
     val topK: Int,
     val maxOutputTokens: Int?,
     val systemInstruction: String?,
+    val executionPolicy: LocalAiExecutionPolicy,
+    val androidCloudModelName: String?,
   ) {
     val transcript = StringBuilder()
     val images = mutableListOf<Bitmap>()
@@ -154,6 +166,8 @@ internal class LocalAiSessionService(
   private fun genAiDetails(e: Exception): Map<String, Any> =
     if (e is GenAiException) {
       mapOf("errorCode" to e.errorCode, "retryDelayMs" to e.retryDelay.toMillis())
+    } else if (e.javaClass.name.startsWith("com.google.firebase.ai.")) {
+      mapOf("errorCode" to e.javaClass.simpleName)
     } else emptyMap()
 
   /** A generate failure as Dart sees it: a [GenAiException] becomes
@@ -162,6 +176,12 @@ internal class LocalAiSessionService(
   private fun generationFailure(e: Exception): Throwable =
     if (e is GenAiException) {
       FlutterError("GENERATION_ERROR", e.message ?: "Generation failed", genAiDetails(e))
+    } else if (e.javaClass.name.startsWith("com.google.firebase.ai.")) {
+      FlutterError(
+        "GENERATION_ERROR",
+        e.message ?: "Firebase AI Logic generation failed",
+        mapOf("errorCode" to e.javaClass.simpleName),
+      )
     } else e
 
   // === Availability ===
@@ -233,14 +253,18 @@ internal class LocalAiSessionService(
           backend = LocalAiBackend.ANDROID_ML_KIT_GEN_AI,
           platform = "android",
           apiName = "Google ML Kit GenAI (AICore)",
-          // The Prompt API is text/image-in, text-out: no function calling
-          // and no schema constraint. Revisit when Agent Mode reaches it.
+          // Current ML Kit exposes tool declarations, but this plugin has no
+          // reliable typed Dart callback/result-reinjection loop yet. Do not
+          // advertise partial support that behaves differently from Apple.
           supportsToolCalling = false,
           supportsStructuredOutput = false,
           supportsVision = true,
           supportsTokenCount = true,
           supportsModelDownload = true,
           supportsPlayStoreRedirect = true,
+          supportsPrivateCloudCompute = false,
+          privateCloudAvailability =
+            LocalAiPrivateCloudAvailability.UNAVAILABLE_OTHER,
           isConfigured = true,
         )
       )
@@ -324,15 +348,68 @@ internal class LocalAiSessionService(
     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
   }
 
+  private fun androidSelection(
+    policy: LocalAiExecutionPolicy,
+    cloudModelName: String?,
+  ): LocalAiModelSelection {
+    if (policy == LocalAiExecutionPolicy.ON_DEVICE_ONLY) {
+      return LocalAiModelSelection(
+        executionLocation = LocalAiExecutionLocation.ON_DEVICE,
+        provider = "Google ML Kit GenAI (Gemini Nano via AICore)",
+        fallbackUsed = false,
+      )
+    }
+    if (cloudModelName.isNullOrBlank()) {
+      throw FlutterError(
+        "ANDROID_CLOUD_MODEL_REQUIRED",
+        "Android cloud-capable policies require " +
+          "LocalAiAndroidConfiguration(cloudModelName: ...).",
+        null,
+      )
+    }
+    try {
+      FirebaseApp.getInstance()
+    } catch (e: Exception) {
+      throw FlutterError(
+        "FIREBASE_AI_NOT_CONFIGURED",
+        "Firebase is not initialized. Add google-services.json, initialize " +
+          "Firebase, enable Firebase AI Logic, and configure App Check.",
+        e.message,
+      )
+    }
+    return when (policy) {
+      LocalAiExecutionPolicy.CLOUD_ONLY -> LocalAiModelSelection(
+        executionLocation = LocalAiExecutionLocation.FIREBASE_AI_LOGIC_CLOUD,
+        provider = "Firebase AI Logic ($cloudModelName)",
+        fallbackUsed = false,
+      )
+      LocalAiExecutionPolicy.PREFER_ON_DEVICE,
+      LocalAiExecutionPolicy.PREFER_CLOUD -> LocalAiModelSelection(
+        executionLocation = LocalAiExecutionLocation.UNDETERMINED,
+        provider = "Firebase AI Logic hybrid ($cloudModelName)",
+        fallbackUsed = false,
+      )
+      LocalAiExecutionPolicy.ON_DEVICE_ONLY -> error("handled above")
+    }
+  }
+
   // === Model lifecycle ===
 
-  override fun createModel(supportImage: Boolean, callback: (Result<Unit>) -> Unit) {
+  override fun createModel(
+    supportImage: Boolean,
+    executionPolicy: LocalAiExecutionPolicy,
+    androidCloudModelName: String?,
+    callback: (Result<LocalAiModelSelection>) -> Unit
+  ) {
+    val selection = try { androidSelection(executionPolicy, androidCloudModelName) }
+      catch (e: Exception) { callback(Result.failure(e)); return }
     scope.launch {
       try {
-        // The OS owns the weights; this only wires up the AICore client.
-        // supportImage is advisory — multimodality is decided per request.
-        client()
-        callback(Result.success(Unit))
+        // Do not touch AICore for cloudOnly: a device that cannot run Nano
+        // must still be able to use Firebase cloud inference. The hybrid SDK
+        // owns local-provider initialization for preference policies.
+        if (executionPolicy == LocalAiExecutionPolicy.ON_DEVICE_ONLY) client()
+        callback(Result.success(selection))
       } catch (e: Exception) {
         callback(Result.failure(e))
       }
@@ -361,24 +438,26 @@ internal class LocalAiSessionService(
 
   override fun createSession(
     sessionId: Long,
+    executionPolicy: LocalAiExecutionPolicy,
+    androidCloudModelName: String?,
     temperature: Double,
     topK: Long,
     topP: Double?,
     maxOutputTokens: Long?,
     systemInstruction: String?,
     tools: List<ToolSpec>?,
-    callback: (Result<Unit>) -> Unit
+    callback: (Result<LocalAiModelSelection>) -> Unit
   ) {
+    val selection = try { androidSelection(executionPolicy, androidCloudModelName) }
+      catch (e: Exception) { callback(Result.failure(e)); return }
     if (!tools.isNullOrEmpty()) {
-      // Prompt-emulated tool use was tried and dropped: Gemini Nano does not
-      // follow a JSON call protocol reliably enough to be worth pretending.
-      // Failing loudly beats a caller waiting for tool execution that never
-      // happens.
+      // Failing loudly beats advertising declarations without the reliable
+      // Dart callback/result-reinjection/cancellation loop Apple provides.
       callback(
         Result.failure(
           FlutterError(
             "TOOL_CALLING_UNSUPPORTED",
-            "The ML Kit GenAI Prompt API has no function calling. Check " +
+            "Android tool calling is not bridged reliably yet. Check " +
               "LocalAi.capabilities().supportsToolCalling before passing tools.",
             null
           )
@@ -397,12 +476,14 @@ internal class LocalAiSessionService(
           ?.toInt()
           ?.coerceIn(MAX_OUTPUT_TOKENS_MIN, MAX_OUTPUT_TOKENS_MAX),
         systemInstruction = systemInstruction,
+        executionPolicy = executionPolicy,
+        androidCloudModelName = androidCloudModelName,
       )
       synchronized(sessionsLock) {
         sessions[sessionId]?.job?.cancel()
         sessions[sessionId] = state
       }
-      callback(Result.success(Unit))
+      callback(Result.success(selection))
     } catch (e: Exception) {
       callback(Result.failure(e))
     }
@@ -520,10 +601,77 @@ internal class LocalAiSessionService(
     }
   }
 
+  @OptIn(PublicPreviewAPI::class)
+  private suspend fun generateHybrid(
+    state: SessionState,
+    overrides: GenerationOverrides?,
+  ): LocalAiGenerationResult {
+    val options = EffectiveOptions(state, overrides)
+    val mode = when (state.executionPolicy) {
+      LocalAiExecutionPolicy.CLOUD_ONLY -> InferenceMode.ONLY_IN_CLOUD
+      LocalAiExecutionPolicy.PREFER_ON_DEVICE -> InferenceMode.PREFER_ON_DEVICE
+      LocalAiExecutionPolicy.PREFER_CLOUD -> InferenceMode.PREFER_IN_CLOUD
+      LocalAiExecutionPolicy.ON_DEVICE_ONLY -> error("Use the ML Kit path")
+    }
+    val cloudModel = state.androidCloudModelName
+      ?: throw FlutterError("ANDROID_CLOUD_MODEL_REQUIRED", "Missing cloud model.", null)
+    val generationConfig = generationConfig {
+      temperature = options.temperature
+      topK = options.topK
+      options.maxOutputTokens?.let { maxOutputTokens = it }
+    }
+    val onDeviceConfig = OnDeviceConfig(
+      mode = mode,
+      maxOutputTokens = options.maxOutputTokens,
+      temperature = options.temperature,
+      topK = options.topK,
+    )
+    val model = Firebase.ai(backend = GenerativeBackend.googleAI()).generativeModel(
+      modelName = cloudModel,
+      generationConfig = generationConfig,
+      onDeviceConfig = onDeviceConfig,
+    )
+    val instruction = state.systemInstruction
+    val prompt = if (instruction.isNullOrEmpty()) state.transcript.toString()
+      else instruction + "\n\n" + state.transcript.toString()
+    val input = content {
+      state.images.forEach { image(it) }
+      text(prompt)
+    }
+    val result = model.generateContent(input)
+    val text = result.text.orEmpty()
+    val source = result.inferenceSource
+    if (source != InferenceSource.IN_CLOUD && source != InferenceSource.ON_DEVICE) {
+      throw FlutterError(
+        "UNKNOWN_INFERENCE_SOURCE",
+        "Firebase AI Logic did not report a recognized inference source.",
+        null,
+      )
+    }
+    if (state.executionPolicy == LocalAiExecutionPolicy.CLOUD_ONLY &&
+      source != InferenceSource.IN_CLOUD) {
+      throw FlutterError(
+        "INFERENCE_POLICY_VIOLATION",
+        "Firebase AI Logic returned an on-device response for cloudOnly.",
+        null,
+      )
+    }
+    val usedCloud = source == InferenceSource.IN_CLOUD
+    commitTurn(state, text)
+    return LocalAiGenerationResult(
+      text = text,
+      executionLocation = if (usedCloud)
+        LocalAiExecutionLocation.FIREBASE_AI_LOGIC_CLOUD
+      else LocalAiExecutionLocation.ON_DEVICE,
+      provider = if (usedCloud) "Firebase AI Logic ($cloudModel)"
+      else "Gemini Nano via Firebase AI Logic and AICore",
+    )
+  }
+
   override fun generateResponse(
     sessionId: Long,
     overrides: GenerationOverrides?,
-    callback: (Result<String>) -> Unit
+    callback: (Result<LocalAiGenerationResult>) -> Unit
   ) {
     val state = try {
       requireSession(sessionId).also { requireIdle(it) }
@@ -533,10 +681,20 @@ internal class LocalAiSessionService(
     }
     state.job = scope.launch(start = CoroutineStart.LAZY) {
       try {
-        val text = generationMutex.withLock {
+        val result = generationMutex.withLock {
           try {
-            val response = client().generateContent(buildRequest(state, overrides))
-            response.candidates.firstOrNull()?.text.orEmpty().also { commitTurn(state, it) }
+            if (state.executionPolicy == LocalAiExecutionPolicy.ON_DEVICE_ONLY) {
+              val response = client().generateContent(buildRequest(state, overrides))
+              val text = response.candidates.firstOrNull()?.text.orEmpty()
+              commitTurn(state, text)
+              LocalAiGenerationResult(
+                text = text,
+                executionLocation = LocalAiExecutionLocation.ON_DEVICE,
+                provider = "Google ML Kit GenAI (Gemini Nano via AICore)",
+              )
+            } else {
+              generateHybrid(state, overrides)
+            }
           } catch (e: Exception) {
             // Nothing was committed, so drop the prompt this turn appended
             // rather than leaving it for the next turn to run onto. This
@@ -547,7 +705,7 @@ internal class LocalAiSessionService(
             throw e
           }
         }
-        callback(Result.success(text))
+        callback(Result.success(result))
       } catch (e: Exception) {
         callback(Result.failure(generationFailure(e)))
       }
@@ -572,14 +730,24 @@ internal class LocalAiSessionService(
       try {
         generationMutex.withLock {
           try {
-            client().generateContentStream(buildRequest(state, overrides)).collect { chunk ->
-              val piece = chunk.candidates.firstOrNull()?.text.orEmpty()
-              if (piece.isNotEmpty()) {
-                generated.append(piece)
-                postToken(sessionId, piece)
+            if (state.executionPolicy == LocalAiExecutionPolicy.ON_DEVICE_ONLY) {
+              client().generateContentStream(buildRequest(state, overrides)).collect { chunk ->
+                val piece = chunk.candidates.firstOrNull()?.text.orEmpty()
+                if (piece.isNotEmpty()) {
+                  generated.append(piece)
+                  postToken(sessionId, piece)
+                }
               }
+              commitTurn(state, generated.toString())
+            } else {
+              // Firebase's experimental hybrid stream does not expose its
+              // final inference source until the response completes. Emit
+              // the completed answer as one stream chunk so routing and
+              // transcript state remain exact in the alpha API.
+              val result = generateHybrid(state, overrides)
+              generated.append(result.text)
+              if (result.text.isNotEmpty()) postToken(sessionId, result.text)
             }
-            commitTurn(state, generated.toString())
           } catch (e: CancellationException) {
             // Cooperative cancellation from stopGeneration. The consumer has
             // already seen whatever streamed, so keep it as the model's turn;
@@ -656,7 +824,22 @@ internal class LocalAiSessionService(
     }
   }
 
-  override fun countTokens(text: String, callback: (Result<Long>) -> Unit) {
+  override fun countTokens(
+    sessionId: Long,
+    text: String,
+    callback: (Result<Long>) -> Unit
+  ) {
+    val state = try { requireSession(sessionId) } catch (e: Exception) {
+      callback(Result.failure(e)); return
+    }
+    if (state.executionPolicy != LocalAiExecutionPolicy.ON_DEVICE_ONLY) {
+      callback(Result.failure(FlutterError(
+        "TOKENIZER_UNAVAILABLE",
+        "Hybrid token counts are not comparable between the on-device and cloud models.",
+        null,
+      )))
+      return
+    }
     scope.launch {
       try {
         val response = client().countTokens(generateContentRequest(TextPart(text)) {})
@@ -669,7 +852,14 @@ internal class LocalAiSessionService(
 
   // Per device: the limit counts input and output together, so a request's
   // `countTokens` plus its answer must stay within it.
-  override fun tokenLimit(callback: (Result<Long?>) -> Unit) {
+  override fun tokenLimit(sessionId: Long, callback: (Result<Long?>) -> Unit) {
+    val state = try { requireSession(sessionId) } catch (e: Exception) {
+      callback(Result.failure(e)); return
+    }
+    if (state.executionPolicy != LocalAiExecutionPolicy.ON_DEVICE_ONLY) {
+      callback(Result.success(null))
+      return
+    }
     scope.launch {
       try {
         callback(Result.success(client().getTokenLimit().toLong()))

@@ -85,6 +85,98 @@ enum class LocalAiBackend {
   kUnsupported = 5
 };
 
+// Where inference is allowed to execute. Existing callers default to
+// [onDeviceOnly], preserving the package's local-only behaviour.
+enum class LocalAiExecutionPolicy {
+  kOnDeviceOnly = 0,
+  kCloudOnly = 1,
+  kPreferOnDevice = 2,
+  kPreferCloud = 3
+};
+
+// Where the model selected by the host actually executes.
+enum class LocalAiExecutionLocation {
+  kOnDevice = 0,
+  kPrivateCloudCompute = 1,
+  kFirebaseAiLogicCloud = 2,
+  kUndetermined = 3
+};
+
+// Runtime readiness of Apple's Private Cloud Compute model.
+enum class LocalAiPrivateCloudAvailability {
+  kAvailable = 0,
+  kUnavailableOsTooOld = 1,
+  kUnavailableDeviceUnsupported = 2,
+  kUnavailableSystemNotReady = 3,
+  kUnavailableEntitlementOrConfiguration = 4,
+  kUnavailableOther = 5
+};
+
+
+// The model resolved for a model or session. [fallbackUsed] is true only
+// when a preference policy had to use its secondary provider.
+//
+// Generated class from Pigeon that represents data sent in messages.
+class LocalAiModelSelection {
+ public:
+  // Constructs an object setting all fields.
+  explicit LocalAiModelSelection(
+    const LocalAiExecutionLocation& execution_location,
+    const std::string& provider,
+    bool fallback_used);
+
+  const LocalAiExecutionLocation& execution_location() const;
+  void set_execution_location(const LocalAiExecutionLocation& value_arg);
+
+  const std::string& provider() const;
+  void set_provider(std::string_view value_arg);
+
+  bool fallback_used() const;
+  void set_fallback_used(bool value_arg);
+
+ private:
+  static LocalAiModelSelection FromEncodableList(const flutter::EncodableList& list);
+  flutter::EncodableList ToEncodableList() const;
+  friend class LocalAiService;
+  friend class LocalAiToolRunner;
+  friend class PigeonInternalCodecSerializer;
+  LocalAiExecutionLocation execution_location_;
+  std::string provider_;
+  bool fallback_used_;
+};
+
+
+// A generated value plus the provider that actually answered this request.
+//
+// Generated class from Pigeon that represents data sent in messages.
+class LocalAiGenerationResult {
+ public:
+  // Constructs an object setting all fields.
+  explicit LocalAiGenerationResult(
+    const std::string& text,
+    const LocalAiExecutionLocation& execution_location,
+    const std::string& provider);
+
+  const std::string& text() const;
+  void set_text(std::string_view value_arg);
+
+  const LocalAiExecutionLocation& execution_location() const;
+  void set_execution_location(const LocalAiExecutionLocation& value_arg);
+
+  const std::string& provider() const;
+  void set_provider(std::string_view value_arg);
+
+ private:
+  static LocalAiGenerationResult FromEncodableList(const flutter::EncodableList& list);
+  flutter::EncodableList ToEncodableList() const;
+  friend class LocalAiService;
+  friend class LocalAiToolRunner;
+  friend class PigeonInternalCodecSerializer;
+  std::string text_;
+  LocalAiExecutionLocation execution_location_;
+  std::string provider_;
+};
+
 
 // What the *running* host can actually do. Every field is a runtime property
 // of this device + OS + build, never a compile-time assumption: the same
@@ -104,6 +196,8 @@ class LocalAiBackendInfo {
     bool supports_token_count,
     bool supports_model_download,
     bool supports_play_store_redirect,
+    bool supports_private_cloud_compute,
+    const LocalAiPrivateCloudAvailability& private_cloud_availability,
     bool is_configured);
 
   const LocalAiBackend& backend() const;
@@ -139,6 +233,14 @@ class LocalAiBackendInfo {
   bool supports_play_store_redirect() const;
   void set_supports_play_store_redirect(bool value_arg);
 
+  // Whether this build contains Apple's PCC API. Runtime usability is
+  // reported separately by [privateCloudAvailability].
+  bool supports_private_cloud_compute() const;
+  void set_supports_private_cloud_compute(bool value_arg);
+
+  const LocalAiPrivateCloudAvailability& private_cloud_availability() const;
+  void set_private_cloud_availability(const LocalAiPrivateCloudAvailability& value_arg);
+
   // The backend is present AND this build can drive it.
   bool is_configured() const;
   void set_is_configured(bool value_arg);
@@ -158,6 +260,8 @@ class LocalAiBackendInfo {
   bool supports_token_count_;
   bool supports_model_download_;
   bool supports_play_store_redirect_;
+  bool supports_private_cloud_compute_;
+  LocalAiPrivateCloudAvailability private_cloud_availability_;
   bool is_configured_;
 };
 
@@ -288,7 +392,9 @@ class LocalAiService {
   virtual void OpenAICorePlayStore(std::function<void(ErrorOr<bool> reply)> result) = 0;
   virtual void CreateModel(
     bool support_image,
-    std::function<void(std::optional<FlutterError> reply)> result) = 0;
+    const LocalAiExecutionPolicy& execution_policy,
+    const std::string* android_cloud_model_name,
+    std::function<void(ErrorOr<LocalAiModelSelection> reply)> result) = 0;
   virtual void CloseModel(std::function<void(std::optional<FlutterError> reply)> result) = 0;
   // Sessions are keyed by a caller-allocated [sessionId]; every generated
   // token on the event channel carries it back so concurrent sessions can be
@@ -299,13 +405,15 @@ class LocalAiService {
   // session.
   virtual void CreateSession(
     int64_t session_id,
+    const LocalAiExecutionPolicy& execution_policy,
+    const std::string* android_cloud_model_name,
     double temperature,
     int64_t top_k,
     const double* top_p,
     const int64_t* max_output_tokens,
     const std::string* system_instruction,
     const flutter::EncodableList* tools,
-    std::function<void(std::optional<FlutterError> reply)> result) = 0;
+    std::function<void(ErrorOr<LocalAiModelSelection> reply)> result) = 0;
   virtual void CloseSession(
     int64_t session_id,
     std::function<void(std::optional<FlutterError> reply)> result) = 0;
@@ -320,7 +428,7 @@ class LocalAiService {
   virtual void GenerateResponse(
     int64_t session_id,
     const GenerationOverrides* overrides,
-    std::function<void(ErrorOr<std::string> reply)> result) = 0;
+    std::function<void(ErrorOr<LocalAiGenerationResult> reply)> result) = 0;
   // Streams the response; tokens arrive on the event channel as
   // `{sessionId, partialResult, done}` and failures as
   // `{sessionId, code: ERROR, message}`.
@@ -343,12 +451,15 @@ class LocalAiService {
   // `supportsTokenCount: false` fail with `TOKENIZER_UNAVAILABLE`, which the
   // Dart layer turns into a documented character-based estimate.
   virtual void CountTokens(
+    int64_t session_id,
     const std::string& text,
     std::function<void(ErrorOr<int64_t> reply)> result) = 0;
   // The model's total context in tokens, shared by the session's earlier
   // turns, a request and its answer: ML Kit's `getTokenLimit`, Apple's
   // `SystemLanguageModel.contextSize`. Null where the host cannot report it.
-  virtual void TokenLimit(std::function<void(ErrorOr<std::optional<int64_t>> reply)> result) = 0;
+  virtual void TokenLimit(
+    int64_t session_id,
+    std::function<void(ErrorOr<std::optional<int64_t>> reply)> result) = 0;
 
   // The codec used by LocalAiService.
   static const flutter::StandardMessageCodec& GetCodec();

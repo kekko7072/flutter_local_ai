@@ -78,6 +78,7 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
     @available(iOS 26.0, macOS 26.0, *)
     private final class SessionState {
       let session: LanguageModelSession
+      let selection: LocalAiModelSelection
       /// `GenerationOptions`, boxed: see the class comment.
       private let optionsBox: Any
       var options: GenerationOptions {
@@ -99,6 +100,7 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
 
       init(
         session: LanguageModelSession,
+        selection: LocalAiModelSelection,
         options: GenerationOptions,
         temperature: Double?,
         topK: Int?,
@@ -106,6 +108,7 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
         maxOutputTokens: Int?
       ) {
         self.session = session
+        self.selection = selection
         self.optionsBox = options
         self.temperature = temperature
         self.topK = topK
@@ -254,6 +257,131 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
 
   // MARK: - Availability
 
+  private static func privateCloudAvailability() -> LocalAiPrivateCloudAvailability {
+    #if canImport(FoundationModels) && compiler(>=6.4)
+      guard #available(iOS 27.0, macOS 27.0, *) else {
+        return .unavailableOsTooOld
+      }
+      switch PrivateCloudComputeLanguageModel().availability {
+      case .available:
+        return .available
+      case .unavailable(.deviceNotEligible):
+        return .unavailableDeviceUnsupported
+      case .unavailable(.systemNotReady):
+        return .unavailableSystemNotReady
+      case .unavailable:
+        // Apple currently documents only the two reasons above. Preserve a
+        // stable, actionable bucket for signing, entitlement, region, and
+        // other configuration failures added by the service.
+        return .unavailableEntitlementOrConfiguration
+      }
+    #else
+      return .unavailableOsTooOld
+    #endif
+  }
+
+  private static func selection(
+    for policy: LocalAiExecutionPolicy
+  ) throws -> LocalAiModelSelection {
+    #if canImport(FoundationModels)
+      guard #available(iOS 26.0, macOS 26.0, *) else {
+        throw osTooOldError()
+      }
+      let onDeviceAvailable: Bool
+      if case .available = SystemLanguageModel.default.availability {
+        onDeviceAvailable = true
+      } else {
+        onDeviceAvailable = false
+      }
+      switch policy {
+      case .onDeviceOnly:
+        guard onDeviceAvailable else {
+          throw PigeonError(
+            code: "ON_DEVICE_MODEL_UNAVAILABLE",
+            message: "The on-device Apple Foundation Model is unavailable. "
+              + "This policy never falls back to cloud inference.",
+            details: nil)
+        }
+        return LocalAiModelSelection(
+          executionLocation: .onDevice,
+          provider: "Apple SystemLanguageModel",
+          fallbackUsed: false)
+      case .cloudOnly:
+        try requirePrivateCloud()
+        return LocalAiModelSelection(
+          executionLocation: .privateCloudCompute,
+          provider: "Apple Private Cloud Compute",
+          fallbackUsed: false)
+      case .preferOnDevice:
+        if onDeviceAvailable {
+          return LocalAiModelSelection(
+            executionLocation: .onDevice,
+            provider: "Apple SystemLanguageModel",
+            fallbackUsed: false)
+        }
+        try requirePrivateCloud()
+        return LocalAiModelSelection(
+          executionLocation: .privateCloudCompute,
+          provider: "Apple Private Cloud Compute",
+          fallbackUsed: true)
+      case .preferCloud:
+        if Self.privateCloudAvailability() == .available {
+          return LocalAiModelSelection(
+            executionLocation: .privateCloudCompute,
+            provider: "Apple Private Cloud Compute",
+            fallbackUsed: false)
+        }
+        guard onDeviceAvailable else {
+          try requirePrivateCloud()
+          throw PigeonError(
+            code: "MODEL_UNAVAILABLE",
+            message: "Neither Apple inference provider is available.",
+            details: nil)
+        }
+        return LocalAiModelSelection(
+          executionLocation: .onDevice,
+          provider: "Apple SystemLanguageModel",
+          fallbackUsed: true)
+      }
+    #else
+      throw osTooOldError()
+    #endif
+  }
+
+  private static func requirePrivateCloud() throws {
+    switch privateCloudAvailability() {
+    case .available:
+      return
+    case .unavailableOsTooOld:
+      throw PigeonError(
+        code: "PCC_OS_TOO_OLD",
+        message: "Private Cloud Compute requires an iOS 27 or macOS 27 build and runtime.",
+        details: nil)
+    case .unavailableDeviceUnsupported:
+      throw PigeonError(
+        code: "PCC_DEVICE_UNSUPPORTED",
+        message: "This device is not eligible for Apple Private Cloud Compute.",
+        details: nil)
+    case .unavailableSystemNotReady:
+      throw PigeonError(
+        code: "PCC_SYSTEM_NOT_READY",
+        message: "Apple Private Cloud Compute is not ready on this device.",
+        details: nil)
+    case .unavailableEntitlementOrConfiguration:
+      throw PigeonError(
+        code: "PCC_ENTITLEMENT_OR_CONFIGURATION",
+        message: "Private Cloud Compute rejected this app or configuration. "
+          + "Verify the managed com.apple.developer.private-cloud-compute "
+          + "entitlement, signing profile, region, and Apple Intelligence settings.",
+        details: nil)
+    case .unavailableOther:
+      throw PigeonError(
+        code: "PCC_UNAVAILABLE",
+        message: "Apple Private Cloud Compute is unavailable.",
+        details: nil)
+    }
+  }
+
   func checkAvailability(
     completion: @escaping (Result<AvailabilityStatus, Error>) -> Void
   ) {
@@ -326,7 +454,7 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
     completion: @escaping (Result<LocalAiBackendInfo, Error>) -> Void
   ) {
     #if canImport(FoundationModels)
-      let configured: Bool
+      var configured: Bool
       if #available(iOS 26.0, macOS 26.0, *) {
         if case .available = SystemLanguageModel.default.availability {
           configured = true
@@ -358,6 +486,14 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
       #if compiler(>=6.3)
         if #available(iOS 26.4, macOS 26.4, *) { tokenCount = true }
       #endif
+      let privateCloud = Self.privateCloudAvailability()
+      if privateCloud == .available { configured = true }
+      let supportsPrivateCloud: Bool
+      #if compiler(>=6.4)
+        supportsPrivateCloud = true
+      #else
+        supportsPrivateCloud = false
+      #endif
       completion(
         .success(
           LocalAiBackendInfo(
@@ -374,6 +510,8 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
             // app-triggerable download exists.
             supportsModelDownload: false,
             supportsPlayStoreRedirect: false,
+            supportsPrivateCloudCompute: supportsPrivateCloud,
+            privateCloudAvailability: privateCloud,
             isConfigured: configured)))
     #else
       completion(
@@ -388,6 +526,8 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
             supportsTokenCount: false,
             supportsModelDownload: false,
             supportsPlayStoreRedirect: false,
+            supportsPrivateCloudCompute: false,
+            privateCloudAvailability: .unavailableOsTooOld,
             isConfigured: false)))
     #endif
   }
@@ -418,9 +558,16 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
   /// Sessions are created lazily; `supportImage` is advisory because
   /// multimodality is decided per turn.
   func createModel(
-    supportImage: Bool, completion: @escaping (Result<Void, Error>) -> Void
+    supportImage: Bool,
+    executionPolicy: LocalAiExecutionPolicy,
+    androidCloudModelName: String?,
+    completion: @escaping (Result<LocalAiModelSelection, Error>) -> Void
   ) {
-    completion(.success(()))
+    do {
+      completion(.success(try Self.selection(for: executionPolicy)))
+    } catch {
+      completion(.failure(error))
+    }
   }
 
   func closeModel(completion: @escaping (Result<Void, Error>) -> Void) {
@@ -440,13 +587,15 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
 
   func createSession(
     sessionId: Int64,
+    executionPolicy: LocalAiExecutionPolicy,
+    androidCloudModelName: String?,
     temperature: Double,
     topK: Int64,
     topP: Double?,
     maxOutputTokens: Int64?,
     systemInstruction: String?,
     tools: [ToolSpec]?,
-    completion: @escaping (Result<Void, Error>) -> Void
+    completion: @escaping (Result<LocalAiModelSelection, Error>) -> Void
   ) {
     #if canImport(FoundationModels)
       guard #available(iOS 26.0, macOS 26.0, *) else {
@@ -480,27 +629,64 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
 
       let instructions = (systemInstruction?.isEmpty == false) ? systemInstruction : nil
       let session: LanguageModelSession
+      let selection: LocalAiModelSelection
       do {
+        selection = try Self.selection(for: executionPolicy)
         // Tools bind at construction: FoundationModels cannot add them to a
         // live session, which is why the wire takes them here.
         let bound = try (tools ?? []).map {
           try PigeonBackedTool(spec: $0, sessionId: sessionId, runner: toolRunner)
         }
-        session = bound.isEmpty
-          ? LanguageModelSession(instructions: instructions)
-          : LanguageModelSession(tools: bound, instructions: instructions)
+        switch selection.executionLocation {
+        case .onDevice:
+          session = bound.isEmpty
+            ? LanguageModelSession(
+              model: SystemLanguageModel.default, instructions: instructions)
+            : LanguageModelSession(
+              model: SystemLanguageModel.default, tools: bound,
+              instructions: instructions)
+        case .privateCloudCompute:
+          #if compiler(>=6.4)
+            guard #available(iOS 27.0, macOS 27.0, *) else {
+              throw PigeonError(
+                code: "PCC_OS_TOO_OLD",
+                message: "Private Cloud Compute requires iOS 27 or macOS 27.",
+                details: nil)
+            }
+            let model = PrivateCloudComputeLanguageModel()
+            session = bound.isEmpty
+              ? LanguageModelSession(model: model, instructions: instructions)
+              : LanguageModelSession(
+                model: model, tools: bound, instructions: instructions)
+          #else
+            throw PigeonError(
+              code: "PCC_OS_TOO_OLD",
+              message: "This build SDK does not contain Private Cloud Compute.",
+              details: nil)
+          #endif
+        case .firebaseAiLogicCloud, .undetermined:
+          throw PigeonError(
+            code: "EXECUTION_POLICY_UNSUPPORTED",
+            message: "Apple cannot create an Android Firebase AI Logic model.",
+            details: nil)
+        }
       } catch {
-        completion(
-          .failure(
-            PigeonError(
-              code: "TOOL_DEFINITION_INVALID",
-              message: error.localizedDescription,
-              details: nil)))
+        if error is PigeonError {
+          completion(.failure(error))
+        } else {
+          completion(
+            .failure(
+              PigeonError(
+                code: "TOOL_DEFINITION_INVALID",
+                message: error.localizedDescription,
+                details: nil)))
+        }
         return
       }
 
       let state = SessionState(
         session: session,
+        selection: selection,
         options: options,
         temperature: positiveTemperature,
         topK: topK > 0 ? Int(topK) : nil,
@@ -511,7 +697,7 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
       (sessions[sessionId] as? SessionState)?.task?.cancel()
       sessions[sessionId] = state
       sessionsLock.unlock()
-      completion(.success(()))
+      completion(.success(selection))
     #else
       completion(.failure(Self.osTooOldError()))
     #endif
@@ -608,7 +794,7 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
   func generateResponse(
     sessionId: Int64,
     overrides: GenerationOverrides?,
-    completion: @escaping (Result<String, Error>) -> Void
+    completion: @escaping (Result<LocalAiGenerationResult, Error>) -> Void
   ) {
     #if canImport(FoundationModels)
       guard #available(iOS 26.0, macOS 26.0, *),
@@ -630,7 +816,10 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
             to: prompt,
             options: Self.options(for: state, overrides: overrides))
           try Task.checkCancellation()
-          finish(.success(response.content))
+          finish(.success(LocalAiGenerationResult(
+            text: response.content,
+            executionLocation: state.selection.executionLocation,
+            provider: state.selection.provider)))
         } catch {
           finish(.failure(Self.generationFailure(error)))
         }
@@ -771,7 +960,10 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
     completion(.success(()))
   }
 
-  func countTokens(text: String, completion: @escaping (Result<Int64, Error>) -> Void) {
+  func countTokens(
+    sessionId: Int64, text: String,
+    completion: @escaping (Result<Int64, Error>) -> Void
+  ) {
     #if canImport(FoundationModels)
       // `SystemLanguageModel.tokenCount(for:)` is @available(iOS 26.4,
       // macOS 26.4), stricter than the framework's own 26.0 floor.
@@ -793,6 +985,18 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
             .failure(Self.tokenizerUnavailable("it requires iOS or macOS 26.4 or newer")))
           return
         }
+        #if compiler(>=6.4)
+          if #available(iOS 27.0, macOS 27.0, *),
+            let state = state(for: sessionId),
+            state.selection.executionLocation == .privateCloudCompute
+          {
+            completion(
+              .failure(
+                Self.tokenizerUnavailable(
+                  "PrivateCloudComputeLanguageModel exposes contextSize but no tokenCount API")))
+            return
+          }
+        #endif
         Task {
           do {
             let count = try await SystemLanguageModel.default.tokenCount(for: text)
@@ -819,7 +1023,9 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
     #endif
   }
 
-  func tokenLimit(completion: @escaping (Result<Int64?, Error>) -> Void) {
+  func tokenLimit(
+    sessionId: Int64, completion: @escaping (Result<Int64?, Error>) -> Void
+  ) {
     #if canImport(FoundationModels)
       // `SystemLanguageModel.contextSize` is back-deployed to 26.0: the 26.x
       // model reports 4096, and OS 27 the size it reports. The
@@ -831,6 +1037,22 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
           completion(.success(nil))
           return
         }
+        #if compiler(>=6.4)
+          if #available(iOS 27.0, macOS 27.0, *),
+            let state = state(for: sessionId),
+            state.selection.executionLocation == .privateCloudCompute
+          {
+            Task {
+              do {
+                let size = try await PrivateCloudComputeLanguageModel().contextSize
+                completion(.success(Int64(size)))
+              } catch {
+                completion(.failure(error))
+              }
+            }
+            return
+          }
+        #endif
         completion(.success(Int64(SystemLanguageModel.default.contextSize)))
       #else
         completion(.success(nil))
@@ -898,6 +1120,14 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
       // for why the compiler version is the usable proxy.
       #if compiler(>=6.4)
         if #available(iOS 27.0, macOS 27.0, *) {
+          if let privateCloudError = error as? PrivateCloudComputeLanguageModel.Error {
+            switch privateCloudError {
+            case .quotaLimitReached: return "quotaLimitReached"
+            case .networkFailure: return "networkFailure"
+            case .serviceUnavailable: return "serviceUnavailable"
+            @unknown default: return nil
+            }
+          }
           if let modelError = error as? LanguageModelError {
             switch modelError {
             case .contextSizeExceeded: return "contextSizeExceeded"
@@ -950,6 +1180,34 @@ class LocalAiSessionService: NSObject, LocalAiService, FlutterStreamHandler {
 
   private static func describeGenerationError(_ error: Error) -> String {
     #if canImport(FoundationModels)
+      #if compiler(>=6.4)
+        if #available(iOS 27.0, macOS 27.0, *),
+          let privateCloudError = error as? PrivateCloudComputeLanguageModel.Error
+        {
+          switch privateCloudError {
+          case .quotaLimitReached:
+            return "The Private Cloud Compute daily usage quota has been reached."
+          case .networkFailure:
+            return "Private Cloud Compute could not be reached. Check the network connection."
+          case .serviceUnavailable:
+            return "Private Cloud Compute is temporarily unavailable."
+          @unknown default:
+            return privateCloudError.localizedDescription
+          }
+        }
+        if #available(iOS 27.0, macOS 27.0, *),
+          let modelError = error as? LanguageModelError
+        {
+          switch modelError {
+          case .timeout:
+            return "The language model request timed out."
+          case .rateLimited:
+            return "The language model is rate limited. Retry shortly."
+          default:
+            break
+          }
+        }
+      #endif
       if #available(iOS 26.0, macOS 26.0, *) {
         if let generationError = error as? LanguageModelSession.GenerationError {
           switch generationError {

@@ -102,6 +102,75 @@ class LocalAiUnsupportedException implements Exception {
   String toString() => 'LocalAiUnsupportedException($capability): $message';
 }
 
+/// Where inference is allowed to run on supported hosts.
+///
+/// The default is [onDeviceOnly], so upgrading this package never moves an
+/// existing workload to the cloud. Windows and web accept only
+/// [onDeviceOnly].
+enum LocalAiExecutionPolicy {
+  onDeviceOnly,
+  cloudOnly,
+  preferOnDevice,
+  preferCloud,
+}
+
+/// Where the host actually executes this model's requests.
+enum LocalAiExecutionLocation {
+  onDevice,
+  privateCloudCompute,
+  firebaseAiLogicCloud,
+  undetermined,
+}
+
+/// Android-only settings for Firebase AI Logic hybrid inference.
+///
+/// Ignored on Apple platforms. [cloudModelName] is required whenever the
+/// execution policy permits cloud inference on Android. Firebase and App
+/// Check are configured by the consuming Android app, not by this object.
+class LocalAiAndroidConfiguration {
+  const LocalAiAndroidConfiguration({required this.cloudModelName});
+
+  final String cloudModelName;
+}
+
+/// A generated value plus the provider that actually answered the request.
+class LocalAiGenerationResult {
+  const LocalAiGenerationResult({
+    required this.text,
+    required this.executionLocation,
+    required this.provider,
+  });
+
+  final String text;
+  final LocalAiExecutionLocation executionLocation;
+  final String provider;
+}
+
+/// Runtime readiness of Apple's Private Cloud Compute model.
+enum LocalAiPrivateCloudAvailability {
+  available,
+  unavailableOsTooOld,
+  unavailableDeviceUnsupported,
+  unavailableSystemNotReady,
+  unavailableEntitlementOrConfiguration,
+  unavailableOther,
+}
+
+/// The model selected by a platform host.
+class LocalAiModelSelection {
+  const LocalAiModelSelection({
+    required this.executionLocation,
+    required this.provider,
+    this.fallbackUsed = false,
+  });
+
+  final LocalAiExecutionLocation executionLocation;
+  final String provider;
+
+  /// True when a preference policy had to use its secondary provider.
+  final bool fallbackUsed;
+}
+
 /// Thrown on every platform when a session gets a call while it is still
 /// generating. Await the running turn or call `stopGeneration()`, then retry.
 ///
@@ -207,6 +276,9 @@ class LocalAiBackendCapabilities {
     this.supportsTokenCount = false,
     this.supportsModelDownload = false,
     this.supportsPlayStoreRedirect = false,
+    this.supportsPrivateCloudCompute = false,
+    this.privateCloudAvailability =
+        LocalAiPrivateCloudAvailability.unavailableOther,
     this.isConfigured = false,
   });
 
@@ -227,6 +299,14 @@ class LocalAiBackendCapabilities {
   final bool supportsTokenCount;
   final bool supportsModelDownload;
   final bool supportsPlayStoreRedirect;
+  final bool supportsPrivateCloudCompute;
+  final LocalAiPrivateCloudAvailability privateCloudAvailability;
+
+  /// Whether this backend has a cloud execution path. Apple uses Private
+  /// Cloud Compute; Android uses Firebase AI Logic and requires app setup.
+  bool get supportsCloudInference =>
+      supportsPrivateCloudCompute ||
+      backend == LocalAiBackendKind.androidMlKitGenAi;
 
   /// The backend is present AND this build can drive it.
   final bool isConfigured;
@@ -346,12 +426,20 @@ abstract class LocalAiHost {
 
   Future<bool> openAICorePlayStore();
 
-  Future<void> createModel({required bool supportImage});
+  Future<LocalAiModelSelection> createModel({
+    required bool supportImage,
+    LocalAiExecutionPolicy executionPolicy =
+        LocalAiExecutionPolicy.onDeviceOnly,
+    LocalAiAndroidConfiguration? android,
+  });
 
   Future<void> closeModel();
 
-  Future<void> createSession({
+  Future<LocalAiModelSelection> createSession({
     required int sessionId,
+    LocalAiExecutionPolicy executionPolicy =
+        LocalAiExecutionPolicy.onDeviceOnly,
+    LocalAiAndroidConfiguration? android,
     required double temperature,
     required int topK,
     double? topP,
@@ -369,7 +457,7 @@ abstract class LocalAiHost {
     required Uint8List imageBytes,
   });
 
-  Future<String> generateResponse(
+  Future<LocalAiGenerationResult> generateResponse(
     int sessionId, {
     LocalAiGenerationOverrides? overrides,
   });

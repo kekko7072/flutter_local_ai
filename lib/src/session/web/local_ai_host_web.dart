@@ -182,6 +182,9 @@ class WebLocalAiHost implements LocalAiHost {
         supportsTokenCount: true,
         supportsModelDownload: true,
         supportsPlayStoreRedirect: false,
+        supportsPrivateCloudCompute: false,
+        privateCloudAvailability:
+            LocalAiPrivateCloudAvailability.unavailableOther,
         isConfigured: hasLanguageModel,
       );
 
@@ -235,7 +238,18 @@ class WebLocalAiHost implements LocalAiHost {
   Future<bool> openAICorePlayStore() async => false;
 
   @override
-  Future<void> createModel({required bool supportImage}) async {
+  Future<LocalAiModelSelection> createModel({
+    required bool supportImage,
+    LocalAiAndroidConfiguration? android,
+    LocalAiExecutionPolicy executionPolicy =
+        LocalAiExecutionPolicy.onDeviceOnly,
+  }) async {
+    if (executionPolicy != LocalAiExecutionPolicy.onDeviceOnly) {
+      throw LocalAiUnsupportedException(
+        'executionPolicy',
+        'The web backend supports only onDeviceOnly.',
+      );
+    }
     if (!hasLanguageModel) {
       throw LocalAiUnavailableException(
         LocalAiAvailability.unavailableDeviceUnsupported,
@@ -243,6 +257,10 @@ class WebLocalAiHost implements LocalAiHost {
       );
     }
     _supportImage = supportImage;
+    return const LocalAiModelSelection(
+      executionLocation: LocalAiExecutionLocation.onDevice,
+      provider: 'Chrome Prompt API (Gemini Nano)',
+    );
   }
 
   @override
@@ -254,8 +272,11 @@ class WebLocalAiHost implements LocalAiHost {
   }
 
   @override
-  Future<void> createSession({
+  Future<LocalAiModelSelection> createSession({
     required int sessionId,
+    LocalAiAndroidConfiguration? android,
+    LocalAiExecutionPolicy executionPolicy =
+        LocalAiExecutionPolicy.onDeviceOnly,
     required double temperature,
     required int topK,
     double? topP,
@@ -263,6 +284,12 @@ class WebLocalAiHost implements LocalAiHost {
     String? systemInstruction,
     List<LocalAiTool>? tools,
   }) async {
+    if (executionPolicy != LocalAiExecutionPolicy.onDeviceOnly) {
+      throw LocalAiUnsupportedException(
+        'executionPolicy',
+        'The web backend supports only onDeviceOnly.',
+      );
+    }
     if (tools != null && tools.isNotEmpty) {
       throw LocalAiUnsupportedException(
         'toolCalling',
@@ -296,6 +323,10 @@ class WebLocalAiHost implements LocalAiHost {
     );
     _sessions[sessionId] = _WebSession(
       await LanguageModel.create(options).toDart,
+    );
+    return const LocalAiModelSelection(
+      executionLocation: LocalAiExecutionLocation.onDevice,
+      provider: 'Chrome Prompt API (Gemini Nano)',
     );
   }
 
@@ -390,7 +421,7 @@ class WebLocalAiHost implements LocalAiHost {
   }
 
   @override
-  Future<String> generateResponse(
+  Future<LocalAiGenerationResult> generateResponse(
     int sessionId, {
     LocalAiGenerationOverrides? overrides,
   }) async {
@@ -404,13 +435,23 @@ class WebLocalAiHost implements LocalAiHost {
       final response = await state.session
           .prompt(state.takeTranscript().toJS, options)
           .toDart;
-      return response.toDart;
+      return LocalAiGenerationResult(
+        text: response.toDart,
+        executionLocation: LocalAiExecutionLocation.onDevice,
+        provider: 'Chrome Prompt API (Gemini Nano)',
+      );
     } catch (e) {
       // stopGeneration() aborts the whole non-streaming call, so there is no
       // partial text to hand back — the empty string is the turn, the same
       // shape the native hosts settle a cancelled turn with. Surfacing the
       // DOMException instead would throw at an app that only pressed stop.
-      if (isAbortError(e)) return '';
+      if (isAbortError(e)) {
+        return const LocalAiGenerationResult(
+          text: '',
+          executionLocation: LocalAiExecutionLocation.onDevice,
+          provider: 'Chrome Prompt API (Gemini Nano)',
+        );
+      }
       rethrow;
     } finally {
       state.release(controller);

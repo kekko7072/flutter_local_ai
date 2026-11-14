@@ -5,3 +5,5 @@
 # Xcode-related
 **/dgph
 **/xcuserdata/
+Runner/*.local.entitlements
+PCC.local.xcconfig

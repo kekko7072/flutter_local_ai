@@ -30,6 +30,10 @@ using flutter_local_ai_pigeon::ErrorOr;
 using flutter_local_ai_pigeon::FlutterError;
 using flutter_local_ai_pigeon::LocalAiBackend;
 using flutter_local_ai_pigeon::LocalAiBackendInfo;
+using flutter_local_ai_pigeon::LocalAiExecutionLocation;
+using flutter_local_ai_pigeon::LocalAiExecutionPolicy;
+using flutter_local_ai_pigeon::LocalAiModelSelection;
+using flutter_local_ai_pigeon::LocalAiPrivateCloudAvailability;
 
 constexpr char kEventChannel[] = "flutter_local_ai_events";
 
@@ -257,6 +261,8 @@ void LocalAiSessionService::GetBackendInfo(
       /*supports_token_count=*/false,
       /*supports_model_download=*/true,
       /*supports_play_store_redirect=*/false,
+      /*supports_private_cloud_compute=*/false,
+      LocalAiPrivateCloudAvailability::kUnavailableOther,
       /*is_configured=*/true);
 #else
   LocalAiBackendInfo info(
@@ -268,6 +274,8 @@ void LocalAiSessionService::GetBackendInfo(
       /*supports_token_count=*/false,
       /*supports_model_download=*/false,
       /*supports_play_store_redirect=*/false,
+      /*supports_private_cloud_compute=*/false,
+      LocalAiPrivateCloudAvailability::kUnavailableOther,
       /*is_configured=*/false);
 #endif
   result(info);
@@ -291,7 +299,14 @@ void LocalAiSessionService::OpenAICorePlayStore(
 
 void LocalAiSessionService::CreateModel(
     bool support_image,
-    std::function<void(std::optional<FlutterError> reply)> result) {
+    const LocalAiExecutionPolicy& execution_policy,
+    const std::string* android_cloud_model_name,
+    std::function<void(ErrorOr<LocalAiModelSelection> reply)> result) {
+  if (execution_policy != LocalAiExecutionPolicy::kOnDeviceOnly) {
+    result(FlutterError("EXECUTION_POLICY_UNSUPPORTED",
+                        "Windows currently supports only onDeviceOnly."));
+    return;
+  }
   if (support_image) {
     result(FlutterError(
         "VISION_UNSUPPORTED",
@@ -300,7 +315,8 @@ void LocalAiSessionService::CreateModel(
     return;
   }
 #if WINDOWS_AI_AVAILABLE
-  result(std::nullopt);
+  result(LocalAiModelSelection(LocalAiExecutionLocation::kOnDevice,
+                               "Windows AI Foundry (Phi Silica)", false));
 #else
   result(NotConfigured());
 #endif
@@ -317,13 +333,20 @@ void LocalAiSessionService::CloseModel(
 
 void LocalAiSessionService::CreateSession(
     int64_t session_id,
+    const LocalAiExecutionPolicy& execution_policy,
+    const std::string* android_cloud_model_name,
     double temperature,
     int64_t top_k,
     const double* top_p,
     const int64_t* max_output_tokens,
     const std::string* system_instruction,
     const EncodableList* tools,
-    std::function<void(std::optional<FlutterError> reply)> result) {
+    std::function<void(ErrorOr<LocalAiModelSelection> reply)> result) {
+  if (execution_policy != LocalAiExecutionPolicy::kOnDeviceOnly) {
+    result(FlutterError("EXECUTION_POLICY_UNSUPPORTED",
+                        "Windows currently supports only onDeviceOnly."));
+    return;
+  }
   if (tools != nullptr && !tools->empty()) {
     result(FlutterError(
         "TOOL_CALLING_UNSUPPORTED",
@@ -343,7 +366,8 @@ void LocalAiSessionService::CreateSession(
   }
 
   sessions_[session_id] = std::move(state);
-  result(std::nullopt);
+  result(LocalAiModelSelection(LocalAiExecutionLocation::kOnDevice,
+                               "Windows AI Foundry (Phi Silica)", false));
 }
 
 void LocalAiSessionService::CloseSession(
@@ -503,8 +527,17 @@ void LocalAiSessionService::StartGeneration(
 void LocalAiSessionService::GenerateResponse(
     int64_t session_id,
     const flutter_local_ai_pigeon::GenerationOverrides* overrides,
-    std::function<void(ErrorOr<std::string>)> result) {
-  StartGeneration(session_id, /*schema_json=*/"", overrides, std::move(result));
+    std::function<void(ErrorOr<flutter_local_ai_pigeon::LocalAiGenerationResult>)> result) {
+  StartGeneration(session_id, /*schema_json=*/"", overrides,
+                  [result = std::move(result)](ErrorOr<std::string> response) mutable {
+    if (response.has_error()) {
+      result(response.error());
+    } else {
+      result(flutter_local_ai_pigeon::LocalAiGenerationResult(
+          response.value(), LocalAiExecutionLocation::kOnDevice,
+          "Windows AI Foundry (Phi Silica)"));
+    }
+  });
 }
 
 void LocalAiSessionService::GenerateResponseAsync(
@@ -548,6 +581,7 @@ void LocalAiSessionService::StopGeneration(
 }
 
 void LocalAiSessionService::CountTokens(
+    int64_t session_id,
     const std::string& text,
     std::function<void(ErrorOr<int64_t> reply)> result) {
   result(ErrorOr<int64_t>(FlutterError(
@@ -557,6 +591,7 @@ void LocalAiSessionService::CountTokens(
 }
 
 void LocalAiSessionService::TokenLimit(
+    int64_t session_id,
     std::function<void(ErrorOr<std::optional<int64_t>> reply)> result) {
   // `LanguageModel` reports how much of one prompt fits
   // (`GetUsablePromptLength`), not the size of its context.

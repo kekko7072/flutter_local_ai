@@ -57,6 +57,8 @@ class _SessionSlot {
   /// The context [pendingTokens] must fit in, with the answer; null where the
   /// platform reports none.
   int? tokenLimit;
+  LocalAiExecutionLocation? lastExecutionLocation;
+  String? lastProvider;
 
   /// The last limit read failed, as opposed to the platform reporting none.
   bool tokenLimitFailed = false;
@@ -144,6 +146,11 @@ class _MyHomePageState extends State<MyHomePage> {
   bool _sessionModelOpening = false;
   bool _sessionModelClosing = false;
   String _sessionError = '';
+  LocalAiExecutionPolicy _sessionExecutionPolicy =
+      LocalAiExecutionPolicy.onDeviceOnly;
+  final _androidCloudModelController = TextEditingController(
+    text: 'gemini-3.5-flash-lite',
+  );
 
   /// Context window asked of the model on the Sessions tab.
   static const _sessionMaxTokens = 4096;
@@ -690,7 +697,8 @@ class _MyHomePageState extends State<MyHomePage> {
     try {
       // Degrade rather than throw on a device with no OS model.
       final availability = await LocalAi.availability();
-      if (availability != LocalAiAvailability.available) {
+      if (availability != LocalAiAvailability.available &&
+          _sessionExecutionPolicy == LocalAiExecutionPolicy.onDeviceOnly) {
         final reason = await LocalAi.availabilityReason();
         if (!mounted) return;
         setState(() {
@@ -700,7 +708,19 @@ class _MyHomePageState extends State<MyHomePage> {
         return;
       }
 
-      final created = await LocalAiModel.create(maxTokens: _sessionMaxTokens);
+      // Android cloud policies require Firebase AI Logic, App Check, and an
+      // explicit cloud model. The response metadata identifies the provider.
+      final created = await LocalAiModel.create(
+        maxTokens: _sessionMaxTokens,
+        executionPolicy: _sessionExecutionPolicy,
+        android:
+            _isAndroid &&
+                _sessionExecutionPolicy != LocalAiExecutionPolicy.onDeviceOnly
+            ? LocalAiAndroidConfiguration(
+                cloudModelName: _androidCloudModelController.text.trim(),
+              )
+            : null,
+      );
       model = created;
       final opened = <LocalAiSession>[];
       for (final slot in _sessionSlots) {
@@ -925,6 +945,20 @@ class _MyHomePageState extends State<MyHomePage> {
         slot.pendingTokens = null;
         slot.isStreaming = true;
       });
+
+      if (_sessionExecutionPolicy != LocalAiExecutionPolicy.onDeviceOnly) {
+        final result = await session.getResponseWithMetadata(
+          overrides: const LocalAiGenerationOverrides(maxOutputTokens: 200),
+        );
+        if (!mounted) return;
+        setState(() {
+          slot.streamingText = result.text;
+          slot.lastExecutionLocation = result.executionLocation;
+          slot.lastProvider = result.provider;
+          _commitStreamedTurn(slot);
+        });
+        return;
+      }
 
       slot.subscription = session
           .getResponseAsync(
@@ -1160,6 +1194,7 @@ class _MyHomePageState extends State<MyHomePage> {
     _instructionsController.dispose();
     _goalController.dispose();
     _principlesController.dispose();
+    _androidCloudModelController.dispose();
     super.dispose();
   }
 
@@ -1683,7 +1718,8 @@ class _MyHomePageState extends State<MyHomePage> {
     // without the closing guard this button re-enables mid-close and the new
     // model inherits the old close's trailing setState.
     final canOpenModel =
-        _isAvailable &&
+        (_isAvailable ||
+            _sessionExecutionPolicy != LocalAiExecutionPolicy.onDeviceOnly) &&
         model == null &&
         !_sessionModelOpening &&
         !_sessionModelClosing;
@@ -1772,7 +1808,7 @@ class _MyHomePageState extends State<MyHomePage> {
                       Expanded(
                         child: Text(
                           model != null
-                              ? 'Model open · ${model.sessions.length} live session(s) · ${model.maxTokens}-token window'
+                              ? 'Model open · ${model.provider} · ${model.sessions.length} live session(s) · ${model.maxTokens}-token window'
                               : _sessionModelOpening
                               ? 'Opening model...'
                               : 'Model not open',
@@ -1790,6 +1826,44 @@ class _MyHomePageState extends State<MyHomePage> {
                       context,
                     ).textTheme.bodySmall?.copyWith(color: Colors.grey[700]),
                   ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Execution policy · cloud is alpha',
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: LocalAiExecutionPolicy.values
+                        .map(
+                          (policy) => ChoiceChip(
+                            label: Text(policy.name),
+                            selected: policy == _sessionExecutionPolicy,
+                            onSelected: model == null && !_sessionModelOpening
+                                ? (_) => setState(
+                                    () => _sessionExecutionPolicy = policy,
+                                  )
+                                : null,
+                          ),
+                        )
+                        .toList(),
+                  ),
+                  if (_isAndroid &&
+                      _sessionExecutionPolicy !=
+                          LocalAiExecutionPolicy.onDeviceOnly) ...[
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _androidCloudModelController,
+                      enabled: model == null && !_sessionModelOpening,
+                      decoration: const InputDecoration(
+                        labelText: 'Android Firebase cloud model',
+                        helperText:
+                            'Android only · Firebase AI Logic + App Check required',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   Wrap(
                     spacing: 8,
@@ -1979,6 +2053,12 @@ class _MyHomePageState extends State<MyHomePage> {
                           color: Colors.grey[700],
                         ),
                       ),
+                      if (slot.lastProvider != null)
+                        Text(
+                          'Last response · ${slot.lastExecutionLocation?.name} · ${slot.lastProvider}',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: Colors.deepPurple),
+                        ),
                     ],
                   ),
                 ),

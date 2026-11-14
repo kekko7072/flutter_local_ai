@@ -201,6 +201,8 @@ jobs:
         run: |
           dart run pigeon --input pigeon.dart
           dart format .
+          # Dart 3.12 requires a second pass to stabilize one Pigeon call.
+          dart format .
 
       # Scoped to pigeon's own outputs, which is where this check has to be
       # stricter than ci.yml's copy. ci.yml runs its pigeon job on a clean

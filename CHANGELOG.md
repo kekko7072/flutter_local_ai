@@ -1,4 +1,11 @@
-## 0.4.0
+## 0.5.0
+
+Cloud execution is released as an **alpha** for physical-device testing and
+behavioral feedback. Existing calls remain on-device-only. Do not enable cloud
+policies in production until you have validated Apple entitlements or Firebase
+App Check, routing, quota, offline, and privacy behavior for your app.
+The Android provider label now uses Firebase's typed inference source; a
+cloud-only response cannot be reported as on-device.
 
 ### Breaking changes
 
@@ -6,8 +13,34 @@
   affects code that implements `LocalAiHost` itself.
   *Migration:* implement it; return null when the host has no limit to
   report.
+* **Custom `LocalAiHost` implementations now return a
+  `LocalAiModelSelection` from `createModel` / `createSession` and accept an
+  execution policy.** Defaults preserve `onDeviceOnly`; implementations that
+  cannot route to PCC should throw `LocalAiUnsupportedException` for the two
+  cloud-capable policies.
 
 ### New
+
+* **Unified Apple and Android execution policies.** Pass
+  `LocalAiExecutionPolicy.onDeviceOnly` (the default), `cloudOnly`,
+  `preferOnDevice`, or `preferCloud` to `LocalAiModel.create`. Apple maps the
+  cloud path to Private Cloud Compute. Android maps it to Firebase AI Logic
+  hybrid inference and requires an explicit `LocalAiAndroidConfiguration`
+  cloud model. Models and sessions expose the
+  resolved `executionLocation`, `provider`, and `fallbackUsed`. Backend
+  capabilities expose PCC SDK support and runtime readiness separately.
+  PCC is compile- and runtime-gated to iOS/macOS 27, requires Apple's managed
+  entitlement and connectivity, and maps quota, network, service, timeout,
+  and rate-limit failures to stable generation error codes.
+* **Per-response routing metadata.** `LocalAiSession.getResponseWithMetadata()`
+  returns `LocalAiGenerationResult`, including the provider and actual
+  execution location. This is authoritative for Android hybrid requests;
+  `getResponse()` remains source-compatible and returns text.
+* Android Private Compute Core/AICore remains the on-device runtime; it is not
+  presented as cloud. Cloud and hybrid policies use Firebase AI Logic
+  `18.2.0` plus its experimental on-device extension `16.0.0-beta08`.
+  Android function calling remains deliberately disabled until it can match
+  Apple's typed Dart callback and result-reinjection semantics.
 
 * **`LocalAiSession.tokenLimit()`** reports the model's total context window
   in tokens, shared by the session's earlier turns, the next request and its

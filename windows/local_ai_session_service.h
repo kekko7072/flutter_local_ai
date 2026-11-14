@@ -77,8 +77,10 @@ class LocalAiSessionService : public flutter_local_ai_pigeon::LocalAiService {
       override;
   void CreateModel(
       bool support_image,
-      std::function<
-          void(std::optional<flutter_local_ai_pigeon::FlutterError> reply)>
+      const flutter_local_ai_pigeon::LocalAiExecutionPolicy& execution_policy,
+      const std::string* android_cloud_model_name,
+      std::function<void(flutter_local_ai_pigeon::ErrorOr<
+                         flutter_local_ai_pigeon::LocalAiModelSelection> reply)>
           result) override;
   void CloseModel(
       std::function<
@@ -86,14 +88,16 @@ class LocalAiSessionService : public flutter_local_ai_pigeon::LocalAiService {
           result) override;
   void CreateSession(
       int64_t session_id,
+      const flutter_local_ai_pigeon::LocalAiExecutionPolicy& execution_policy,
+      const std::string* android_cloud_model_name,
       double temperature,
       int64_t top_k,
       const double* top_p,
       const int64_t* max_output_tokens,
       const std::string* system_instruction,
       const flutter::EncodableList* tools,
-      std::function<
-          void(std::optional<flutter_local_ai_pigeon::FlutterError> reply)>
+      std::function<void(flutter_local_ai_pigeon::ErrorOr<
+                         flutter_local_ai_pigeon::LocalAiModelSelection> reply)>
           result) override;
   void CloseSession(
       int64_t session_id,
@@ -115,7 +119,8 @@ class LocalAiSessionService : public flutter_local_ai_pigeon::LocalAiService {
   void GenerateResponse(
       int64_t session_id,
       const flutter_local_ai_pigeon::GenerationOverrides* overrides,
-      std::function<void(flutter_local_ai_pigeon::ErrorOr<std::string> reply)>
+      std::function<void(flutter_local_ai_pigeon::ErrorOr<
+                         flutter_local_ai_pigeon::LocalAiGenerationResult> reply)>
           result) override;
   void GenerateResponseAsync(
       int64_t session_id,
@@ -135,10 +140,12 @@ class LocalAiSessionService : public flutter_local_ai_pigeon::LocalAiService {
           void(std::optional<flutter_local_ai_pigeon::FlutterError> reply)>
           result) override;
   void CountTokens(
+      int64_t session_id,
       const std::string& text,
       std::function<void(flutter_local_ai_pigeon::ErrorOr<int64_t> reply)>
           result) override;
   void TokenLimit(
+      int64_t session_id,
       std::function<void(
           flutter_local_ai_pigeon::ErrorOr<std::optional<int64_t>> reply)>
           result) override;

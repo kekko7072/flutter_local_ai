@@ -177,7 +177,8 @@ void main() {
               FakeSession(onPrompt: (input) => 'echo:$input'),
         ),
       );
-      expect(await host.generateResponse(1), 'echo:hi');
+      final result = await host.generateResponse(1);
+      expect(result.text, 'echo:hi');
     });
 
     test('stopGeneration resolves as an empty turn, not a throw', () async {
@@ -192,7 +193,7 @@ void main() {
 
       // An aborted prompt() discards the whole call, so there is no partial
       // text; the empty string is the cancelled turn.
-      expect(await pending, isEmpty);
+      expect((await pending).text, isEmpty);
     });
 
     test('a genuine prompt failure still throws', () async {
@@ -293,7 +294,7 @@ void main() {
 
       // The refused call must not have drained the queued chunks, or the
       // retry would prompt with nothing.
-      expect(await host.generateResponse(1), 'next');
+      expect((await host.generateResponse(1)).text, 'next');
     });
   });
 

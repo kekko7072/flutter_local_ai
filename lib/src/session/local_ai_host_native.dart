@@ -42,6 +42,62 @@ LocalAiBackendKind _backendFromWire(
   wire.LocalAiBackend.unsupported => LocalAiBackendKind.unsupported,
 };
 
+wire.LocalAiExecutionPolicy _policyToWire(LocalAiExecutionPolicy policy) =>
+    switch (policy) {
+      LocalAiExecutionPolicy.onDeviceOnly =>
+        wire.LocalAiExecutionPolicy.onDeviceOnly,
+      LocalAiExecutionPolicy.cloudOnly => wire.LocalAiExecutionPolicy.cloudOnly,
+      LocalAiExecutionPolicy.preferOnDevice =>
+        wire.LocalAiExecutionPolicy.preferOnDevice,
+      LocalAiExecutionPolicy.preferCloud =>
+        wire.LocalAiExecutionPolicy.preferCloud,
+    };
+
+LocalAiExecutionLocation _locationFromWire(
+  wire.LocalAiExecutionLocation location,
+) => switch (location) {
+  wire.LocalAiExecutionLocation.onDevice => LocalAiExecutionLocation.onDevice,
+  wire.LocalAiExecutionLocation.privateCloudCompute =>
+    LocalAiExecutionLocation.privateCloudCompute,
+  wire.LocalAiExecutionLocation.firebaseAiLogicCloud =>
+    LocalAiExecutionLocation.firebaseAiLogicCloud,
+  wire.LocalAiExecutionLocation.undetermined =>
+    LocalAiExecutionLocation.undetermined,
+};
+
+LocalAiGenerationResult _generationResultFromWire(
+  wire.LocalAiGenerationResult result,
+) => LocalAiGenerationResult(
+  text: result.text,
+  executionLocation: _locationFromWire(result.executionLocation),
+  provider: result.provider,
+);
+
+LocalAiPrivateCloudAvailability _privateCloudAvailabilityFromWire(
+  wire.LocalAiPrivateCloudAvailability availability,
+) => switch (availability) {
+  wire.LocalAiPrivateCloudAvailability.available =>
+    LocalAiPrivateCloudAvailability.available,
+  wire.LocalAiPrivateCloudAvailability.unavailableOsTooOld =>
+    LocalAiPrivateCloudAvailability.unavailableOsTooOld,
+  wire.LocalAiPrivateCloudAvailability.unavailableDeviceUnsupported =>
+    LocalAiPrivateCloudAvailability.unavailableDeviceUnsupported,
+  wire.LocalAiPrivateCloudAvailability.unavailableSystemNotReady =>
+    LocalAiPrivateCloudAvailability.unavailableSystemNotReady,
+  wire.LocalAiPrivateCloudAvailability.unavailableEntitlementOrConfiguration =>
+    LocalAiPrivateCloudAvailability.unavailableEntitlementOrConfiguration,
+  wire.LocalAiPrivateCloudAvailability.unavailableOther =>
+    LocalAiPrivateCloudAvailability.unavailableOther,
+};
+
+LocalAiModelSelection _selectionFromWire(
+  wire.LocalAiModelSelection selection,
+) => LocalAiModelSelection(
+  executionLocation: _locationFromWire(selection.executionLocation),
+  provider: selection.provider,
+  fallbackUsed: selection.fallbackUsed,
+);
+
 wire.GenerationOverrides? _overridesToWire(
   LocalAiGenerationOverrides? overrides,
 ) => overrides == null || overrides.isEmpty
@@ -158,6 +214,10 @@ class NativeLocalAiHost implements LocalAiHost, wire.LocalAiToolRunner {
       supportsTokenCount: info.supportsTokenCount,
       supportsModelDownload: info.supportsModelDownload,
       supportsPlayStoreRedirect: info.supportsPlayStoreRedirect,
+      supportsPrivateCloudCompute: info.supportsPrivateCloudCompute,
+      privateCloudAvailability: _privateCloudAvailabilityFromWire(
+        info.privateCloudAvailability,
+      ),
       isConfigured: info.isConfigured,
     );
   }
@@ -169,8 +229,20 @@ class NativeLocalAiHost implements LocalAiHost, wire.LocalAiToolRunner {
   Future<bool> openAICorePlayStore() => _service.openAICorePlayStore();
 
   @override
-  Future<void> createModel({required bool supportImage}) =>
-      _service.createModel(supportImage: supportImage);
+  Future<LocalAiModelSelection> createModel({
+    required bool supportImage,
+    LocalAiExecutionPolicy executionPolicy =
+        LocalAiExecutionPolicy.onDeviceOnly,
+    LocalAiAndroidConfiguration? android,
+  }) async => _selectionFromWire(
+    await _policyCall(
+      _service.createModel(
+        supportImage: supportImage,
+        executionPolicy: _policyToWire(executionPolicy),
+        androidCloudModelName: android?.cloudModelName,
+      ),
+    ),
+  );
 
   @override
   Future<void> closeModel() async {
@@ -181,8 +253,11 @@ class NativeLocalAiHost implements LocalAiHost, wire.LocalAiToolRunner {
   }
 
   @override
-  Future<void> createSession({
+  Future<LocalAiModelSelection> createSession({
     required int sessionId,
+    LocalAiExecutionPolicy executionPolicy =
+        LocalAiExecutionPolicy.onDeviceOnly,
+    LocalAiAndroidConfiguration? android,
     required double temperature,
     required int topK,
     double? topP,
@@ -192,21 +267,39 @@ class NativeLocalAiHost implements LocalAiHost, wire.LocalAiToolRunner {
   }) async {
     _tools.register(sessionId, tools);
     try {
-      await _service.createSession(
-        sessionId: sessionId,
-        temperature: temperature,
-        topK: topK,
-        topP: topP,
-        maxOutputTokens: maxOutputTokens,
-        systemInstruction: systemInstruction,
-        tools: tools?.map(_toolToWire).toList(),
+      final selection = await _policyCall(
+        _service.createSession(
+          sessionId: sessionId,
+          executionPolicy: _policyToWire(executionPolicy),
+          androidCloudModelName: android?.cloudModelName,
+          temperature: temperature,
+          topK: topK,
+          topP: topP,
+          maxOutputTokens: maxOutputTokens,
+          systemInstruction: systemInstruction,
+          tools: tools?.map(_toolToWire).toList(),
+        ),
       );
+      return _selectionFromWire(selection);
     } catch (_) {
       // The native session doesn't exist, so nothing can call these.
       _tools.forget(sessionId);
       rethrow;
     }
   }
+
+  static Future<T> _policyCall<T>(Future<T> call) => call.catchError(
+    (Object error) {
+      final platform = error as PlatformException;
+      throw LocalAiUnsupportedException(
+        'executionPolicy',
+        platform.message ?? 'This execution policy is not supported.',
+      );
+    },
+    test: (error) =>
+        error is PlatformException &&
+        error.code == 'EXECUTION_POLICY_UNSUPPORTED',
+  );
 
   @override
   Future<void> closeSession(int sessionId) async {
@@ -231,13 +324,15 @@ class NativeLocalAiHost implements LocalAiHost, wire.LocalAiToolRunner {
   );
 
   @override
-  Future<String> generateResponse(
+  Future<LocalAiGenerationResult> generateResponse(
     int sessionId, {
     LocalAiGenerationOverrides? overrides,
-  }) => _generation(
-    _busy(
-      sessionId,
-      _service.generateResponse(sessionId, _overridesToWire(overrides)),
+  }) async => _generationResultFromWire(
+    await _generation(
+      _busy(
+        sessionId,
+        _service.generateResponse(sessionId, _overridesToWire(overrides)),
+      ),
     ),
   );
 
@@ -308,7 +403,7 @@ class NativeLocalAiHost implements LocalAiHost, wire.LocalAiToolRunner {
     // Every native tokenizer is model-wide, so [sessionId] stays on this side
     // of the channel.
     try {
-      return await _service.countTokens(text);
+      return await _service.countTokens(sessionId: sessionId, text: text);
     } on PlatformException catch (e) {
       // `channel-error` / `null-error` are pigeon infrastructure failures — the
       // plugin isn't registered, or this platform has no implementation. Those
@@ -320,7 +415,8 @@ class NativeLocalAiHost implements LocalAiHost, wire.LocalAiToolRunner {
   }
 
   @override
-  Future<int?> tokenLimit({required int sessionId}) => _service.tokenLimit();
+  Future<int?> tokenLimit({required int sessionId}) =>
+      _service.tokenLimit(sessionId);
 }
 
 /// The host for this platform.

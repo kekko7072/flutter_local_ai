@@ -16,8 +16,13 @@ class LocalAiModel {
     required this._host,
     required this.maxTokens,
     required this.supportImage,
+    required this.executionPolicy,
+    required this.android,
+    required LocalAiModelSelection selection,
     required this._state,
-  });
+  }) : executionLocation = selection.executionLocation,
+       provider = selection.provider,
+       fallbackUsed = selection.fallbackUsed;
 
   static final _states = Expando<_HostModelState>();
 
@@ -30,15 +35,25 @@ class LocalAiModel {
   static Future<LocalAiModel> create({
     int maxTokens = 4096,
     bool supportImage = false,
+    LocalAiExecutionPolicy executionPolicy =
+        LocalAiExecutionPolicy.onDeviceOnly,
+    LocalAiAndroidConfiguration? android,
     LocalAiHost? host,
   }) async {
     final resolved = host ?? localAiHost;
     final state = _states[resolved] ??= _HostModelState(resolved);
-    await state.acquire(supportImage);
+    final selection = await state.acquire(
+      supportImage,
+      executionPolicy,
+      android,
+    );
     return LocalAiModel._(
       host: resolved,
       maxTokens: maxTokens,
       supportImage: supportImage,
+      executionPolicy: executionPolicy,
+      android: android,
+      selection: selection,
       state: state,
     );
   }
@@ -52,6 +67,17 @@ class LocalAiModel {
   final int maxTokens;
 
   final bool supportImage;
+
+  /// The caller's routing constraint. The default never permits cloud use.
+  final LocalAiExecutionPolicy executionPolicy;
+
+  /// Android-only Firebase AI Logic settings. Ignored on Apple platforms.
+  final LocalAiAndroidConfiguration? android;
+
+  /// Where this model was resolved at creation time.
+  final LocalAiExecutionLocation executionLocation;
+  final String provider;
+  final bool fallbackUsed;
 
   final Map<int, LocalAiSession> _sessions = {};
 
@@ -86,6 +112,8 @@ class LocalAiModel {
     final sessionId = _state.nextSessionId++;
     final opening = _host.createSession(
       sessionId: sessionId,
+      executionPolicy: executionPolicy,
+      android: android,
       temperature: temperature,
       topK: topK,
       topP: topP,
@@ -94,9 +122,10 @@ class LocalAiModel {
       tools: tools,
     );
     final settled = Completer<void>();
+    late LocalAiModelSelection selection;
     _pendingOpens.add(settled.future);
     try {
-      await opening;
+      selection = await opening;
       if (_isClosed) {
         await _host.closeSession(sessionId);
         throw StateError('Model closed while the session was opening.');
@@ -108,6 +137,9 @@ class LocalAiModel {
     final session = LocalAiSession(
       sessionId: sessionId,
       host: _host,
+      executionLocation: selection.executionLocation,
+      provider: selection.provider,
+      fallbackUsed: selection.fallbackUsed,
       onClose: () => _sessions.remove(sessionId),
     );
     _sessions[sessionId] = session;
@@ -160,31 +192,46 @@ class _HostModelState {
   int nextSessionId = 1;
   int _owners = 0;
   bool _supportsImage = false;
+  final Map<(LocalAiExecutionPolicy, String?), LocalAiModelSelection>
+  _selections = {};
   Future<void> _tail = Future.value();
 
-  Future<void> _serialize(Future<void> Function() operation) {
+  Future<T> _serialize<T>(Future<T> Function() operation) {
     final result = _tail.then((_) => operation());
     _tail = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
     return result;
   }
 
-  Future<void> acquire(bool supportImage) => _serialize(() async {
+  Future<LocalAiModelSelection> acquire(
+    bool supportImage,
+    LocalAiExecutionPolicy executionPolicy,
+    LocalAiAndroidConfiguration? android,
+  ) => _serialize(() async {
     if (supportImage && !(await host.getBackendInfo()).supportsVision) {
       throw LocalAiUnsupportedException(
         'vision',
         'This backend does not support image input.',
       );
     }
-    if (_owners == 0 || (supportImage && !_supportsImage)) {
-      await host.createModel(supportImage: supportImage || _supportsImage);
+    final key = (executionPolicy, android?.cloudModelName);
+    if (_owners == 0 ||
+        (supportImage && !_supportsImage) ||
+        !_selections.containsKey(key)) {
+      _selections[key] = await host.createModel(
+        supportImage: supportImage || _supportsImage,
+        executionPolicy: executionPolicy,
+        android: android,
+      );
       _supportsImage = supportImage || _supportsImage;
     }
     _owners++;
+    return _selections[key]!;
   });
 
   Future<void> release() => _serialize(() async {
     if (--_owners == 0) {
       _supportsImage = false;
+      _selections.clear();
       await host.closeModel();
     }
   });
