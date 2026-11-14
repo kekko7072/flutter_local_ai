@@ -27,6 +27,47 @@ handle session/generation failure: Apple does not expose an API for an iOS app
 to inspect its own signing entitlement. PCC has service, rate, timeout, and
 daily per-user quota limits. Physical-device validation is required.
 
+### Opt-in signing for the Apple example
+
+The example does not request PCC in its default signing configuration. This
+keeps ordinary builds working for developers whose Apple account has not been
+approved. The entitlement plist contains no secret, but adding it to a target
+without a matching managed capability and provisioning profile can prevent
+signing or installation.
+
+1. [Request PCC access from Apple](https://developer.apple.com/private-cloud-compute/).
+   Apple currently requires an eligible developer account and assigns this
+   managed capability to the account. Enable it for an explicit App ID in
+   Certificates, Identifiers & Profiles. Use your own unique bundle ID for
+   the example.
+2. Copy the `.example` entitlement and `.xcconfig` files for the target
+   platform to the same paths without `.example`. The resulting `*.local.*`
+   files are Git ignored. The macOS entitlement template retains the sandbox
+   keys and adds network-client access.
+3. Open `example/ios/Runner.xcworkspace` or
+   `example/macos/Runner.xcworkspace` in Xcode. Set your team and an explicit,
+   unique bundle ID for **Runner** in **Signing & Capabilities**. Refresh the
+   provisioning profile and verify it grants PCC; signing a plist containing
+   the key does not grant account access. For macOS, add
+   `DEVELOPMENT_TEAM = YOUR_TEAM_ID` to the ignored local xcconfig file and
+   ensure an Apple Development certificate and matching Mac App Development
+   profile are installed. `flutter test` does not create that profile for you.
+4. From `example/`, run with the local build-setting override:
+
+   ```bash
+   XCODE_XCCONFIG_FILE="$PWD/ios/PCC.local.xcconfig" \
+     flutter test integration_test/apple_pcc_smoke_test.dart -d YOUR_IPHONE_ID \
+       --dart-define=RUN_PCC_SMOKE=1
+   # For macOS, use $PWD/macos/PCC.local.xcconfig and -d macos.
+   ```
+
+   Apple documents TestFlight and ad hoc distribution for PCC testing; a
+   local debug install is not proof that PCC is available.
+
+The templates and instructions are safe to publish; the local plist and
+xcconfig copies, signing profiles, and team-specific settings stay on your
+machine. No default example target gains PCC from these templates.
+
 ## Android Firebase AI Logic hybrid
 
 Private Compute Core and AICore protect and run Nano locally; they are not a

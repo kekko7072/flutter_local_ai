@@ -152,6 +152,7 @@ device and region, connectivity, and Apple's managed
 `capabilities.privateCloudAvailability`. Apple provides no public API for an
 iOS app to inspect its own managed entitlement, so signing failures can still
 surface on session creation or first use.
+The example's PCC signing is opt-in; see [Apple example setup](doc/cloud-compute.md#opt-in-signing-for-the-apple-example).
 
 ## Use with flutter_edge_ai
 

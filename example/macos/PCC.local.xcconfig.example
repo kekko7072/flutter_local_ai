@@ -1,0 +1,4 @@
+CODE_SIGN_ENTITLEMENTS = Runner/PCC.DebugProfile.local.entitlements
+CODE_SIGN_IDENTITY = Apple Development
+CODE_SIGN_STYLE = Automatic
+// Add DEVELOPMENT_TEAM = YOUR_TEAM_ID to the ignored local copy.
