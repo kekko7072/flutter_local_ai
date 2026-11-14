@@ -774,18 +774,19 @@ class LocalAiService {
           pigeonChannelCodec,
           binaryMessenger: pigeonVar_binaryMessenger,
         );
-    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel
-        .send(<Object?>[
-          sessionId,
-          executionPolicy,
-          androidCloudModelName,
-          temperature,
-          topK,
-          topP,
-          maxOutputTokens,
-          systemInstruction,
-          tools,
-        ]);
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
+      <Object?>[
+        sessionId,
+        executionPolicy,
+        androidCloudModelName,
+        temperature,
+        topK,
+        topP,
+        maxOutputTokens,
+        systemInstruction,
+        tools,
+      ],
+    );
     final List<Object?>? pigeonVar_replyList =
         await pigeonVar_sendFuture as List<Object?>?;
     if (pigeonVar_replyList == null) {
